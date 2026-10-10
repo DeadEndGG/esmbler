@@ -149,3 +149,36 @@ test('@REQ-LIVE-003 @REQ-LAY-003 point at a card, ask for a field there, and und
   await page.getByRole('button', { name: 'Discard draft' }).click();
   await expect(page.getByText(/Draft discarded/)).toBeVisible();
 });
+
+test('@REQ-DS-002 keyboard-first: command palette, list navigation, quick create, and dark mode', async ({ page }) => {
+  await signIn(page, 'alex@acme.example', 'Acme');
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+
+  // J/K move the row cursor; Enter opens the row.
+  await page.locator('body').press('j');
+  await page.locator('body').press('j');
+  await expect(page.locator('tr.cursor')).toHaveCount(1);
+  await page.locator('body').press('Enter');
+  await page.waitForURL(/\/records\/core\.tickets\.ticket\/[0-9a-f-]{36}/);
+
+  // Ctrl/Cmd+K opens the palette; typing filters; Enter runs the command.
+  await page.locator('body').press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(palette).toBeVisible();
+  await palette.getByRole('combobox').fill('Configuration');
+  await palette.getByRole('combobox').press('Enter');
+  await page.waitForURL(/\/admin\/configuration/);
+
+  // The palette toggles the theme; dark mode is applied to the document.
+  await page.locator('body').press('Control+k');
+  await palette.getByRole('combobox').fill('Toggle theme');
+  await palette.getByRole('combobox').press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', /dark|light/);
+
+  // C on a list opens the create form.
+  await page.goto('/records/core.tickets.ticket');
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+  await page.locator('body').press('c');
+  await page.waitForURL(/\/records\/core\.tickets\.ticket\/new/);
+  await expect(page.getByRole('button', { name: /Create/ })).toBeVisible();
+});

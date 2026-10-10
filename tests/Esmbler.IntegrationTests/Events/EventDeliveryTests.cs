@@ -91,6 +91,21 @@ public class EventDeliveryTests(PlatformFixture f)
         Assert.Equal(1, audits);
         Assert.Equal(1, events);
 
+        // REQ-EVT-003: the envelope carries IDs, tenant and environment, revisions, schema version, actor and correlation.
+        var json = await db.InTenantAsync(f.Acme.TenantId, f.Acme.Environments["prod"], null, ctx => ctx.Outbox.Where(o => o.RecordId == t.Id).Select(o => o.Event).FirstAsync(), default);
+        var envelope = System.Text.Json.JsonSerializer.Deserialize<Esmbler.Sdk.Events.EventEnvelope>(json, Esmbler.Sdk.Specs.SpecJson.Options)!;
+        Assert.Equal(Esmbler.Sdk.Events.EventTypes.RecordCreated, envelope.Type);
+        Assert.NotEqual(Guid.Empty, envelope.EventId);
+        Assert.Equal(f.Acme.TenantId, envelope.TenantId);
+        Assert.Equal(f.Acme.Environments["prod"], envelope.EnvironmentId);
+        Assert.Equal(Ticket, envelope.Entity);
+        Assert.Equal(t.Id, envelope.RecordId);
+        Assert.Equal(t.Revision, envelope.RecordRevision);
+        Assert.Equal(t.ConfigRevision, envelope.ConfigRevision);
+        Assert.Equal(1, envelope.SchemaVersion);
+        Assert.NotEqual(Guid.Empty, envelope.CorrelationId);
+        Assert.False(string.IsNullOrEmpty(envelope.Actor));
+
         // A failed write leaves no audit entry and no event behind.
         await Assert.ThrowsAnyAsync<Exception>(() => records.UpdateAsync(sam, Ticket, t.Id, t.Revision, new JsonObject { ["title"] = "x" }, null, null, default));
         var (audits2, events2) = await db.InTenantAsync(f.Acme.TenantId, f.Acme.Environments["prod"], null, async ctx =>
