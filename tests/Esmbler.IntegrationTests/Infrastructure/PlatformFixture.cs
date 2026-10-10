@@ -76,8 +76,7 @@ public sealed class PlatformFixture : IAsyncLifetime
         services.AddEsmblerPlatform(config);
         services.AddSingleton<IRelationshipGraph>(Graph);
         Services = services.BuildServiceProvider();
-        var provisioning = Get<ProvisioningService>();
-        await provisioning.EnsureDemoTenantsAsync(default);
+        await Get<DemoTenants>().EnsureAsync(default);
         Acme = await Reload("acme");
         Globex = await Reload("globex");
     }

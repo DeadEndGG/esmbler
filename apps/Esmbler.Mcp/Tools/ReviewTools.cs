@@ -37,7 +37,7 @@ public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishS
             await preview.SimulateAsync(ctx, entity, JsonNode.Parse(values.GetRawText()) as JsonObject ?? [], default));
 
     [McpServerTool(Name = "preview_url", ReadOnly = true), Description("Link to the live page in draft mode, where the person you are helping sees each change as you make it.")]
-    public Task<CallToolResult> PreviewUrl([Description("Entity to preview, e.g. core.tickets.ticket.")] string entity = "core.tickets.ticket") =>
+    public Task<CallToolResult> PreviewUrl([Description("Entity to preview, e.g. core.tickets.ticket.")] string entity) =>
         runner.RunAsync("preview_url", AgentScopes.ConfigRead, entity, _ =>
             Task.FromResult<object?>(new { url = $"{configuration["Esmbler:WebUrl"] ?? "http://localhost:8080"}/records/{entity}/preview?draft=1" }));
 

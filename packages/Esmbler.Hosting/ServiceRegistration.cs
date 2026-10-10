@@ -63,6 +63,7 @@ public static class ServiceRegistration
         services.AddSingleton<RecordService>();
         services.AddSingleton<IdentityService>();
         services.AddSingleton<ProvisioningService>();
+        services.AddSingleton<DemoTenants>();
         services.AddSingleton<ExperienceService>();
         services.AddSingleton<AccessExplainer>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.RecordStateProjection>();

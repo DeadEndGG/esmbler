@@ -182,46 +182,7 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
         return result;
     }
 
-    /// <summary>Two demo tenants (REQ-ACC-01 fixture). Alex belongs to both to show explicit tenant switching.</summary>
-    public async Task<bool> EnsureDemoTenantsAsync(CancellationToken ct)
-    {
-        var acme = await database.AnonymousAsync(db => db.Database.SqlQuery<Guid?>($"SELECT kernel.find_tenant_by_slug('acme') AS \"Value\"").FirstOrDefaultAsync(ct), ct);
-        if (acme is not null)
-        {
-            return false;
-        }
-
-        const string Admin = PlatformModule.TenantAdminRole;
-        const string Agent = "core.tickets.agent";
-        const string Requester = "core.tickets.requester";
-        // Acme starts on Tickets 1.0.0 to demonstrate upgrades; Globex runs the newest release (service requests).
-        (string, string)[] tickets = [("core.tickets", "1.0.0")];
-        (string, string)[] latest = [("core.tickets", catalog.Latest("core.tickets").Version)];
-        await ProvisionAsync(new TenantSeed(
-            "acme",
-            "Acme Corp",
-            [
-                new UserSeed("alex", "alex@acme.example", "Alex Rivera", DemoPassword, [Admin], ["service_desk"]),
-                new UserSeed("sam", "sam@acme.example", "Sam Okafor", DemoPassword, [], ["service_desk", "network"]),
-                new UserSeed("dana", "dana@acme.example", "Dana Kim", DemoPassword, [Requester], []),
-                new UserSeed("jordan", "jordan@acme.example", "Jordan Lee", DemoPassword, [Requester], []),
-                new UserSeed("riley", "riley@acme.example", "Riley Chen", DemoPassword, [Requester], []),
-            ],
-            [new GroupSeed("service_desk", "Service Desk", [Agent]), new GroupSeed("network", "Network", [Agent])],
-            tickets), ct);
-        await ProvisionAsync(new TenantSeed(
-            "globex",
-            "Globex Inc",
-            [
-                new UserSeed("alex", "alex@acme.example", "Alex Rivera", DemoPassword, [Admin], []),
-                new UserSeed("morgan", "morgan@globex.example", "Morgan Diaz", DemoPassword, [Admin], ["service_desk"]),
-                new UserSeed("sam", "casey@globex.example", "Casey Novak", DemoPassword, [], ["network"]),
-                new UserSeed("dana", "taylor@globex.example", "Taylor Brooks", DemoPassword, [Requester], []),
-                new UserSeed("jordan", "jamie@globex.example", "Jamie Ortiz", DemoPassword, [Requester], []),
-                new UserSeed("riley", "quinn@globex.example", "Quinn Patel", DemoPassword, [Requester], []),
-            ],
-            [new GroupSeed("service_desk", "Service Desk", [Agent]), new GroupSeed("network", "Network", [Agent])],
-            latest), ct);
-        return true;
-    }
+    /// <summary>Whether a tenant with this slug exists (used by idempotent seeding).</summary>
+    public async Task<bool> TenantExistsAsync(string slug, CancellationToken ct) =>
+        await database.AnonymousAsync(db => db.Database.SqlQuery<Guid?>($"SELECT kernel.find_tenant_by_slug({slug}) AS \"Value\"").FirstOrDefaultAsync(ct), ct) is not null;
 }

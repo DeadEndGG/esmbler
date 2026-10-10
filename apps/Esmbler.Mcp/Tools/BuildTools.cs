@@ -77,7 +77,7 @@ public sealed class CatalogTaskInput
 /// Tools never publish.
 /// </summary>
 [McpServerToolType]
-public sealed class BuildTools(ToolRunner runner, DraftService drafts)
+public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewService preview)
 {
     [McpServerTool(Name = "open_draft"), Description("Open (or join) the draft for this workspace. Returns its version. Everyone else keeps seeing the published pages until a person publishes.")]
     public Task<CallToolResult> OpenDraft() =>
@@ -269,18 +269,27 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts)
         int expected_version,
         [Description("One sentence shown on the catalog card.")] string? description = null,
         [Description("Catalog section, e.g. Hardware, Access, Facilities.")] string? category = null,
-        [Description("Entity that receives the requests; defaults to the one request entity (core.tickets.request).")] string? request_entity = null) =>
+        [Description("Entity that receives the requests; defaults to the workspace's request entity when there is exactly one.")] string? request_entity = null) =>
         runner.RunAsync("add_catalog_item", AgentScopes.ConfigEdit, label, async ctx =>
         {
             var ops = new List<OverlayOp>();
             var slug = Slug(label);
+            if (request_entity is null)
+            {
+                var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+                var candidates = config.Entities.Where(e => e.Request is not null).Select(e => e.Id).ToList();
+                request_entity = candidates.Count == 1
+                    ? candidates[0]
+                    : throw new KernelException("request_entity_required", candidates.Count == 0 ? "No entity in this workspace receives requests." : "More than one entity receives requests.", 400, "request_entity", candidates.Count == 0 ? "Install a module release with service requests first." : $"Pass request_entity, one of: {string.Join(", ", candidates)}.");
+            }
+
             var item = new CatalogItemSpec
             {
                 Id = Namespaces.TenantPrefix + slug[..Math.Min(40, slug.Length)],
                 Label = label,
                 Description = description,
                 Category = category,
-                RequestEntity = request_entity ?? "core.tickets.request",
+                RequestEntity = request_entity,
             };
             foreach (var v in variables)
             {

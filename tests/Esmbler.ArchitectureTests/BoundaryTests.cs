@@ -108,6 +108,38 @@ public class BoundaryTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void Platform_code_does_not_hard_code_business_module_ids()
+    {
+        // ADR 0012: the kernel, platform services and MCP server know no business module. Module IDs belong in specs,
+        // module Contracts, or the composition root (Esmbler.Hosting). Comments and "e.g." text inside descriptions are fine.
+        string[] roots = ["packages/Esmbler.Kernel", "packages/Esmbler.Kernel.Infrastructure", "packages/Esmbler.Platform", "apps/Esmbler.Mcp"];
+        var offenders = new List<string>();
+        foreach (var root in roots)
+        {
+            foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), root), "*.cs", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(RepoRoot(), file).Replace('\\', '/');
+                if (relative.Contains("/bin/", StringComparison.Ordinal) || relative.Contains("/obj/", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var lines = File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    var line = lines[i].TrimStart();
+                    if (!line.StartsWith("//", StringComparison.Ordinal) && line.Contains("\"core.tickets", StringComparison.Ordinal))
+                    {
+                        offenders.Add($"{relative}:{i + 1}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(offenders.Count == 0, "Business module IDs in platform code: " + string.Join(", ", offenders));
+    }
+
     private static IEnumerable<string> ModuleProjects() =>
         Directory.EnumerateFiles(Path.Combine(RepoRoot(), "modules"), "*.csproj", SearchOption.AllDirectories).Select(Path.GetFileNameWithoutExtension)!;
 

@@ -395,7 +395,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
     }
 
     /// <summary>
-    /// A platform write (fulfillment, workflow migration) in the caller's transaction: the full write pipeline runs
+    /// A platform write (fulfillment) in the caller's transaction: the full write pipeline runs
     /// under the active configuration with platform rights, may fire system transitions, and takes the row lock, so
     /// concurrent system writers serialize. Returns false when the transition is no longer valid from the record's
     /// current state (another writer got there first), which callers treat as already done.

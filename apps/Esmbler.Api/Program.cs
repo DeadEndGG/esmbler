@@ -49,7 +49,7 @@ if (args.Contains("migrate") || options.MigrateOnStartup)
 
 if (args.Contains("seed") || options.SeedDemoData)
 {
-    var created = await app.Services.GetRequiredService<ProvisioningService>().EnsureDemoTenantsAsync(CancellationToken.None);
+    var created = await app.Services.GetRequiredService<DemoTenants>().EnsureAsync(CancellationToken.None);
     app.Logger.LogInformation("Demo tenants: {Outcome}", created ? "provisioned acme and globex" : "already present");
     if (args.Contains("seed"))
     {
