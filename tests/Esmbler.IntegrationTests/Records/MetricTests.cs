@@ -112,6 +112,12 @@ public class MetricTests(PlatformFixture f)
             Assert.Equal(bucket.Count, group.Count);
         }
 
+        // Choice fields group in option order, like the explorer sorts them.
+        var byPriority = await Metrics.GroupsAsync(agent, new RecordQuery { Entity = Ticket, Filters = workload.Drill!.Filters }, "priority", default);
+        string[] order = ["p1", "p2", "p3", "p4"];
+        Assert.Equal(byPriority.Select(g => g.Key).OrderBy(k => Array.IndexOf(order, k)), byPriority.Select(g => g.Key));
+        Assert.Equal("Critical", byPriority.Single(g => g.Key == "p1").Label);
+
         Assert.Contains(workload.Buckets, b => b.Label == "Service Desk");
         Assert.Contains(workload.Buckets, b => b.Label == "No assignment group");
     }

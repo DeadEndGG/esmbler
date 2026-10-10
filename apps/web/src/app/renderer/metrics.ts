@@ -127,7 +127,7 @@ export class MetricBucketTable {
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
       <header class="flex items-center gap-2">
         <h3 [id]="node().id + '-t'" class="flex-1">{{ node().props['title'] ?? m?.label ?? 'Chart' }}</h3>
-        @if (m?.status === 'ok' && m!.buckets.length) {
+        @if (m?.status === 'ok' && max() > 0) {
           <button class="btn btn-ghost btn-sm" [attr.aria-pressed]="table()" (click)="showTable.set(!table())">{{ table() ? 'Hide table' : 'Show table' }}</button>
         }
       </header>

@@ -34,7 +34,8 @@ const REFRESH_MS = 60_000;
         <div class="callout tone-red mb-4" role="alert">{{ err }}</div>
       }
       @if (s) {
-        <esm-node [node]="s.view.layout" [viewId]="s.view.id" />
+        <!-- The page header carries the title, so the layout.page node's own heading is not repeated. -->
+        @for (c of s.view.layout.children; track c.id) { <esm-node [node]="c" [viewId]="s.view.id" /> }
       } @else if (!error()) {
         <div class="grid grid-cols-4 gap-4 max-[900px]:grid-cols-2" aria-busy="true">
           @for (i of [1, 2, 3, 4]; track i) { <span class="skeleton h-24"></span> }

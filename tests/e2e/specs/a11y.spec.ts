@@ -53,3 +53,17 @@ test.describe('dark mode', () => {
     await page.getByRole('button', { name: 'Close the AI builder' }).click();
   });
 });
+
+for (const scheme of ['light', 'dark'] as const) {
+  test.describe(`dashboard (${scheme})`, () => {
+    test.use({ colorScheme: scheme });
+
+    test(`@REQ-DS-003 the Overview dashboard has no serious accessibility violations (${scheme})`, async ({ page }) => {
+      await signIn(page, 'morgan@globex.example', 'Globex');
+      await page.waitForURL(/\/dashboards\//);
+      await expect(page.locator('esm-kpi-tile a').first()).toBeVisible();
+      await expect(page.locator('esm-bar-chart a').first()).toBeVisible();
+      await audit(page, `dashboard (${scheme})`);
+    });
+  });
+}

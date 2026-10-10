@@ -106,7 +106,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             var where = QueryCompiler.Where(query, artifact.Config, entity, perms, q);
             var session = await OpenAsync(db, ct);
             var rows = new List<(string? Key, long Count)>();
-            await using (var cmd = session.Command($"SELECT {key.Key} AS k, count(*) FROM kernel.records r WHERE {where} GROUP BY 1 ORDER BY {key.Order.Replace(key.Key, "k", StringComparison.Ordinal)} NULLS LAST LIMIT 50", q.Parameters))
+            await using (var cmd = session.Command($"SELECT k, n FROM (SELECT {key.Key} AS k, count(*) AS n FROM kernel.records r WHERE {where} GROUP BY 1) g ORDER BY {key.Order.Replace(key.Key, "g.k", StringComparison.Ordinal)} NULLS LAST LIMIT 50", q.Parameters))
             await using (var reader = await cmd.ExecuteReaderAsync(ct))
             {
                 while (await reader.ReadAsync(ct))
