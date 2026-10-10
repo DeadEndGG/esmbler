@@ -3,7 +3,7 @@ title: "ADR 0019: Metrics, dashboards and the connected explorer"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-OPS-004, REQ-WS-002, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-BIZ-005]
+requirements: [REQ-OPS-004, REQ-WS-002, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-BIZ-005, REQ-LIVE-003]
 ---
 
 # ADR 0019: Metrics, dashboards and the connected explorer
@@ -49,7 +49,7 @@ How are metrics defined, where are they computed, how does a figure become an ex
 
 ### One query compiler for figures and lists
 
-`QueryCompiler.Where` builds the WHERE clause for lists and metrics alike: entity, not deleted, the viewer's permission predicate, filters, SLA conditions and search. `MetricService` wraps it in `count(*)` or the measure's aggregate. Because the same function produces both, a figure equals the explorer total of its drill query for the same viewer. Counts stop at `QueryCompiler.MaxCount` (10,000) for both, shown as "10,000+".
+`QueryCompiler.Where` builds the WHERE clause for lists and metrics alike: entity, not deleted, the viewer's permission predicate, filters, SLA conditions and search. `MetricService` wraps it in `count(*)` or the measure's aggregate. Because the same function produces both, a figure equals the explorer total of its drill query for the same viewer. Counts stop at `QueryCompiler.MaxCount` (10,000) for both, shown as "10,000+". Each bar, table row and explorer group header stops at the same cap and carries its own `capped` flag, so only the group that stopped counting shows "+" (G2-M9b).
 
 SLA breaches are a query condition too (`RecordQuery.Sla`, written `policy[/target]:breached` in URLs). It compiles to `EXISTS` over `kernel.sla_timers` for a non-cancelled timer with a recorded breach, so a breach counts once recorded, even after the ticket stops its clock (ADR 0018).
 
@@ -73,7 +73,7 @@ The list page keeps its state in the URL: `view`, `filter[]`, `sla[]`, `label` (
 
 ### One request is one change
 
-`DraftService.ApplyBatchAsync` applies several overlay operations as one change: validated together, all recorded or none, one draft version, and undone or redone together (migration `0011_draft_batches.sql` adds `kernel.draft_commands.batch_id`). Every MCP build tool applies its operations as one batch. `add_field` gains `required_when`, `list_column`, `list_filter` and `list_group`, so "add a Vendor field, required for hardware, and let me group by it" is one reviewable step set (REQ-WS-005). A new field is offered to metrics by type through `describe_metric_fields`, which lists only fields the caller can see; a metric that reads it is restricted for viewers the field is hidden from. Undoing or redoing a step, alone or with its batch, that changes permissions needs `permissions.admin`, like applying it. The builder panel shows a batch as one change.
+`DraftService.ApplyBatchAsync` applies several overlay operations as one change: validated together, all recorded or none, one draft version (migration `0011_draft_batches.sql` adds `kernel.draft_commands.batch_id`). Since G2-M9b, any single step can be undone or redone alone when no later step depends on it, as the master spec's "undo any single step" requires (REQ-LIVE-003); `SetUndoneAsync(..., wholeChange: true)` undoes or redoes the whole change (ASM-065). Every MCP build tool applies its operations as one batch. `add_field` gains `required_when`, `list_column`, `list_filter` and `list_group`, so "add a Vendor field, required for hardware, and let me group by it" is one reviewable step set (REQ-WS-005). A new field is offered to metrics by type through `describe_metric_fields`, which lists only fields the caller can see; a metric that reads it is restricted for viewers the field is hidden from. Undoing or redoing a step that changes permissions, or any step of a batch that contains one, needs `permissions.admin`, like applying it; a change with a permission step is never split by someone without that right. The builder panel shows a batch as one change with "Undo change" on its first step and "Undo" on each of its other steps. MCP `undo_step` undoes the whole change unless `only_this_step` is set ([ADR 0007](0007-mcp-server-design.md)).
 
 ### Read paths
 
@@ -115,7 +115,7 @@ sequenceDiagram
 - Good: drill links are plain explorer URLs that can be shared and bookmarked.
 - Bad: every dashboard load runs up to 12 live queries; there is no cache yet, so a large tenant pays per view (an open dashboard refreshes every 60 s while its tab is visible).
 - Bad: rolling windows are evaluated at request time, so two viewers in different time zones can see different daily buckets for the same metric unless it names a calendar or time zone.
-- Bad: totals and figures stop at 10,000 ("10,000+"); explorer group headers stop at 50 groups, and metrics at 25; there is no "Other" bucket yet (G2-M9b).
+- Bad: totals and figures stop at 10,000 ("10,000+"); explorer group headers stop at 50 groups, and metrics at 25; there is no "Other" bucket yet (G2-M9c).
 - Neutral: heavy analytics (history over years, cross-entity joins) belong to an analytics store (G4-M6), which can reuse the same metric specs.
 
 ## Pros and cons of the options
@@ -141,10 +141,11 @@ sequenceDiagram
 ## More information
 
 - Related: [ADR 0002](0002-storage-and-query-model.md) (query model), [ADR 0003](0003-configuration-artifact-and-overlay-format.md) (overlay operations), [ADR 0007](0007-mcp-server-design.md) (MCP tools), [ADR 0018](0018-sla-and-business-hours.md) (SLA timers), [connected workspace](../spec/connected-workspace.md).
-- Assumptions: ASM-058 to ASM-068 in [assumptions](../decisions/assumptions.md).
-- Deferred to G2-M9b: guided workspace creation, labeled preview data on empty workspaces, a dashboard builder UI and new dashboard views (there is no `view.add` operation yet), an "Other" bucket, an at-risk SLA state and CSV export.
+- Assumptions: ASM-058 to ASM-068 in [assumptions](../decisions/assumptions.md) (ASM-065 revised in G2-M9b).
+- Guided workspace creation and labeled preview data on empty workspaces shipped with G2-M9b ([ADR 0020](0020-self-service-workspace-creation.md)): when the viewer can see no records of the dashboard's entity, `DashboardData.Empty` is set and every figure is a preview (`MetricResult.Preview`) with sample values and no drill.
+- Deferred to G2-M9c: a dashboard builder UI and new dashboard views (there is no `view.add` operation yet; dashboards are edited through the AI builder's metric and tile tools), an "Other" bucket, an at-risk SLA state and CSV export.
 - Verification:
-  - Unit: `Configuration.MetricSpecTests`, `Metrics.DateBucketsTests`.
-  - Integration: `Records.MetricTests` (`Every_figure_equals_the_explorer_total_it_drills_into_for_every_persona`, `Requesters_count_only_their_tickets_and_team_figures_are_restricted_for_them`, `Figures_and_group_counts_over_a_hidden_field_are_refused_and_left_out`, `Changing_who_sees_a_metric_or_undoing_a_permission_change_needs_permission_administration`, `Workload_groups_match_the_explorer_group_counts`, `Sla_breaches_count_recorded_breaches_and_drill_into_them`, `Figures_never_include_another_workspace`, `Averages_and_trends_cover_exactly_the_records_they_drill_into`), `Configuration.UpgradeTests.Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`, `Configuration.ConfigLifecycleTests.A_batch_is_one_change_applied_whole_and_undone_together`, `Mcp.McpServerTests.Agent_defines_a_metric_and_puts_it_on_the_dashboard`.
-  - Web unit: `core/drill.spec.ts`.
+  - Unit: `Configuration.MetricSpecTests`, `Metrics.DateBucketsTests`, `Metrics.QueryFilterSupportTests`.
+  - Integration: `Records.MetricTests` (`Every_figure_equals_the_explorer_total_it_drills_into_for_every_persona`, `Reports_group_and_filter_by_a_custom_field_and_drill_into_it`, `Requesters_count_only_their_tickets_and_team_figures_are_restricted_for_them`, `Figures_and_group_counts_over_a_hidden_field_are_refused_and_left_out`, `Changing_who_sees_a_metric_or_undoing_a_permission_change_needs_permission_administration`, `Workload_groups_match_the_explorer_group_counts`, `Sla_breaches_count_recorded_breaches_and_drill_into_them`, `Figures_never_include_another_workspace`, `Averages_and_trends_cover_exactly_the_records_they_drill_into`), `Configuration.UpgradeTests.Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`, `Configuration.ConfigLifecycleTests.A_batch_is_one_change_applied_whole_and_undone_together` (one step alone, then the whole change), `Mcp.McpServerTests.Agent_defines_a_metric_and_puts_it_on_the_dashboard` (also updates and removes a metric), `Api.SecurityHardeningTests.Figure_requests_are_rate_limited_per_person_and_lists_take_at_most_twenty_filters`.
+  - Web unit: `core/drill.spec.ts` (including per-bar caps).
   - Playwright: `dashboard.spec.ts`, dashboard audits in `a11y.spec.ts` (light and dark).

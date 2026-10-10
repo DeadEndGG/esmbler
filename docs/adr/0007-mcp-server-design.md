@@ -3,7 +3,7 @@ title: "ADR 0007: MCP server design"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008, REQ-WS-004, REQ-WS-005]
+requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008, REQ-WS-004, REQ-WS-005, REQ-LIVE-003]
 ---
 
 # ADR 0007: MCP server design
@@ -60,7 +60,7 @@ No tool takes a tenant or environment argument. Each call resolves the `RequestC
 | | `add_card`, `insert_node`, `update_node`, `move_node`, `remove_node` | view, parent/node, anchor, spec, `expected_version` | same | config:edit |
 | | `add_rule`, `set_rule_enabled`, `remove_rule` | rule spec or ID (actions include `emit_event` with `event` and `payload`, G2-M17), `expected_version` | same + plain-English restatement and scope | config:edit |
 | | `reset_to_default` | `element`, `expected_version` | same; appends `element.reset` ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)) | config:edit |
-| | `undo_step` | `step`, `expected_version` | new version; undoes the step's whole batch; refused for a step or batch with a permission-affecting op (`permissions.admin`, never delegated) | config:edit |
+| | `undo_step` | `step`, `expected_version`, `only_this_step?` (default false) | new version and the numbers of the steps this call undid (steps undone earlier are not repeated); by default undoes the whole change (batch) the step belongs to, and with `only_this_step` just that step (since G2-M9b, ASM-065); refused when later steps depend on it, or when the step's change contains a permission-affecting op (`permissions.admin`, never delegated) | config:edit |
 | Review | `get_draft` | none | steps, version, status | config:read |
 | | `validate_draft` | none | errors/warnings with targets and suggestions | config:read |
 | | `simulate_rule` | entity, sample record values | which rules fire, required/hidden fields; no side effects | config:read |
@@ -122,7 +122,7 @@ Metric and dashboard tools (G2-M9, [ADR 0019](0019-metrics-dashboards-and-connec
 | | `remove_metric` | `metric`, `expected_version` | `metric.remove` (tenant metrics only; refused while a tile or saved view uses it) | config:edit |
 | | `add_dashboard_tile` | `view`, `parent`, `metric`, `kind` (`kpi`, `bar`, `table`), `title?`, `tone?`, `orientation?`, `after?`, `expected_version` | `node.insert` of `display.kpi_tile`, `display.bar_chart` or `display.metric_table` | config:edit |
 
-Every build tool applies its operations as one batch through `DraftService.ApplyBatchAsync` (G2-M9, REQ-WS-005): all of them or none, one new draft version, and undoing any step undoes the whole batch. Composite tools (`add_field` with placement, a required-when rule and list settings, `add_card` with fields) report each step with a note that the steps are one change ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
+Every build tool applies its operations as one batch through `DraftService.ApplyBatchAsync` (G2-M9, REQ-WS-005): all of them or none, one new draft version. `undo_step` undoes the whole batch by default and a single step with `only_this_step` (G2-M9b; the builder panel offers "Undo change" and "Undo" the same way). Composite tools (`add_field` with placement, a required-when rule and list settings, `add_card` with fields) report each step with a note that the steps are one change ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 
 Resources: `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph` (the workspace's modules, entities with the fields the user can see, relationships and views, as currently drafted). The graph resource runs through `ToolRunner` like a tool (scope `config:read`, budget, audit) and omits hidden fields.
 

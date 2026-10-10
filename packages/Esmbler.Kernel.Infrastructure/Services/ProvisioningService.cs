@@ -9,6 +9,7 @@ using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Esmbler.Kernel.Infrastructure.Services;
 
@@ -38,7 +39,16 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
         var tenantId = Guid.NewGuid();
         if (seed.CreatedBy is { } creator)
         {
-            var allowed = await database.AnonymousAsync(db => db.Database.SqlQuery<bool>($"SELECT kernel.create_workspace({tenantId}, {seed.Slug}, {seed.Name}, {creator}, {seed.CreationLimit}) AS \"Value\"").SingleAsync(ct), ct);
+            bool allowed;
+            try
+            {
+                allowed = await database.AnonymousAsync(db => db.Database.SqlQuery<bool>($"SELECT kernel.create_workspace({tenantId}, {seed.Slug}, {seed.Name}, {creator}, {seed.CreationLimit}) AS \"Value\"").SingleAsync(ct), ct);
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InsufficientPrivilege)
+            {
+                throw KernelException.Forbidden("Your account cannot create workspaces.", suggestion: "Ask an administrator to check that your account is enabled.");
+            }
+
             if (!allowed)
             {
                 throw new KernelException("workspace_limit", $"You have already created {seed.CreationLimit} workspaces, the most one person may create.", 409, suggestion: "Ask a platform operator to raise the limit or to create the workspace.");

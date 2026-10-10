@@ -97,8 +97,23 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 var cfg = artifact.Config;
                 var q = new QueryCompiler.Ctx(cfg, viewEntity, perms);
                 var where = QueryCompiler.Where(new RecordQuery { Entity = viewEntity.Id }, cfg, viewEntity, perms, q);
-                await using var cmd = session.Command($"SELECT EXISTS (SELECT 1 FROM kernel.records r WHERE {where})", q.Parameters);
-                if (!(bool)(await cmd.ExecuteScalarAsync(ct))!)
+                bool any;
+                await session.SavepointAsync(ct);
+                try
+                {
+                    await session.LimitAsync(ct);
+                    await using var cmd = session.Command($"SELECT EXISTS (SELECT 1 FROM kernel.records r WHERE {where})", q.Parameters);
+                    any = (bool)(await cmd.ExecuteScalarAsync(ct))!;
+                    await session.ReleaseAsync(ct);
+                }
+                catch (Exception ex) when (ex is BudgetExceededException or PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
+                {
+                    // Out of time: show the real (zero) figures rather than fail the dashboard.
+                    await session.RollbackAsync(ct);
+                    any = true;
+                }
+
+                if (!any)
                 {
                     var previews = results.Select(r => Preview(cfg, cfg.FindMetric(r.Id)!, timeZone, artifact.Revision)).ToList();
                     return new DashboardData(view.Id, artifact.Revision, previews, Empty: true);

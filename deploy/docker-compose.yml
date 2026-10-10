@@ -71,8 +71,10 @@ services:
       Esmbler__Database__Migrator: Host=postgres;Database=esmbler;Username=esmbler_migrator;Password=${ESMBLER_MIGRATOR_PASSWORD:-dev-only-migrator};Gss Encryption Mode=Disable
       Esmbler__MigrateOnStartup: "true"
       Esmbler__SeedDemoData: "true"
-      # Local development only: acceptance runs create a workspace each time (default limit is 5 per person).
-      Esmbler__MaxWorkspacesPerPerson: "500"
+      # Local development only: self-service workspace creation is off by default (ADR 0020); acceptance runs create a
+      # workspace each time, so the per-person limit (default 5) is raised here.
+      Esmbler__AllowWorkspaceCreation: "true"
+      Esmbler__MaxWorkspacesPerPerson: "100"
       # The API is published for local tooling, but browsers reach it through the web container's nginx.
       Esmbler__Auth__TrustForwardedHeaders: "true"
       Esmbler__Assistant__McpUrl: http://mcp:8080/mcp

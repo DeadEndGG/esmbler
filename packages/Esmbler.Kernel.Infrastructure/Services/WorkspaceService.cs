@@ -6,6 +6,7 @@ using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Modules;
 using Esmbler.Sdk.Specs;
+using Microsoft.EntityFrameworkCore;
 
 namespace Esmbler.Kernel.Infrastructure.Services;
 
@@ -46,7 +47,7 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
             throw KernelException.Forbidden("Creating workspaces is turned off on this platform.", suggestion: "Ask a platform operator to create the workspace.");
         }
 
-        var name = (request.Name ?? string.Empty).Trim();
+        var name = Clean(request.Name);
         if (name.Length is < 2 or > MaxNameLength)
         {
             throw new KernelException("invalid_name", $"Give the workspace a name of 2 to {MaxNameLength} characters.", 400, "name", "For example \"Riverside IT\".");
@@ -55,7 +56,8 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
         var (module, starter) = catalog.Modules.SelectMany(m => m.Starters.Select(s => (m, s))).FirstOrDefault(x => x.s.Id == request.Starter);
         if (starter is null)
         {
-            throw new KernelException("unknown_starter", $"There is no starter '{request.Starter}'.", 400, "starter", $"Choose one of: {string.Join(", ", Starters().Select(s => s.Id))}.");
+            var asked = request.Starter is { Length: > 40 } tooLong ? tooLong[..40] + "…" : request.Starter;
+            throw new KernelException("unknown_starter", $"There is no starter '{asked}'.", 400, "starter", $"Choose one of: {string.Join(", ", Starters().Select(s => s.Id))}.");
         }
 
         var groups = new List<GroupSeed>();
@@ -64,7 +66,7 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
             var groupName = group.Name ?? group.Key;
             if (group.Question is not null)
             {
-                var answer = request.Answers?.GetValueOrDefault(group.Key)?.Trim();
+                var answer = Clean(request.Answers?.GetValueOrDefault(group.Key));
                 if (string.IsNullOrEmpty(answer) || answer.Length > MaxNameLength)
                 {
                     throw new KernelException("missing_answer", $"Answer \"{group.Question}\" (1 to {MaxNameLength} characters).", 400, group.Key, group.Example is null ? null : $"For example \"{group.Example}\".");
@@ -88,6 +90,9 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);
+
+        // Only now does the workspace appear in the switcher; a run that failed earlier stays 'provisioning' and hidden.
+        await database.AnonymousAsync(db => db.Database.SqlQuery<bool>($"SELECT kernel.activate_workspace({tenant.TenantId}, {principalId}) AS \"Value\"").SingleAsync(ct), ct);
         return new CreatedWorkspace(tenant.TenantId, seed.Slug, name);
     }
 
@@ -114,6 +119,10 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
         var questions = starter.Groups.Where(g => g.Question is not null).Select(g => new StarterQuestion(g.Key, g.Question!, g.Help, g.Example)).ToList();
         return new StarterView(starter.Id, starter.Name, starter.Description, module.Id, module.Name, release.Version, starter.Keywords, questions, [.. surfaces.Where(s => s.Items.Count > 0)]);
     }
+
+    /// <summary>Trims and drops control and format characters (e.g. bidi overrides) that could spoof names in the switcher.</summary>
+    private static string Clean(string? value) =>
+        new string([.. (value ?? string.Empty).Where(c => char.GetUnicodeCategory(c) is not (System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format))]).Trim();
 
     /// <summary>A URL-safe, unguessable-enough slug from the name: "Riverside IT" becomes "riverside-it-k3x9q".</summary>
     private static string Slug(string name)

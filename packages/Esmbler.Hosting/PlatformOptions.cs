@@ -20,8 +20,11 @@ public sealed class PlatformOptions
     /// <summary>Dashboard, metric and group-count requests allowed per person per minute.</summary>
     public int MetricRequestsPerMinute { get; set; } = 120;
 
-    /// <summary>Whether signed-in people may create workspaces from a starter (REQ-WS-001).</summary>
-    public bool AllowWorkspaceCreation { get; set; } = true;
+    /// <summary>
+    /// Whether signed-in people may create workspaces from a starter (REQ-WS-001). Off by default: every created
+    /// workspace is a new tenant, so operators turn self-service on deliberately (threat model T-72).
+    /// </summary>
+    public bool AllowWorkspaceCreation { get; set; }
 
     /// <summary>Workspaces one person may create (self-service); operators provision more.</summary>
     public int MaxWorkspacesPerPerson { get; set; } = 5;

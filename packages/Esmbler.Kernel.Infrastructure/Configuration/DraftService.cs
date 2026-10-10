@@ -191,8 +191,10 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             var group = wholeChange && command.BatchId is { } batch ? commands.Where(c => c.BatchId == batch && c.Undone != undone).ToList() : [command];
             var inGroup = group.Select(c => c.Seq).ToHashSet();
 
-            // Undoing or redoing a permission change is itself a permission change (REQ-AUTHZ-008).
-            if (!perms.Can(PlatformActions.PermissionsAdmin) && group.Any(c => SpecJson.Deserialize<OverlayOp>(c.Op).AffectsPermissions))
+            // Undoing or redoing a permission change is itself a permission change (REQ-AUTHZ-008). A change that includes
+            // one is never split by someone without that right: undoing a companion step could remove its safeguard.
+            var change = command.BatchId is { } changeBatch ? commands.Where(c => c.BatchId == changeBatch) : group;
+            if (!perms.Can(PlatformActions.PermissionsAdmin) && change.Any(c => SpecJson.Deserialize<OverlayOp>(c.Op).AffectsPermissions))
             {
                 throw KernelException.Forbidden(
                     ctx.AgentId is null ? "Undoing or redoing a change to who can see or edit things requires the permission administration right." : "AI agents cannot undo or redo permission changes. Ask an administrator.",

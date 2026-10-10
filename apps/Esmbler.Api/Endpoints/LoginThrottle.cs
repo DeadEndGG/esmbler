@@ -19,6 +19,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
 
     /// <summary>Per-person limit for dashboards, metrics and explorer group counts.</summary>
     public const string QueryPolicy = "figures";
+
+    /// <summary>Per-person limit for creating workspaces (each one is a new tenant).</summary>
+    public const string WorkspacePolicy = "workspaces";
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -86,7 +89,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
                 context.HttpContext.Response.ContentType = "application/problem+json";
                 var title = context.HttpContext.Request.Path.StartsWithSegments("/api/auth")
                     ? "Too many sign-in attempts from this address. Wait a minute and try again."
-                    : "Too many requests for figures in a short time. Wait a minute and try again.";
+                    : context.HttpContext.Request.Path.StartsWithSegments("/api/workspaces")
+                        ? "Too many workspaces created in a short time. Wait a minute and try again."
+                        : "Too many requests for figures in a short time. Wait a minute and try again.";
                 await context.HttpContext.Response.WriteAsJsonAsync(new { status = 429, title, code = "rate_limited" }, ct);
             };
             o.AddPolicy(Policy, http => RateLimitPartition.GetFixedWindowLimiter(
@@ -96,6 +101,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.AddPolicy(QueryPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.MetricRequestsPerMinute, 1), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(WorkspacePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             o.AddPolicy(RefreshPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.Auth.LoginAttemptsPerMinute, 1) * 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

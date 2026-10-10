@@ -8,6 +8,7 @@ using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Records;
 using Esmbler.Kernel.Infrastructure.Services;
 using Esmbler.Kernel.Tenancy;
+using Microsoft.EntityFrameworkCore;
 
 namespace Esmbler.IntegrationTests.Configuration;
 
@@ -21,7 +22,10 @@ public class WorkspaceCreationTests(PlatformFixture f)
 {
     private const string Ticket = "core.tickets.ticket";
 
-    private WorkspaceService Workspaces => f.Get<WorkspaceService>();
+    // Self-service creation is off by default (ADR 0020); these tests turn it on explicitly.
+    private WorkspaceService Workspaces => Service(enabled: true, limit: 5);
+
+    private WorkspaceService Service(bool enabled, int limit) => new(f.Get<ModuleCatalog>(), f.Get<ProvisioningService>(), f.Get<Database>(), new WorkspaceCreationPolicy(enabled, limit));
 
     private async Task<RequestContext> EnterAsync(Guid principal, Guid tenantId)
     {
@@ -80,7 +84,7 @@ public class WorkspaceCreationTests(PlatformFixture f)
     {
         var home = await f.NewTenantAsync("wsl", "1.6.0");
         var person = home.Users["riley"];
-        var limited = new WorkspaceService(f.Get<ModuleCatalog>(), f.Get<ProvisioningService>(), f.Get<Database>(), new WorkspaceCreationPolicy(true, 1));
+        var limited = Service(enabled: true, limit: 1);
         var answers = new Dictionary<string, string> { ["service_desk"] = "Desk" };
 
         var missing = await Assert.ThrowsAsync<KernelException>(() => limited.CreateAsync(person, "Riley", new CreateWorkspaceRequest("Team A", "ticketing", null), default));
@@ -92,7 +96,54 @@ public class WorkspaceCreationTests(PlatformFixture f)
         var over = await Assert.ThrowsAsync<KernelException>(() => limited.CreateAsync(person, "Riley", new CreateWorkspaceRequest("Team B", "ticketing", answers), default));
         Assert.Equal(("workspace_limit", 409), (over.Code, over.Status));
 
-        var off = new WorkspaceService(f.Get<ModuleCatalog>(), f.Get<ProvisioningService>(), f.Get<Database>(), new WorkspaceCreationPolicy(false, 5));
+        var off = Service(enabled: false, limit: 5);
         Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => off.CreateAsync(person, "Riley", new CreateWorkspaceRequest("Team C", "ticketing", answers), default))).Status);
+        Assert.False(f.Get<WorkspaceService>().Policy.Enabled);
+
+        // Only enabled people: the database refuses any other principal, e.g. an AI agent's.
+        var agent = await f.Get<IdentityService>().EnsureAgentAsync(home.Users["admin"], home.TenantId, default);
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Workspaces.CreateAsync(agent, "Agent", new CreateWorkspaceRequest("Agent space", "ticketing", answers), default))).Status);
+
+        // Names lose control and bidi-override characters.
+        var spoof = await Service(true, 5).CreateAsync(home.Users["jordan"], "Jordan", new CreateWorkspaceRequest("Acme\u202e moc.evil", "ticketing", answers), default);
+        Assert.Equal("Acme moc.evil", spoof.Name);
+    }
+
+    [Fact]
+    public async Task The_privileged_functions_fail_closed_and_only_the_creator_activates()
+    {
+        var home = await f.NewTenantAsync("wsf", "1.6.0");
+        var person = home.Users["riley"];
+        var db = f.Get<Database>();
+        await Assert.ThrowsAnyAsync<Exception>(() => db.AnonymousAsync(x => x.Database.SqlQuery<bool>($"SELECT kernel.create_workspace({Guid.NewGuid()}, {"w-nulllimit"}, {"Null limit"}, {person}, {(int?)null}) AS \"Value\"").SingleAsync(), default));
+        await Assert.ThrowsAnyAsync<Exception>(() => db.AnonymousAsync(x => x.Database.SqlQuery<bool>($"SELECT kernel.create_workspace({Guid.NewGuid()}, {"w-nullcreator"}, {"Null creator"}, {(Guid?)null}, {5}) AS \"Value\"").SingleAsync(), default));
+
+        var created = await Workspaces.CreateAsync(person, "Riley", new CreateWorkspaceRequest("Activated", "ticketing", new Dictionary<string, string> { ["service_desk"] = "Desk" }), default);
+        var other = await db.AnonymousAsync(x => x.Database.SqlQuery<bool>($"SELECT kernel.activate_workspace({created.TenantId}, {home.Users["jordan"]}) AS \"Value\"").SingleAsync(), default);
+        Assert.False(other);
+        Assert.Contains(await f.Get<IdentityService>().TenantsForAsync(person, default), t => t.TenantId == created.TenantId);
+    }
+
+    [Fact]
+    public async Task Parallel_creations_never_exceed_the_per_person_limit()
+    {
+        var home = await f.NewTenantAsync("wsp", "1.6.0");
+        var limited = Service(enabled: true, limit: 1);
+        var answers = new Dictionary<string, string> { ["service_desk"] = "Desk" };
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 3).Select(async i =>
+        {
+            try
+            {
+                await limited.CreateAsync(home.Users["riley"], "Riley", new CreateWorkspaceRequest($"Parallel {i}", "ticketing", answers), default);
+                return "created";
+            }
+            catch (KernelException ex)
+            {
+                return ex.Code;
+            }
+        }));
+        Assert.Equal(1, attempts.Count(a => a == "created"));
+        Assert.All(attempts.Where(a => a != "created"), a => Assert.Equal("workspace_limit", a));
+        Assert.Single(await f.Get<IdentityService>().TenantsForAsync(home.Users["riley"], default), t => t.Name.StartsWith("Parallel", StringComparison.Ordinal));
     }
 }

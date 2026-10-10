@@ -3,7 +3,7 @@ title: "ADR 0010: Database migrations and roles"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004, REQ-EVT-005, REQ-EVT-009]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004, REQ-EVT-005, REQ-EVT-009, REQ-WS-001]
 ---
 
 # ADR 0010: Database migrations and roles
@@ -37,7 +37,7 @@ Created once by `deploy/postgres/00-roles.sh` on first Postgres start; passwords
 |---|---|---|---|---|
 | `esmbler_migrator` | LOGIN, NOSUPERUSER, NOCREATEROLE, NOBYPASSRLS; may `SET ROLE esmbler_definer` (without inheriting it) | database `esmbler`, schema `kernel`, all tables | full DDL | Migration runner only |
 | `esmbler_app` | LOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, not owner | nothing | `SELECT, INSERT, UPDATE, DELETE` on `kernel` tables; `INSERT, SELECT` only on `kernel.audit_log`; no `DELETE` on `kernel.tenants`, `kernel.principals`, `kernel.config_artifacts`; `SELECT, INSERT` only on `kernel.workflow_definitions`; `SELECT, INSERT, UPDATE` only on `kernel.approvals`, `kernel.approval_steps`, `kernel.approval_delegations`; `EXECUTE` on the privileged functions below | API, MCP, Worker |
-| `esmbler_definer` | NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, BYPASSRLS | the `SECURITY DEFINER` functions | `USAGE, CREATE` on schema `kernel`; `SELECT` on `kernel.principals`; `SELECT, INSERT` on `kernel.tenants`; `SELECT, UPDATE` on `kernel.outbox`, `kernel.jobs` | Nobody logs in as it; privileged functions run with its rights |
+| `esmbler_definer` | NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, BYPASSRLS | the `SECURITY DEFINER` functions | `USAGE, CREATE` on schema `kernel`; `SELECT` on `kernel.principals`, `kernel.refresh_tokens`, `kernel.inbox`, `kernel.consumer_failures`; `SELECT, INSERT` on `kernel.tenants` and `UPDATE` only on its `authz_revision` (0003) and `status` (0013) columns; `SELECT, UPDATE` on `kernel.outbox`, `kernel.jobs`; `DELETE` on `kernel.outbox`, `kernel.inbox`, `kernel.consumer_failures` (0009) | Nobody logs in as it; privileged functions run with its rights |
 | `esmbler_openfga` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS | database `openfga` | none in `esmbler` | OpenFGA datastore ([ADR 0004](0004-authorization-engine.md)) |
 | `esmbler_backup` (planned, Gate 2) | LOGIN, NOSUPERUSER, BYPASSRLS | nothing | `SELECT` on all tables (`pg_read_all_data`) | `pg_dump` and tenant restore-extract |
 
@@ -101,6 +101,8 @@ Only `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler
 | `kernel.claim_jobs(worker, batch, lease_seconds)` | Fair worker claim of jobs ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `kernel.refresh_lookup(hash)` | Look up a refresh token by its hash before the principal is known ([ADR 0011](0011-identity-and-development-authentication.md)); migration `0002_refresh_tokens.sql` |
 | `kernel.purge_outbox(days)` | Outbox retention across tenants: deletes dispatched events older than the window with their inbox marks and consumer failures, nothing else ([ADR 0017](0017-event-audit-alert-notification-services.md)); migration `0009_event_platform.sql` |
+| `kernel.create_workspace(id, slug, name, creator, limit)` | Self-service workspace creation ([ADR 0020](0020-self-service-workspace-creation.md)); migration `0012_workspace_creation.sql`, replaced in `0013_workspace_provisioning_state.sql` (as its owner, through `SET ROLE`). Fails closed on a null argument or a limit below 1; refuses (`42501`, surfaced as `403`) a creator that is not an enabled `kind = 'user'` principal; under a per-person advisory lock, counts the creator's active workspaces plus provisioning ones younger than 15 minutes and inserts the tenant row (with `created_by`, status `provisioning`) only when the count is below `limit`; returns false otherwise. It trusts its creator and limit, so only `ProvisioningService` calls it, with the creator from the session and the limit from `Esmbler:MaxWorkspacesPerPerson` |
+| `kernel.activate_workspace(id, creator)` | Sets a `provisioning` tenant that `creator` created to `active` and returns whether it did; nothing else ([ADR 0020](0020-self-service-workspace-creation.md)); migration `0013_workspace_provisioning_state.sql`. `WorkspaceService` calls it after provisioning and the `workspace.create` audit entry; until then the workspace is not listed or switchable |
 | `kernel.bump_authz_revision()` | Trigger on `memberships`, `group_members` and `role_assignments` that increments `kernel.tenants.authz_revision` in the same transaction, so permission caches never reuse facts from before a revocation ([ADR 0004](0004-authorization-engine.md)); migration `0003_authz_revision.sql`. `EXECUTE` stays with `PUBLIC` because PostgreSQL only calls it as a trigger, and `esmbler_definer` may update only that column |
 
 The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_allow_listed_security_definer_functions_exist` fails if any other `SECURITY DEFINER` function appears in `kernel`, or if one is not owned by `esmbler_definer` or lacks the fixed `search_path`.
@@ -119,7 +121,9 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0008_approval_requesters.sql` | `kernel.approvals.requesters`: the separation-of-duties snapshot ([ADR 0016](0016-approvals.md)) |
 | `0009_event_platform.sql` | `kernel.consumer_failures` (per-consumer delivery state, FORCE RLS) and `kernel.purge_outbox` ([ADR 0017](0017-event-audit-alert-notification-services.md)) |
 | `0010_sla.sql` | `kernel.sla_timers` (one row per record, SLA target and cycle with a snapshot of target, goal and calendar; FORCE RLS; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`) ([ADR 0018](0018-sla-and-business-hours.md)) |
-| `0011_draft_batches.sql` | `kernel.draft_commands.batch_id`: steps applied by one request share a batch, applied whole and undone together (REQ-WS-005, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)) |
+| `0011_draft_batches.sql` | `kernel.draft_commands.batch_id`: steps applied by one request share a batch, applied whole or not at all; the batch can be undone as one change or step by step (REQ-WS-005, REQ-LIVE-003, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)) |
+| `0012_workspace_creation.sql` | `kernel.tenants.created_by` (null for operator and seed provisioning) and the privileged function `kernel.create_workspace` that enforces the per-person workspace limit (REQ-WS-001, [ADR 0020](0020-self-service-workspace-creation.md)) |
+| `0013_workspace_provisioning_state.sql` | `kernel.tenants.status` gains `provisioning`; `esmbler_definer` may update `status`; `kernel.create_workspace` replaced (fails closed, enabled people only, inserts as `provisioning`, counts active plus recent provisioning workspaces) and the new privileged function `kernel.activate_workspace` (REQ-WS-001, [ADR 0020](0020-self-service-workspace-creation.md)) |
 
 ### Consequences
 

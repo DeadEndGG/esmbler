@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { Api } from '../core/api';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Session } from '../core/session';
@@ -35,11 +36,15 @@ import { Icon } from '../ui/icon';
               </div>
             </li>
           } @empty {
-            <li class="rounded-md border border-dashed border-strong p-6 text-center text-muted">You are not a member of any workspace yet. Create one to get started.</li>
+            <li class="rounded-md border border-dashed border-strong p-6 text-center text-muted">You are not a member of any workspace yet.{{ canCreate() ? ' Create one to get started.' : ' Ask an administrator to invite you.' }}</li>
           }
         </ul>
         <div class="mt-5 flex justify-between gap-2 border-t border-subtle pt-4">
-          <a class="btn btn-sm" routerLink="/workspaces/new"><esm-icon name="plus" [size]="14" /> Create a workspace</a>
+          @if (canCreate()) {
+            <a class="btn btn-sm" routerLink="/workspaces/new"><esm-icon name="plus" [size]="14" /> Create a workspace</a>
+          } @else {
+            <span></span>
+          }
           <button class="btn btn-ghost btn-sm" (click)="signOut()"><esm-icon name="log-out" [size]="14" /> Sign out</button>
         </div>
       </section>
@@ -50,6 +55,14 @@ export class WorkspacesPage {
   protected readonly auth = inject(Auth);
   private readonly router = inject(Router);
   private readonly session = inject(Session);
+  /** Self-service creation is an operator setting (off by default, ADR 0020). */
+  protected readonly canCreate = signal(false);
+
+  constructor() {
+    inject(Api)
+      .get<{ enabled: boolean }>('/api/starters')
+      .then((r) => this.canCreate.set(r.enabled), () => this.canCreate.set(false));
+  }
 
   protected async open(slug: string, env: string): Promise<void> {
     await this.auth.switchTo(slug, env);

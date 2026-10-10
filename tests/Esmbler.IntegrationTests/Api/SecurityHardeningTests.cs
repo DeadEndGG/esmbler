@@ -60,6 +60,26 @@ public class SecurityHardeningTests(PlatformFixture platform) : IClassFixture<Ap
     }
 
     [Fact]
+    public async Task Workspace_creation_needs_a_signed_in_person_and_is_off_unless_an_operator_turns_it_on()
+    {
+        // ADR 0020 / T-72.
+        var t = await platform.NewTenantAsync("wapi", "1.6.0");
+        var body = new { name = "Shadow IT", starter = "ticketing", answers = new { service_desk = "Desk" } };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Factory.CreateClient().PostAsJsonAsync("/api/workspaces", body)).StatusCode);
+
+        var signedIn = await Factory.SignInAsync($"riley@{Slug(t)}.example", Slug(t));
+        var off = await signedIn.PostAsJsonAsync("/api/workspaces", body);
+        Assert.Equal(HttpStatusCode.Forbidden, off.StatusCode);
+        Assert.False((await (await signedIn.GetAsync("/api/starters")).Content.ReadFromJsonAsync<JsonObject>(ApiFactory.Json))!["enabled"]!.GetValue<bool>());
+
+        // Agent tokens (MCP audience) never reach it.
+        var (_, agentToken) = await McpFactory.AgentAsync(Factory, $"admin@{Slug(t)}.example", Slug(t));
+        var agent = Factory.CreateClient();
+        agent.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", agentToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await agent.PostAsJsonAsync("/api/workspaces", body)).StatusCode);
+    }
+
+    [Fact]
     public async Task Repeated_wrong_passwords_lock_the_account_temporarily()
     {
         var t = await platform.NewTenantAsync("lk");

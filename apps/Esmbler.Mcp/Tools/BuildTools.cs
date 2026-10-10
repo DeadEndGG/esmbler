@@ -472,8 +472,9 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
     public Task<CallToolResult> UndoStep(int step, int expected_version, [Description("Undo only this step, not the rest of its change.")] bool only_this_step = false) =>
         runner.RunAsync("undo_step", AgentScopes.ConfigEdit, step.ToString(System.Globalization.CultureInfo.InvariantCulture), async ctx =>
         {
+            var before = (await drafts.CurrentAsync(ctx, default))?.Steps.Where(s => s.Undone).Select(s => s.Seq).ToHashSet() ?? [];
             var state = await drafts.SetUndoneAsync(ctx, step, true, expected_version, default, wholeChange: !only_this_step);
-            return new { state.Version, undone = state.Steps.Where(s => s.Undone).Select(s => s.Seq) };
+            return new { state.Version, undone = state.Steps.Where(s => s.Undone && !before.Contains(s.Seq)).Select(s => s.Seq) };
         });
 
     [McpServerTool(Name = "add_catalog_item"), Description("Add a service catalog item: the questions (variables) requesters answer and the fulfillment tasks that run, with dependencies (dependsOn) and optional conditions (when, over variables.<key>). Tasks start when an agent starts fulfillment; dependents wait for their prerequisites.")]

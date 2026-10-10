@@ -24,7 +24,7 @@ public static class WorkspaceEndpoints
 
             var principal = RequestContextFactory.PrincipalId(user);
             var created = await workspaces.CreateAsync(principal, await identity.DisplayNameAsync(principal, ct), body, ct);
-            return Results.Created($"/api/workspaces/{created.Slug}", created);
-        }).WithTags("Workspaces").RequireAuthorization().RequireRateLimiting(LoginThrottle.QueryPolicy);
+            return Results.Json(created, statusCode: StatusCodes.Status201Created);
+        }).WithTags("Workspaces").RequireAuthorization().RequireRateLimiting(LoginThrottle.WorkspacePolicy);
     }
 }

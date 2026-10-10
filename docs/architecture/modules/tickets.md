@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-002, REQ-WS-004]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) and `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) and `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -374,6 +374,22 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/SlaPolicyTests.cs` (`Release_1_
 **Upgrade note:** the Unassigned saved view now also leaves out resolved tickets. In 1.5.0 it left out only closed and cancelled tickets. This is intended: the view and the Unassigned tile count the same tickets (ASM-068).
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/MetricSpecTests.cs` (`Release_1_6_0_ships_an_overview_dashboard_built_from_shared_metrics`), `tests/Esmbler.IntegrationTests/Records/MetricTests.cs`, `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs` (`Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`), Playwright `dashboard.spec.ts`.
+
+## Starter: IT ticketing
+
+`TicketsModule.Starters` offers one starter for guided workspace creation ([ADR 0020](../../adr/0020-self-service-workspace-creation.md), REQ-WS-001). It adds no configuration: creating a workspace installs the newest release, which already connects forms, explorers, the Overview dashboard, navigation, roles and the catalog.
+
+| Property | Value |
+| --- | --- |
+| ID | `ticketing` |
+| Name | IT ticketing |
+| Keywords | ticket, ticketing, help desk, helpdesk, service desk, it support, incident, support |
+| Team `service_desk` | Asked: "Which team receives new tickets?" (example "IT Support"). Holds the agent role; the creator joins it. Tickets no other rule routes go to this team |
+| Team `network` | Named Network, agent role, starts empty |
+
+The group keys match the release's assignment rules. A new workspace has no sample tickets (ASM-073); its Overview shows labeled preview figures until the first ticket arrives (ASM-071).
+
+Evidence: `tests/Esmbler.IntegrationTests/Configuration/WorkspaceCreationTests.cs`, Playwright `workspace.spec.ts` (`@REQ-ACC-15`).
 
 ## Related documents
 

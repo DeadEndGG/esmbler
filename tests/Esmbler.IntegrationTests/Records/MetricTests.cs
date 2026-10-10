@@ -177,7 +177,17 @@ public class MetricTests(PlatformFixture f)
         var hidden = await drafts.ApplyAsync(admin, new SetFieldAccess { PermissionSet = "core.tickets.ps_requester", Entity = Ticket, Field = "category", Access = "hidden" }, draft.Version, "ui", default);
         var undo = await Assert.ThrowsAsync<KernelException>(() => drafts.SetUndoneAsync(builder, hidden.Seq, true, hidden.Version, default));
         Assert.Equal(403, undo.Status);
-        Assert.True((await drafts.SetUndoneAsync(admin, hidden.Seq, true, hidden.Version, default)).Steps.Single().Undone);
+        var undone = await drafts.SetUndoneAsync(admin, hidden.Seq, true, hidden.Version, default);
+        Assert.True(undone.Steps.Single().Undone);
+
+        // A change that contains a permission step is never split by someone without that right.
+        var change = await drafts.ApplyBatchAsync(admin,
+        [
+            new SetFieldAccess { PermissionSet = "core.tickets.ps_requester", Entity = Ticket, Field = "impact", Access = "hidden" },
+            new AddField { Entity = Ticket, Field = new FieldSpec { Key = "tenant__impact_note", Type = FieldTypes.ShortText, Label = "Impact note" } },
+        ], undone.Version, "ui", default);
+        var split = await Assert.ThrowsAsync<KernelException>(() => drafts.SetUndoneAsync(builder, change.Steps[^1].Seq, true, change.Version, default));
+        Assert.Equal(403, split.Status);
     }
 
     [Fact]
