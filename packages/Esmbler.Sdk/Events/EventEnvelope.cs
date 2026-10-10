@@ -78,6 +78,8 @@ public static class EventTypes
     public const string DraftChanged = "draft.changed";
 
     // Platform service events (ADR 0016, ADR 0017).
+    public const string SlaWarning = "platform.sla.warning";
+    public const string SlaBreached = "platform.sla.breached";
     public const string ApprovalRequested = "platform.approval.requested";
     public const string ApprovalApproved = "platform.approval.approved";
     public const string ApprovalRejected = "platform.approval.rejected";

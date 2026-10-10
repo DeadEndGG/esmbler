@@ -118,6 +118,7 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0007_approvals.sql` | `kernel.approvals` (one per request approval, with a policy snapshot; at most one pending per record), `kernel.approval_steps` and `kernel.approval_delegations`; FORCE RLS on tenant and environment; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`, so decisions stay an audit trail ([ADR 0016](0016-approvals.md)) |
 | `0008_approval_requesters.sql` | `kernel.approvals.requesters`: the separation-of-duties snapshot ([ADR 0016](0016-approvals.md)) |
 | `0009_event_platform.sql` | `kernel.consumer_failures` (per-consumer delivery state, FORCE RLS) and `kernel.purge_outbox` ([ADR 0017](0017-event-audit-alert-notification-services.md)) |
+| `0010_sla.sql` | `kernel.sla_timers` (one row per record, SLA target and cycle with a snapshot of target, goal and calendar; FORCE RLS; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`) ([ADR 0018](0018-sla-and-business-hours.md)) |
 
 ### Consequences
 

@@ -78,6 +78,22 @@
         }
       }
     },
+    "platform_sla_breached": {
+      "address": "platform.sla.breached",
+      "messages": {
+        "platform_sla_breached": {
+          "$ref": "#/components/messages/platform_sla_breached"
+        }
+      }
+    },
+    "platform_sla_warning": {
+      "address": "platform.sla.warning",
+      "messages": {
+        "platform_sla_warning": {
+          "$ref": "#/components/messages/platform_sla_warning"
+        }
+      }
+    },
     "record_created": {
       "address": "record.created",
       "messages": {
@@ -182,6 +198,20 @@
         "$ref": "#/channels/platform_approval_requested"
       },
       "summary": "core.platform publishes approval requested."
+    },
+    "publish_platform_sla_breached": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_sla_breached"
+      },
+      "summary": "core.platform publishes sla breached."
+    },
+    "publish_platform_sla_warning": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_sla_warning"
+      },
+      "summary": "core.platform publishes sla at risk."
     },
     "publish_record_created": {
       "action": "send",
@@ -736,6 +766,124 @@
         "x-esmbler-source": "core.platform",
         "x-esmbler-subject-entity": null,
         "x-esmbler-severity": "low",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_sla_breached": {
+        "name": "platform.sla.breached",
+        "title": "SLA breached",
+        "summary": "An SLA target passed its goal; the breach is recorded and stays recorded (ADR 0018).",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.sla.breached"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "policy": {
+                      "type": "string",
+                      "description": "SLA policy ID."
+                    },
+                    "target": {
+                      "type": "string",
+                      "description": "Target ID, e.g. response or resolution."
+                    },
+                    "goal_minutes": {
+                      "type": "number",
+                      "description": "Goal in business or elapsed minutes."
+                    },
+                    "due_at": {
+                      "type": "string",
+                      "description": "When the goal is (or was) due, UTC."
+                    },
+                    "timer": {
+                      "type": "string",
+                      "description": "SLA timer ID."
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "target",
+                    "goal_minutes",
+                    "timer"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "high",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_sla_warning": {
+        "name": "platform.sla.warning",
+        "title": "SLA at risk",
+        "summary": "An SLA target reached its warning threshold while running (ADR 0018).",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.sla.warning"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "policy": {
+                      "type": "string",
+                      "description": "SLA policy ID."
+                    },
+                    "target": {
+                      "type": "string",
+                      "description": "Target ID, e.g. response or resolution."
+                    },
+                    "goal_minutes": {
+                      "type": "number",
+                      "description": "Goal in business or elapsed minutes."
+                    },
+                    "due_at": {
+                      "type": "string",
+                      "description": "When the goal is (or was) due, UTC."
+                    },
+                    "timer": {
+                      "type": "string",
+                      "description": "SLA timer ID."
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "target",
+                    "goal_minutes",
+                    "timer"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "medium",
         "x-esmbler-sensitivity": "internal",
         "x-esmbler-category": "operational"
       },

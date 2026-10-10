@@ -109,7 +109,9 @@ public static class JobScheduler
             return null;
         }
 
-        if (await db.Jobs.CountAsync(j => j.Status == "pending", ct) >= MaxPendingPerEnvironment)
+        // Keyed timers (one live job per SLA timer, approval stage, …) are bounded by the objects they belong to and
+        // must never be refused, or a deadline would silently stop firing; the quota caps open-ended work.
+        if (request.DedupKey is null && await db.Jobs.CountAsync(j => j.Status == "pending", ct) >= MaxPendingPerEnvironment)
         {
             AuditWriter.AddSystem(db, tenantId, environmentId, "quota.jobs_exceeded", "job", request.Kind, new { limit = MaxPendingPerEnvironment });
             await db.SaveChangesAsync(ct);

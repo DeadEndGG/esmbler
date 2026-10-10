@@ -79,6 +79,16 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             ValidateEventType(config, eventType, d);
         }
 
+        foreach (var calendar in config.BusinessCalendars)
+        {
+            ValidateBusinessCalendar(calendar, d);
+        }
+
+        foreach (var sla in config.SlaPolicies)
+        {
+            ValidateSlaPolicy(config, sla, d);
+        }
+
         foreach (var wf in config.Workflows)
         {
             ValidateWorkflow(config, wf, d);
@@ -134,6 +144,8 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
 
         Check(config.Entities.Select(e => e.Id), "entity");
+        Check(config.BusinessCalendars.Select(c => c.Id), "business calendar");
+        Check(config.SlaPolicies.Select(p => p.Id), "SLA policy");
         Check(config.ChoiceLists.Select(c => c.Id), "choice list");
         Check(config.Rules.Select(r => r.Id), "rule");
         Check(config.Views.Select(v => v.Id), "view");
@@ -900,6 +912,241 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
 
         CheckExpression(entity, emit.Severity, target, "severity", d);
+    }
+
+    private static void ValidateBusinessCalendar(BusinessCalendarSpec calendar, List<Diagnostic> d)
+    {
+        if (!Namespaces.IsValidId(calendar.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{calendar.Id}' is not a valid business calendar ID.", calendar.Id));
+        }
+
+        if (string.IsNullOrWhiteSpace(calendar.Label) || calendar.Label.Length > 80)
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"Business calendar '{calendar.Id}' needs a label of 1–80 characters.", calendar.Id));
+        }
+
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById(calendar.TimeZone, out _) || !calendar.TimeZone.Contains('/', StringComparison.Ordinal) && calendar.TimeZone != "UTC")
+        {
+            d.Add(Diagnostic.Error("config.bad_time_zone", $"Business calendar '{calendar.Label}' has time zone '{calendar.TimeZone}', which is not an IANA time zone.", calendar.Id, "Use a name such as Europe/London, America/New_York or Asia/Tokyo."));
+        }
+
+        var intervals = new List<(DayOfWeek Day, TimeSpan Start, TimeSpan End)>();
+        foreach (var hours in calendar.Week)
+        {
+            if (!Weekdays.All.Contains(hours.Day))
+            {
+                d.Add(Diagnostic.Error("config.bad_day", $"Business calendar '{calendar.Label}' has unknown weekday '{hours.Day}'.", calendar.Id, string.Join(", ", Weekdays.All)));
+                continue;
+            }
+
+            try
+            {
+                var start = Sla.BusinessTime.ParseTime(hours.Start);
+                var end = Sla.BusinessTime.ParseTime(hours.End);
+                if (end <= start)
+                {
+                    d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}': on {hours.Day}, {hours.End} is not after {hours.Start}.", calendar.Id, "Split hours that cross midnight into two intervals."));
+                    continue;
+                }
+
+                if (end - start < TimeSpan.FromMinutes(15))
+                {
+                    d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}': on {hours.Day}, {hours.Start}–{hours.End} is shorter than 15 minutes.", calendar.Id));
+                    continue;
+                }
+
+                intervals.Add((Weekdays.ToDayOfWeek(hours.Day), start, end));
+            }
+            catch (FormatException ex)
+            {
+                d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}': {ex.Message}", calendar.Id, "Use HH:mm, e.g. 08:30."));
+            }
+        }
+
+        foreach (var day in intervals.GroupBy(i => i.Day))
+        {
+            if (day.Count() > 4)
+            {
+                d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}' has {day.Count()} intervals on {day.Key}; use at most 4 per day.", calendar.Id));
+            }
+
+            var sorted = day.OrderBy(i => i.Start).ToList();
+            for (var i = 1; i < sorted.Count; i++)
+            {
+                if (sorted[i].Start < sorted[i - 1].End)
+                {
+                    d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}' has overlapping hours on {day.Key}.", calendar.Id));
+                }
+            }
+        }
+
+        if (calendar.Week.Count == 0)
+        {
+            d.Add(Diagnostic.Error("config.bad_hours", $"Business calendar '{calendar.Label}' has no working hours.", calendar.Id, "Add at least one interval, e.g. mon 09:00–17:00."));
+        }
+
+        foreach (var holiday in calendar.Holidays.Where(h => !DateOnly.TryParseExact(h.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)))
+        {
+            d.Add(Diagnostic.Error("config.bad_date", $"Business calendar '{calendar.Label}' has holiday '{holiday.Date}', which is not a date.", calendar.Id, "Use YYYY-MM-DD."));
+        }
+
+        if (calendar.Holidays.Any(h => h.Label is { Length: > 80 }))
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"Business calendar '{calendar.Label}' has a holiday label longer than 80 characters.", calendar.Id));
+        }
+
+        if (calendar.Holidays.Count > 400)
+        {
+            d.Add(Diagnostic.Error("config.too_large", $"Business calendar '{calendar.Label}' has {calendar.Holidays.Count} holidays; keep at most 400 (a few years).", calendar.Id));
+        }
+    }
+
+    private static void ValidateSlaPolicy(SpecCatalog config, SlaPolicySpec policy, List<Diagnostic> d)
+    {
+        if (!Namespaces.IsValidId(policy.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{policy.Id}' is not a valid SLA policy ID.", policy.Id));
+        }
+
+        if (string.IsNullOrWhiteSpace(policy.Label) || policy.Label.Length > 80)
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"SLA policy '{policy.Id}' needs a label of 1–80 characters.", policy.Id));
+        }
+
+        if (config.FindEntity(policy.Entity) is not { } entity)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"SLA policy '{policy.Label}' applies to unknown entity '{policy.Entity}'.", policy.Id, Expression.Suggest(policy.Entity, config.Entities.Select(e => e.Id))));
+            return;
+        }
+
+        CheckExpression(entity, policy.When, policy.Id, "condition", d);
+        if (config.SlaPolicies.Count(p => p.Entity == policy.Entity) > 10 && config.SlaPolicies.First(p => p.Entity == policy.Entity) == policy)
+        {
+            d.Add(Diagnostic.Error("config.too_large", $"{entity.Label} has more than 10 SLA policies; combine them with conditions on goals.", policy.Id));
+        }
+
+        // Conditions decide which goal applies and whether a clock runs, which every reader of the record sees: they
+        // must not read fields some people may not see (ADR 0018).
+        var hidden = config.PermissionSets.SelectMany(p => p.Fields).Where(f => f.Entity == entity.Id && f.Access == FieldAccessLevels.Hidden).Select(f => f.Field).ToHashSet(StringComparer.Ordinal);
+        void CheckHidden(string? condition, string where)
+        {
+            if (string.IsNullOrWhiteSpace(condition))
+            {
+                return;
+            }
+
+            try
+            {
+                var secret = Expression.Compile(condition).References.Select(r => r[(r.IndexOf('.', StringComparison.Ordinal) + 1)..]).FirstOrDefault(hidden.Contains);
+                if (secret is not null)
+                {
+                    d.Add(Diagnostic.Error("config.sla_hidden_field", $"'{where}' reads '{secret}', which some people may not see; anyone who reads the record sees which goal applies.", where, "Use a field everyone who reads the record can see."));
+                }
+            }
+            catch (ExpressionException)
+            {
+                // Reported by CheckExpression.
+            }
+        }
+
+        CheckHidden(policy.When, policy.Id);
+        foreach (var target in policy.Targets)
+        {
+            foreach (var condition in new[] { target.Start, target.Stop, target.Pause }.Concat(target.Goals.Select(g => g.When)))
+            {
+                CheckHidden(condition, $"{policy.Id}/{target.Id}");
+            }
+        }
+
+        if (policy.Targets.Count is 0 or > 5)
+        {
+            d.Add(Diagnostic.Error("config.bad_targets", $"SLA policy '{policy.Label}' needs 1–5 targets, e.g. response and resolution.", policy.Id));
+        }
+
+        foreach (var dup in policy.Targets.GroupBy(t => t.Id).Where(g => g.Count() > 1))
+        {
+            d.Add(Diagnostic.Error("config.duplicate_id", $"SLA policy '{policy.Label}' has two targets '{dup.Key}'.", policy.Id));
+        }
+
+        foreach (var target in policy.Targets)
+        {
+            var where = $"{policy.Id}/{target.Id}";
+            if (!Namespaces.IsValidFieldKey(target.Id))
+            {
+                d.Add(Diagnostic.Error("config.invalid_key", $"SLA target '{target.Id}' of '{policy.Label}' must be snake_case.", where));
+            }
+
+            CheckExpression(entity, target.Start, where, "start condition", d);
+            CheckExpression(entity, target.Pause, where, "pause condition", d);
+            if (string.IsNullOrWhiteSpace(target.Stop))
+            {
+                d.Add(Diagnostic.Error("config.missing_stop", $"SLA target '{target.Label}' of '{policy.Label}' needs a stop condition.", where, "e.g. record.status in ['resolved', 'closed']"));
+            }
+            else
+            {
+                CheckExpression(entity, target.Stop, where, "stop condition", d);
+            }
+
+            if (!SlaReopen.All.Contains(target.OnReopen))
+            {
+                d.Add(Diagnostic.Error("config.bad_reopen", $"SLA target '{target.Label}' has onReopen '{target.OnReopen}'.", where, string.Join(", ", SlaReopen.All)));
+            }
+
+            if (target.WarnAtPercent is { } warn && warn is < 1 or > 99)
+            {
+                d.Add(Diagnostic.Error("config.bad_warning", $"SLA target '{target.Label}' warns at {warn}%; use 1–99.", where));
+            }
+
+            CheckCalendar(config, target.Calendar, where, d);
+            if (target.Goals.Count == 0)
+            {
+                d.Add(Diagnostic.Error("config.missing_goal", $"SLA target '{target.Label}' of '{policy.Label}' has no goal.", where, "Add a goal, e.g. 480 minutes, or one per priority."));
+            }
+
+            foreach (var goal in target.Goals)
+            {
+                CheckExpression(entity, goal.When, where, "goal condition", d);
+                CheckCalendar(config, goal.Calendar, where, d);
+                if (goal.Minutes is < 1 or > 525_600)
+                {
+                    d.Add(Diagnostic.Error("config.bad_goal", $"SLA target '{target.Label}' has a goal of {goal.Minutes} minutes; use 1 minute to 1 year.", where));
+                }
+
+                // A goal must fit within a year of the calendar's working time, or the clock could never come due.
+                if ((goal.Calendar ?? target.Calendar) is { } calendarId && calendarId != SlaCalendars.AroundTheClock && config.FindBusinessCalendar(calendarId) is { } cal)
+                {
+                    var weekly = cal.Week.Sum(w =>
+                    {
+                        try
+                        {
+                            return Math.Max(0, (Sla.BusinessTime.ParseTime(w.End) - Sla.BusinessTime.ParseTime(w.Start)).TotalMinutes);
+                        }
+                        catch (FormatException)
+                        {
+                            return 0;
+                        }
+                    });
+                    if (goal.Minutes > weekly * 52)
+                    {
+                        d.Add(Diagnostic.Error("config.goal_unreachable", $"SLA target '{target.Label}' has a goal of {goal.Minutes} business minutes, more than a year of '{cal.Label}' ({weekly * 52:0} minutes).", where, "Shorten the goal or measure it around the clock (24x7)."));
+                    }
+                }
+            }
+
+            if (target.Goals.Count > 0 && target.Goals[^1].When is not null)
+            {
+                d.Add(Diagnostic.Warning("config.goal_gap", $"No goal of SLA target '{target.Label}' applies when none of the conditions holds; those records get no timer.", where, "Add a last goal without a condition."));
+            }
+        }
+    }
+
+    private static void CheckCalendar(SpecCatalog config, string? calendar, string where, List<Diagnostic> d)
+    {
+        if (calendar is not null && calendar != SlaCalendars.AroundTheClock && config.FindBusinessCalendar(calendar) is null)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"'{where}' measures in unknown business calendar '{calendar}'.", where, Expression.Suggest(calendar, config.BusinessCalendars.Select(c => c.Id)) ?? $"Use {SlaCalendars.AroundTheClock} for elapsed time."));
+        }
     }
 
     /// <summary>The payload type a record field's values have.</summary>

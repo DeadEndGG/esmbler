@@ -70,6 +70,7 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.NotificationConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.FulfillmentConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Approvals.ApprovalService>();
+        services.AddSingleton<Kernel.Infrastructure.Sla.SlaService>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Approvals.ApprovalConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
         services.AddSingleton<DraftService>();
@@ -86,6 +87,7 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalExpiryJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalSweepJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalDelegationJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Sla.SlaCheckJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.OperationsService>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();

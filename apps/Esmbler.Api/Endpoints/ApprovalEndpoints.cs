@@ -33,5 +33,9 @@ public static class ApprovalEndpoints
 
         app.MapGet("/api/records/{entity}/{id:guid}/approvals", (string entity, Guid id, ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>
             service.ForRecordAsync(RequestContextFactory.From(user, "api"), entity, id, ct)).WithTags("Approvals").RequireAuthorization();
+
+        // SLA timers of a record (ADR 0018), for anyone who can read the record.
+        app.MapGet("/api/records/{entity}/{id:guid}/sla", (string entity, Guid id, ClaimsPrincipal user, Esmbler.Kernel.Infrastructure.Sla.SlaService service, CancellationToken ct) =>
+            service.ForRecordAsync(RequestContextFactory.From(user, "api"), entity, id, ct)).WithTags("SLA").RequireAuthorization();
     }
 }

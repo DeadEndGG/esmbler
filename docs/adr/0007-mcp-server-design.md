@@ -100,6 +100,16 @@ Event type tools (G2-M17, [ADR 0017](0017-event-audit-alert-notification-service
 | Discovery | `list_event_types` | none | none; event types in the open draft with payload fields, severity, sensitivity and the transitions and rules that publish each | config:read |
 | Build | `add_event_type` | `label`, `fields` (key to `string`, `number`, `boolean` or `list`), `subject_entity?`, `severity?`, `description?`, `expected_version` | `event_type.add` (`tenant__` ID) | config:edit |
 
+SLA tools (G2-M4, [ADR 0018](0018-sla-and-business-hours.md)) edit calendars and service levels in the draft; running SLA clocks keep the goal and calendar they started with.
+
+| Group | Tool | Arguments | Effect | Scope |
+| --- | --- | --- | --- | --- |
+| Discovery | `list_sla_policies` | none | none; policies with targets (start, pause, stop, reopen, calendar, warning, goals) and calendars (time zone, hours, holidays) | config:read |
+| Build | `add_business_calendar` | `label`, `time_zone`, `week` (each `day`, `start`, `end`), `holidays?`, `expected_version` | `business_calendar.add` (`tenant__` ID) | config:edit |
+| Build | `update_business_calendar` | `calendar`, `label?`, `time_zone?`, `week?`, `holidays?`, `expected_version` | `business_calendar.update` | config:edit |
+| Build | `add_sla_policy` | `entity`, `label`, `targets` (each `label`, `stop`, `goals`, `start?`, `pause?`, `calendar?`, `onReopen?`, `warnAtPercent?`), `when?`, `description?`, `expected_version` | `sla_policy.add` (`tenant__` ID) | config:edit |
+| Build | `set_sla_goals` | `policy`, `target`, `goals` (each `minutes`, `when?`, `calendar?`), `calendar?`, `warn_at_percent?`, `expected_version` | `sla_policy.update` (targets) | config:edit |
+
 Most build tools append one draft command; composite tools (`add_field` with placement, `add_card` with fields) append one per op and report each step ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 
 Resources: `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph` (the workspace's modules, entities with the fields the user can see, relationships and views, as currently drafted). The graph resource runs through `ToolRunner` like a tool (scope `config:read`, budget, audit) and omits hidden fields.

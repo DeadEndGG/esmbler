@@ -32,6 +32,15 @@ public sealed class PlatformModule : IModuleDefinition
         ],
     };
 
+    private static Dictionary<string, EventFieldSpec> SlaFields() => new()
+    {
+        ["policy"] = Text("SLA policy ID.", required: true),
+        ["target"] = Text("Target ID, e.g. response or resolution.", required: true),
+        ["goal_minutes"] = new() { Type = EventFieldTypes.Number, Required = true, Description = "Goal in business or elapsed minutes." },
+        ["due_at"] = Text("When the goal is (or was) due, UTC."),
+        ["timer"] = Text("SLA timer ID.", required: true),
+    };
+
     private static EventFieldSpec Text(string description, bool required = false) => new() { Type = EventFieldTypes.String, Required = required, Description = description };
 
     /// <summary>
@@ -51,6 +60,8 @@ public sealed class PlatformModule : IModuleDefinition
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalRequested, Label = "Approval requested", Description = "A request entered an approval stage; its approvers were asked to decide.", Severity = EventSeverities.Low, Fields = new() { ["policy"] = Text("Approval policy ID.", required: true), ["stage"] = Text("Stage ID.", required: true) } },
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalApproved, Label = "Approval granted", Description = "Every stage of a request's approval was approved.", Fields = new() { ["policy"] = Text("Approval policy ID.", required: true) } },
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalRejected, Label = "Approval rejected", Description = "A request's approval was rejected or expired.", Severity = EventSeverities.Medium, Fields = new() { ["policy"] = Text("Approval policy ID.", required: true), ["reason"] = Text("Why it ended.") } },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.SlaWarning, Label = "SLA at risk", Description = "An SLA target reached its warning threshold while running (ADR 0018).", Severity = EventSeverities.Medium, Fields = SlaFields() },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.SlaBreached, Label = "SLA breached", Description = "An SLA target passed its goal; the breach is recorded and stays recorded (ADR 0018).", Severity = EventSeverities.High, Fields = SlaFields() },
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalCancelled, Label = "Approval cancelled", Description = "A pending approval ended because its request was cancelled.", Fields = new() { ["policy"] = Text("Approval policy ID.", required: true) } },
         ];
 

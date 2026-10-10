@@ -83,6 +83,36 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
             };
         });
 
+    [McpServerTool(Name = "list_sla_policies", ReadOnly = true), Description("SLA policies and business calendars in the open draft: each target's start, pause and stop conditions, goals (minutes, by condition) and the calendar they are measured in, plus each calendar's time zone, hours and holidays.")]
+    public Task<CallToolResult> ListSlaPolicies() =>
+        runner.RunAsync("list_sla_policies", AgentScopes.ConfigRead, null, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            return new
+            {
+                draftVersion,
+                policies = config.SlaPolicies.Select(p => new
+                {
+                    p.Id,
+                    p.Label,
+                    p.Entity,
+                    p.When,
+                    p.Enabled,
+                    customized = config.Customized.Contains(p.Id),
+                    targets = p.Targets.Select(t => new { t.Id, t.Label, t.Start, t.Pause, t.Stop, t.OnReopen, t.Calendar, t.WarnAtPercent, goals = t.Goals.Select(g => new { g.When, g.Minutes, g.Calendar }) }),
+                }),
+                calendars = config.BusinessCalendars.Select(c => new
+                {
+                    c.Id,
+                    c.Label,
+                    c.TimeZone,
+                    customized = config.Customized.Contains(c.Id),
+                    week = c.Week.Select(w => $"{w.Day} {w.Start}-{w.End}"),
+                    holidays = c.Holidays.Select(h => h.Label is null ? h.Date : $"{h.Date} {h.Label}"),
+                }),
+            };
+        });
+
     [McpServerTool(Name = "list_catalog_items", ReadOnly = true), Description("Service catalog items in the open draft: questions (variables with types), fulfillment tasks with dependencies and conditions, and whether each can be requested.")]
     public Task<CallToolResult> ListCatalogItems() =>
         runner.RunAsync("list_catalog_items", AgentScopes.ConfigRead, null, async ctx =>

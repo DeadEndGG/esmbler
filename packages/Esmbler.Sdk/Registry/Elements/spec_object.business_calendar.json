@@ -1,0 +1,51 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.business_calendar",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "Business calendar",
+  "description": "Working hours in one time zone, minus holidays, used to measure SLA goals in business time. Hours are local wall-clock times, so after a daylight-saving change 09:00 is still 09:00.",
+  "usage": [
+    "One calendar per support team or region, e.g. \"London office hours\".",
+    "Split a lunch break or hours that cross midnight into two intervals."
+  ],
+  "constraints": [
+    "id is unique; tenant calendars start with tenant__. Default calendars can be changed, not removed; a calendar an SLA policy uses cannot be removed.",
+    "timeZone is an IANA name such as Europe/London; day is mon–sun; start and end are HH:mm with end after start (24:00 allowed) and intervals of a day do not overlap.",
+    "Holidays are YYYY-MM-DD local dates, at most 400.",
+    "Running SLA clocks keep the calendar they started with."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/business_calendar.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Weekday office hours with a holiday",
+      "spec": {
+        "id": "tenant__london_hours",
+        "label": "London office hours",
+        "timeZone": "Europe/London",
+        "week": [
+          { "day": "mon", "start": "09:00", "end": "17:30" },
+          { "day": "tue", "start": "09:00", "end": "17:30" },
+          { "day": "wed", "start": "09:00", "end": "17:30" },
+          { "day": "thu", "start": "09:00", "end": "17:30" },
+          { "day": "fri", "start": "09:00", "end": "17:30" }
+        ],
+        "holidays": [ { "date": "2026-12-25", "label": "Christmas Day" } ]
+      }
+    }
+  ]
+}

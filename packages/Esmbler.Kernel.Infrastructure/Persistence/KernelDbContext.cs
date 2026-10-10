@@ -67,6 +67,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<ApprovalRow> Approvals => Set<ApprovalRow>();
 
+    public DbSet<SlaTimerRow> SlaTimers => Set<SlaTimerRow>();
+
     public DbSet<ApprovalStepRow> ApprovalSteps => Set<ApprovalStepRow>();
 
     public DbSet<ApprovalDelegationRow> ApprovalDelegations => Set<ApprovalDelegationRow>();
@@ -91,6 +93,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<WorkflowDefinitionRow>().ToTable("workflow_definitions").HasKey(x => new { x.TenantId, x.EnvironmentId, x.WorkflowId, x.Version });
         b.Entity<ConsumerFailureRow>().ToTable("consumer_failures").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalRow>().ToTable("approvals").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<SlaTimerRow>().ToTable("sla_timers").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalStepRow>().ToTable("approval_steps").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalDelegationRow>().ToTable("approval_delegations").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RecordSequenceRow>().ToTable("record_sequences").HasKey(x => new { x.TenantId, x.EnvironmentId, x.EntityId });
@@ -107,7 +110,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<NotificationRow>().ToTable("notifications").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
-        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters"];
+        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot"];
         foreach (var entity in b.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

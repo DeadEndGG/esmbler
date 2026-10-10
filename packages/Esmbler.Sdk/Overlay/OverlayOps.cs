@@ -38,6 +38,12 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(RemoveApprovalPolicy), "approval_policy.remove")]
 [JsonDerivedType(typeof(AddEventType), "event_type.add")]
 [JsonDerivedType(typeof(RemoveEventType), "event_type.remove")]
+[JsonDerivedType(typeof(AddBusinessCalendar), "business_calendar.add")]
+[JsonDerivedType(typeof(UpdateBusinessCalendar), "business_calendar.update")]
+[JsonDerivedType(typeof(RemoveBusinessCalendar), "business_calendar.remove")]
+[JsonDerivedType(typeof(AddSlaPolicy), "sla_policy.add")]
+[JsonDerivedType(typeof(UpdateSlaPolicy), "sla_policy.update")]
+[JsonDerivedType(typeof(RemoveSlaPolicy), "sla_policy.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -579,4 +585,98 @@ public sealed class RemoveEventType : OverlayOp
     public override string Describe() => $"Remove event type {EventType}";
 
     public override IEnumerable<string> Targets() => [EventType];
+}
+
+/// <summary>Adds a tenant business calendar (ADR 0018).</summary>
+public sealed class AddBusinessCalendar : OverlayOp
+{
+    public required BusinessCalendarSpec Calendar { get; set; }
+
+    public override string Describe() => $"Add business calendar \"{Calendar.Label}\" ({Calendar.TimeZone}, {Calendar.Week.Count} working interval(s), {Calendar.Holidays.Count} holiday(s))";
+
+    public override IEnumerable<string> Targets() => [Calendar.Id];
+}
+
+/// <summary>Changes a business calendar, the module's or the tenant's. Running SLA timers keep the calendar they started with.</summary>
+public sealed class UpdateBusinessCalendar : OverlayOp
+{
+    public required string Calendar { get; set; }
+
+    public required BusinessCalendarPatch Set { get; set; }
+
+    /// <summary>Values the tenant saw when making the change; an upgrade that changed them reports a conflict.</summary>
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change business calendar {Calendar}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Calendar];
+}
+
+public sealed class BusinessCalendarPatch
+{
+    public string? Label { get; set; }
+
+    public string? TimeZone { get; set; }
+
+    public List<WorkingHoursSpec>? Week { get; set; }
+
+    public List<HolidaySpec>? Holidays { get; set; }
+}
+
+/// <summary>Removes a tenant business calendar that no SLA policy uses.</summary>
+public sealed class RemoveBusinessCalendar : OverlayOp
+{
+    public required string Calendar { get; set; }
+
+    public override string Describe() => $"Remove business calendar {Calendar}";
+
+    public override IEnumerable<string> Targets() => [Calendar];
+}
+
+/// <summary>Adds a tenant SLA policy (ADR 0018).</summary>
+public sealed class AddSlaPolicy : OverlayOp
+{
+    public required SlaPolicySpec Policy { get; set; }
+
+    public override string Describe() => $"Add SLA policy \"{Policy.Label}\" on {Policy.Entity}: {string.Join(", ", Policy.Targets.Select(t => t.Label))}";
+
+    public override IEnumerable<string> Targets() => [Policy.Id];
+}
+
+/// <summary>Changes an SLA policy, the module's or the tenant's: label, condition, enabled, or targets (goals, calendars, conditions). Running timers keep the snapshot they started with.</summary>
+public sealed class UpdateSlaPolicy : OverlayOp
+{
+    public required string Policy { get; set; }
+
+    public required SlaPolicyPatch Set { get; set; }
+
+    /// <summary>Values the tenant saw when making the change; an upgrade that changed them reports a conflict.</summary>
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change SLA policy {Policy}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Policy];
+}
+
+public sealed class SlaPolicyPatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? When { get; set; }
+
+    public bool? Enabled { get; set; }
+
+    public List<SlaTargetSpec>? Targets { get; set; }
+}
+
+/// <summary>Removes a tenant SLA policy; running timers of it finish on their snapshot.</summary>
+public sealed class RemoveSlaPolicy : OverlayOp
+{
+    public required string Policy { get; set; }
+
+    public override string Describe() => $"Remove SLA policy {Policy}";
+
+    public override IEnumerable<string> Targets() => [Policy];
 }

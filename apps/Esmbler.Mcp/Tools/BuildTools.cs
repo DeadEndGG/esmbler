@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Esmbler.Expressions;
 using Esmbler.Kernel;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Tenancy;
@@ -95,6 +96,57 @@ public sealed class ApprovalStageInput
 
     [Description("Group keys that receive the request when the stage expires (escalation). Without them the request is declined on expiry.")]
     public List<string>? EscalateToGroups { get; set; }
+}
+
+public sealed class SlaGoalInput
+{
+    [Description("Goal in minutes (business minutes when the target uses a calendar), e.g. 480 for one 8-hour business day.")]
+    public required int Minutes { get; set; }
+
+    [Description("Optional condition selecting the records this goal applies to, e.g. record.priority == 'p1'. Put the goal without a condition last.")]
+    public string? When { get; set; }
+
+    [Description("Optional calendar ID for this goal, or 24x7 to measure it around the clock.")]
+    public string? Calendar { get; set; }
+}
+
+public sealed class SlaTargetInput
+{
+    [Description("Target name, e.g. \"Resolution\".")]
+    public required string Label { get; set; }
+
+    [Description("When the clock stops (target met if within the goal), e.g. record.status in ['resolved', 'closed'].")]
+    public required string Stop { get; set; }
+
+    [Description("Goals in order; the first whose condition holds when the clock starts applies.")]
+    public required List<SlaGoalInput> Goals { get; set; }
+
+    [Description("When the clock starts; omit to start when the record is created.")]
+    public string? Start { get; set; }
+
+    [Description("While the clock pauses, e.g. record.status == 'on_hold'.")]
+    public string? Pause { get; set; }
+
+    [Description("Business calendar ID; omit for elapsed time around the clock.")]
+    public string? Calendar { get; set; }
+
+    [Description("resume (default), restart or none: what happens when a stopped record is reopened.")]
+    public string? OnReopen { get; set; }
+
+    [Description("Warn when this share of the goal has elapsed (1-99). Default 75.")]
+    public int? WarnAtPercent { get; set; }
+}
+
+public sealed class WorkingHoursInput
+{
+    [Description("mon, tue, wed, thu, fri, sat or sun.")]
+    public required string Day { get; set; }
+
+    [Description("Start, HH:mm local time.")]
+    public required string Start { get; set; }
+
+    [Description("End, HH:mm local time (24:00 for midnight).")]
+    public required string End { get; set; }
 }
 
 public sealed class CatalogTaskInput
@@ -401,6 +453,113 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             };
             return await ApplyAllAsync(ctx, [new AddEventType { EventType = type }], expected_version);
         });
+
+    [McpServerTool(Name = "add_business_calendar"), Description("Add business hours in a time zone, minus holidays, for measuring SLA goals in business time, e.g. \"London office hours\".")]
+    public Task<CallToolResult> AddBusinessCalendar(
+        string label,
+        [Description("IANA time zone, e.g. Europe/London or America/New_York.")] string time_zone,
+        [Description("Working intervals per weekday.")] WorkingHoursInput[] week,
+        int expected_version,
+        [Description("Holidays as YYYY-MM-DD dates.")] string[]? holidays = null) =>
+        runner.RunAsync("add_business_calendar", AgentScopes.ConfigEdit, label, async ctx =>
+        {
+            var slug = Slug(label);
+            var calendar = new BusinessCalendarSpec
+            {
+                Id = Namespaces.TenantPrefix + slug[..Math.Min(60, slug.Length)],
+                Label = label,
+                TimeZone = time_zone,
+                Week = [.. week.Select(w => new WorkingHoursSpec { Day = w.Day, Start = w.Start, End = w.End })],
+                Holidays = [.. (holidays ?? []).Select(h => new HolidaySpec { Date = h })],
+            };
+            return await ApplyAllAsync(ctx, [new AddBusinessCalendar { Calendar = calendar }], expected_version);
+        });
+
+    [McpServerTool(Name = "update_business_calendar"), Description("Change a business calendar's time zone, hours or holidays (default or your own). Running SLA clocks keep the calendar they started with; new clocks use the change.")]
+    public Task<CallToolResult> UpdateBusinessCalendar(
+        string calendar,
+        int expected_version,
+        string? label = null,
+        [Description("IANA time zone.")] string? time_zone = null,
+        [Description("Replaces all working intervals.")] WorkingHoursInput[]? week = null,
+        [Description("Replaces all holidays (YYYY-MM-DD).")] string[]? holidays = null) =>
+        runner.RunAsync("update_business_calendar", AgentScopes.ConfigEdit, calendar, async ctx =>
+            await ApplyAllAsync(ctx, [new UpdateBusinessCalendar
+            {
+                Calendar = calendar,
+                Set = new BusinessCalendarPatch
+                {
+                    Label = label,
+                    TimeZone = time_zone,
+                    Week = week?.Select(w => new WorkingHoursSpec { Day = w.Day, Start = w.Start, End = w.End }).ToList(),
+                    Holidays = holidays?.Select(h => new HolidaySpec { Date = h }).ToList(),
+                },
+            }], expected_version));
+
+    [McpServerTool(Name = "add_sla_policy"), Description("Add service-level targets on an entity's records, e.g. \"VIP resolution within 4 business hours\". Each target is a clock with start, pause and stop conditions and goals by condition (usually priority).")]
+    public Task<CallToolResult> AddSlaPolicy(
+        string entity,
+        string label,
+        SlaTargetInput[] targets,
+        int expected_version,
+        [Description("Optional condition limiting which records the policy applies to, e.g. record.priority in ['p1', 'p2'].")] string? when = null,
+        string? description = null) =>
+        runner.RunAsync("add_sla_policy", AgentScopes.ConfigEdit, entity, async ctx =>
+        {
+            var slug = Slug(label);
+            var policy = new SlaPolicySpec
+            {
+                Id = Namespaces.TenantPrefix + slug[..Math.Min(60, slug.Length)],
+                Label = label,
+                Description = description,
+                Entity = entity,
+                When = when,
+                Targets = [.. targets.Select(ToTarget)],
+            };
+            return await ApplyAllAsync(ctx, [new AddSlaPolicy { Policy = policy }], expected_version);
+        });
+
+    [McpServerTool(Name = "set_sla_goals"), Description("Change one SLA target's goals (and optionally its calendar or warning threshold), on a default or your own policy, e.g. P2 resolution in 8 business hours. Running clocks keep their goal; new clocks use the change.")]
+    public Task<CallToolResult> SetSlaGoals(
+        string policy,
+        [Description("Target ID, e.g. response or resolution (see list_sla_policies).")] string target,
+        SlaGoalInput[] goals,
+        int expected_version,
+        [Description("Business calendar ID, or 24x7.")] string? calendar = null,
+        int? warn_at_percent = null) =>
+        runner.RunAsync("set_sla_goals", AgentScopes.ConfigEdit, $"{policy}/{target}", async ctx =>
+        {
+            var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+            var current = config.FindSlaPolicy(policy) ?? throw KernelException.NotFound($"SLA policy '{policy}'");
+            if (current.FindTarget(target) is null)
+            {
+                throw new KernelException("not_found", $"SLA policy '{current.Label}' has no target '{target}'.", 404, target, Expression.Suggest(target, current.Targets.Select(t => t.Id)));
+            }
+
+            var targets = current.Targets.Select(SpecJson.Clone).ToList();
+            var changed = targets.Single(t => t.Id == target);
+            changed.Goals = [.. goals.Select(g => new SlaGoalSpec { Minutes = g.Minutes, When = g.When, Calendar = g.Calendar })];
+            changed.Calendar = calendar == SlaCalendars.AroundTheClock ? null : calendar ?? changed.Calendar;
+            changed.WarnAtPercent = warn_at_percent ?? changed.WarnAtPercent;
+            return await ApplyAllAsync(ctx, [new UpdateSlaPolicy { Policy = policy, Set = new SlaPolicyPatch { Targets = targets } }], expected_version);
+        });
+
+    private static SlaTargetSpec ToTarget(SlaTargetInput t)
+    {
+        var slug = Slug(t.Label);
+        return new SlaTargetSpec
+        {
+            Id = slug[..Math.Min(40, slug.Length)],
+            Label = t.Label,
+            Start = t.Start,
+            Stop = t.Stop,
+            Pause = t.Pause,
+            Calendar = t.Calendar is null or SlaCalendars.AroundTheClock ? null : t.Calendar,
+            OnReopen = t.OnReopen ?? SlaReopen.Resume,
+            WarnAtPercent = t.WarnAtPercent ?? 75,
+            Goals = [.. t.Goals.Select(g => new SlaGoalSpec { Minutes = g.Minutes, When = g.When, Calendar = g.Calendar })],
+        };
+    }
 
     [McpServerTool(Name = "add_approval_policy"), Description("Add an approval policy: stages that run in order, each with approvers (roles, groups, or fields naming a person) who decide in parallel. Point a catalog item at it with update_catalog_item (approval_policy). The requester never approves their own request, and AI agents never approve.")]
     public Task<CallToolResult> AddApprovalPolicy(

@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals" })
         {
             Assert.Contains(expected, tools);
         }
@@ -235,6 +235,56 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
             expected_version = version,
         }));
         Assert.Contains("unknown_payload_field", bad.Body);
+    }
+
+    [Fact]
+    public async Task Agent_tunes_service_levels_and_adds_business_hours()
+    {
+        // REQ-BIZ-005 (ADR 0018): calendars and SLA goals are configuration the AI builder edits in the draft.
+        var tenant = await platform.NewTenantAsync("msla", "1.5.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var listed = await Call(client, "list_sla_policies");
+        var ticketSla = listed["policies"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "core.tickets.sla.ticket")!;
+        Assert.Equal(2, ticketSla["targets"]!.AsArray().Count);
+        Assert.Equal("America/New_York", listed["calendars"]!.AsArray().Single()!["timeZone"]!.GetValue<string>());
+
+        version = (await Call(client, "add_business_calendar", new
+        {
+            label = "London office hours",
+            time_zone = "Europe/London",
+            week = new[] { new { day = "mon", start = "09:00", end = "17:30" }, new { day = "tue", start = "09:00", end = "17:30" } },
+            holidays = new[] { "2026-12-25" },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+        version = (await Call(client, "set_sla_goals", new
+        {
+            policy = "core.tickets.sla.ticket",
+            target = "resolution",
+            goals = new object[] { new { minutes = 120, when = "record.priority == 'p1'", calendar = "24x7" }, new { minutes = 480 } },
+            calendar = "tenant__london_office_hours",
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+        version = (await Call(client, "add_sla_policy", new
+        {
+            entity = "core.tickets.ticket",
+            label = "Hardware turnaround",
+            when = "record.category == 'hardware'",
+            targets = new object[] { new { label = "Turnaround", stop = "record.status in ['resolved', 'closed']", goals = new[] { new { minutes = 960 } }, calendar = "tenant__london_office_hours" } },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+
+        var after = await Call(client, "list_sla_policies");
+        var resolution = after["policies"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "core.tickets.sla.ticket")!["targets"]!.AsArray().Single(t => t!["id"]!.GetValue<string>() == "resolution")!;
+        Assert.Equal("tenant__london_office_hours", resolution["calendar"]!.GetValue<string>());
+        Assert.Equal(2, resolution["goals"]!.AsArray().Count);
+        Assert.Contains(after["policies"]!.AsArray(), p => p!["id"]!.GetValue<string>() == "tenant__hardware_turnaround");
+
+        // Mistakes come back as structured errors with a fix.
+        var bad = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_business_calendar", new { calendar = "tenant__london_office_hours", time_zone = "London", expected_version = version }));
+        Assert.Contains("bad_time_zone", bad.Body);
     }
 
     [Fact]

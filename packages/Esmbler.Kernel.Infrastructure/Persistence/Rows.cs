@@ -718,3 +718,51 @@ public sealed class RefreshTokenRow
 
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>An SLA timer of a record (ADR 0018); <see cref="Snapshot"/> is the target, goal and calendar it started with.</summary>
+public sealed class SlaTimerRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    public string EntityId { get; set; } = "";
+
+    public string PolicyId { get; set; } = "";
+
+    public string TargetId { get; set; } = "";
+
+    public int Cycle { get; set; }
+
+    public int? ConfigRevision { get; set; }
+
+    public string Snapshot { get; set; } = "{}";
+
+    public long GoalSeconds { get; set; }
+
+    public string Status { get; set; } = "running";
+
+    public DateTimeOffset StartedAt { get; set; }
+
+    public long ElapsedSeconds { get; set; }
+
+    public DateTimeOffset? SegmentStartedAt { get; set; }
+
+    public DateTimeOffset? DueAt { get; set; }
+
+    public DateTimeOffset? WarnAt { get; set; }
+
+    public DateTimeOffset? WarnedAt { get; set; }
+
+    public DateTimeOffset? BreachedAt { get; set; }
+
+    public DateTimeOffset? StoppedAt { get; set; }
+
+    public string? Outcome { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}

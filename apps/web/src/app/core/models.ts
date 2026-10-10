@@ -58,6 +58,28 @@ export interface ApprovalStage {
   steps: ApprovalStep[];
 }
 
+/** An SLA timer of a record (ADR 0018). Seconds are business or elapsed seconds, as the goal is measured. */
+export interface SlaTimer {
+  id: string;
+  policyId: string;
+  policyLabel: string;
+  targetId: string;
+  label: string;
+  cycle: number;
+  status: 'running' | 'paused' | 'stopped' | 'cancelled';
+  outcome: 'met' | 'breached' | null;
+  goalMinutes: number;
+  calendar: string | null;
+  timeZone: string | null;
+  startedAt: string;
+  dueAt: string | null;
+  breachedAt: string | null;
+  stoppedAt: string | null;
+  elapsedSeconds: number;
+  remainingSeconds: number;
+  atRisk: boolean;
+}
+
 export interface RecordApproval {
   id: string;
   policyId: string;
@@ -359,10 +381,17 @@ export interface DraftState {
   permissionImpact: boolean;
   workflowImpact?: WorkflowImpact[];
   approvalImpact?: ApprovalImpact[];
+  slaImpact?: SlaImpact[];
 }
 
 /** What publishing a changed workflow does to running records (REQ-MIG-003). */
 /** Approvals in flight under a policy the draft changes; they keep the policy they started with (ADR 0016). */
+export interface SlaImpact {
+  policy: string;
+  policyLabel: string;
+  running: number;
+}
+
 export interface ApprovalImpact {
   policy: string;
   policyLabel: string;

@@ -763,6 +763,7 @@ Accessibility: role `tablist`; Left/Right arrows move between views; Enter or Sp
 | `activity.approvals` | 2 | yes | The approval stages of a request: who approves each stage, what they decided, on whose behalf, when, and why, plus what is still pending and when it expires. |
 | `activity.audit_history` | 1 | yes | A read-only, append-only timeline of every field change on a record: what changed (old → new), when, by which actor — a user, an AI agent acting for a user, or a module/automation — and under which configuration revision. |
 | `activity.feed` | 1 | yes | The conversation on a record: public replies that the requester sees and internal work notes that only agents see, in one timeline with a composer. |
+| `activity.sla` | 2 | yes | The record's service-level targets (for example response and resolution): time left or how late it is, whether the clock is paused, the goal and the business calendar it is measured in, and whether stopped targets were met or missed. |
 
 ### Approvals panel (`activity.approvals`)
 
@@ -820,6 +821,23 @@ Constraints:
 - defaultComposer must be a visibility the feed shows.
 
 Accessibility: role `feed`; PageUp/PageDown move between entries; C focuses the composer; Alt+I switches public/internal; Ctrl/Cmd+Enter posts.
+
+### SLA panel (`activity.sla`)
+
+The record's service-level targets (for example response and resolution): time left or how late it is, whether the clock is paused, the goal and the business calendar it is measured in, and whether stopped targets were met or missed.
+
+| Prop | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `title` | string | no |  |
+
+Parents: `layout.column`, `layout.tab`, `layout.card`. Children: none.
+
+Constraints:
+
+- Visible to anyone who can read the record.
+- Deadlines come from the server; business hours, holidays and daylight-saving changes are applied there.
+
+Accessibility: role `list`; Not interactive.
 
 ## Actions
 
@@ -1010,6 +1028,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | --- | --- | --- | --- |
 | `spec_object.approval_policy` | 2 | no | Who must approve a request before fulfillment starts. |
 | `spec_object.assignment_rule` | 1 | no | Routes records to a group when a condition holds, such as sending network tickets to the Network queue. |
+| `spec_object.business_calendar` | 2 | no | Working hours in one time zone, minus holidays, used to measure SLA goals in business time. |
 | `spec_object.catalog_item` | 2 | no | A requestable service offering, such as "New laptop" or "Software access". |
 | `spec_object.choice_list` | 1 | no | A reusable, ordered list of options for single_select, multi_select, status, and priority fields. |
 | `spec_object.conditional_rule` | 1 | no | A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, show a message, or publish a declared event (emit_event, once each time the condition becomes true; data scope only). |
@@ -1023,6 +1042,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | `spec_object.record_view` | 1 | no | A ViewSpec of kind record: the page for viewing and editing one record of an entity. |
 | `spec_object.relationship` | 1 | no | Describes a lookup between two entities in both directions: the many-to-one side stored in a lookup field (a ticket's parent) and the one-to-many inverse shown in related lists (a ticket's child tickets). |
 | `spec_object.role` | 1 | no | A named job function, such as Agent or Requester, that people hold in a tenant. |
+| `spec_object.sla_policy` | 2 | no | Service-level targets on the records of one entity, such as response and resolution for tickets. |
 | `spec_object.validation_rule` | 1 | no | A rule (RuleSpec, kind validation) that blocks a write unless its assert expression is true, with a message shown on a field. |
 | `spec_object.workflow` | 1 | no | The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, button tone, and the declared events a transition publishes when it fires (emits, with payload expressions). |
 
@@ -1051,6 +1071,19 @@ Constraints:
 - when is a CEL-subset expression over record; group is a group key that must resolve to a group in the tenant, otherwise the rule is skipped with a warning.
 - Evaluated in ascending order (ties by ID); the first matching enabled rule wins.
 - Runs on create and when a field used in when changes, and only while the assignment group is empty or was set by an assignment rule — manual assignments are never overwritten.
+
+Accessibility: role `none`; Not rendered directly.
+
+### Business calendar (`spec_object.business_calendar`)
+
+Working hours in one time zone, minus holidays, used to measure SLA goals in business time. Hours are local wall-clock times, so after a daylight-saving change 09:00 is still 09:00.
+
+Constraints:
+
+- id is unique; tenant calendars start with tenant__. Default calendars can be changed, not removed; a calendar an SLA policy uses cannot be removed.
+- timeZone is an IANA name such as Europe/London; day is mon–sun; start and end are HH:mm with end after start (24:00 allowed) and intervals of a day do not overlap.
+- Holidays are YYYY-MM-DD local dates, at most 400.
+- Running SLA clocks keep the calendar they started with.
 
 Accessibility: role `none`; Not rendered directly.
 
@@ -1221,6 +1254,19 @@ Constraints:
 - Roles are assigned to members and groups in tenant administration, not in specs.
 
 Accessibility: role `none`; Not rendered directly.
+
+### SLA policy (`spec_object.sla_policy`)
+
+Service-level targets on the records of one entity, such as response and resolution for tickets. Each target is a clock that starts, pauses and stops on conditions over the record, with a goal chosen by condition (usually by priority) and measured in the business hours of a calendar or around the clock. The platform warns when a target is at risk and records a breach when it passes its goal; both are platform events (platform.sla.warning, platform.sla.breached). Running clocks keep the goal and calendar they started with, so changing a policy never rewrites history.
+
+Constraints:
+
+- id is unique; tenant policies start with tenant__. Default policies can be changed or disabled, not removed.
+- 1–5 targets per policy; target IDs are snake_case; stop is required; onReopen is resume, restart or none.
+- Goals are 1 minute to 1 year; calendars must exist (or be 24x7); warnAtPercent is 1–99.
+- Conditions are expressions over record (and prior).
+
+Accessibility: role `none`; Not rendered directly; the SLA panel (activity.sla) shows a record's timers.
 
 ### Validation rule (`spec_object.validation_rule`)
 

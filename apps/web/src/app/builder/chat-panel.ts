@@ -184,6 +184,14 @@ const EXAMPLES = [
               }
             </ul>
           }
+          @if (d.slaImpact?.length) {
+            <h3>Service-level clocks running</h3>
+            <ul class="impact">
+              @for (s of d.slaImpact; track s.policy) {
+                <li><strong>{{ s.policyLabel }}</strong> <span class="muted">{{ s.running }} running</span> <span class="badge tone-blue">keep the goal and hours they started with</span></li>
+              }
+            </ul>
+          }
           @if (d.permissionImpact) { <p class="callout tone-amber mt-2 text-body-sm"><esm-icon name="shield" [size]="14" /> This draft changes who can see, edit or approve. Publishing requires permission administration.</p> }
           <h3>What changes</h3>
           <ul class="changes">

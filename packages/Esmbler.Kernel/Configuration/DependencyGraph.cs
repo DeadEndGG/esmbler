@@ -160,6 +160,24 @@ public sealed partial class DependencyGraph
             }
         }
 
+        foreach (var sla in config.SlaPolicies)
+        {
+            g.Add(sla.Id, sla.Entity, "sla_entity");
+            g.AddExpression(sla.Id, sla.Entity, sla.When, "sla_condition");
+            foreach (var target in sla.Targets)
+            {
+                foreach (var condition in new[] { target.Start, target.Stop, target.Pause }.Concat(target.Goals.Select(goal => goal.When)))
+                {
+                    g.AddExpression(sla.Id, sla.Entity, condition, "sla_condition");
+                }
+
+                foreach (var calendar in target.Goals.Select(goal => goal.Calendar).Append(target.Calendar).OfType<string>().Where(c => c != SlaCalendars.AroundTheClock).Distinct(StringComparer.Ordinal))
+                {
+                    g.Add(sla.Id, calendar, "sla_calendar");
+                }
+            }
+        }
+
         foreach (var policy in config.ApprovalPolicies)
         {
             g.Add(policy.Id, policy.Entity, "approval_entity");

@@ -29,7 +29,7 @@ namespace Esmbler.Kernel.Infrastructure.Records;
 /// pins one configuration revision, enforces entity/record/field permissions, runs the data-level write pipeline,
 /// and commits the record change, its audit entry, and its outbox event together.
 /// </summary>
-public sealed class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock, WorkflowVersions workflows)
+public sealed class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock, WorkflowVersions workflows, Sla.SlaService sla)
 {
     private const int AuditValueLimit = 500;
 
@@ -79,6 +79,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             AuditWriter.Add(db, ctx, "record.create", entity.Id, id.ToString(), artifact.Revision, AuditChanges(changes));
             var created = AddEvent(db, ctx, artifact.Config, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(changes.Keys) });
             EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, 1, artifact.Revision, write.Emitted, created);
+            await sla.ApplyAsync(db, ctx, artifact.Config, artifact.Revision, entity, id, 1, write.Variables(), isCreate: true, created, ct);
             await db.SaveChangesAsync(ct);
             return await ViewAsync(db, artifact.Config, entity, perms, row, write.Data, write.Messages, ct);
         }, ct);
@@ -122,6 +123,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.DeletedAt, now).SetProperty(r => r.Revision, row.Revision + 1).SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId), ct);
             AuditWriter.Add(db, ctx, "record.delete", entity.Id, id.ToString(), artifact.Revision);
             AddEvent(db, ctx, artifact.Config, EventTypes.RecordDeleted, entity.Id, id, row.Revision + 1, artifact.Revision, []);
+            await sla.CancelAsync(db, id, ct);
             await db.SaveChangesAsync(ct);
         }, ct);
 
@@ -154,6 +156,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.DeletedAt, (DateTimeOffset?)null).SetProperty(r => r.Revision, row.Revision + 1).SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId), ct);
             AuditWriter.Add(db, ctx, "record.restore", entity.Id, id.ToString(), artifact.Revision);
             AddEvent(db, ctx, artifact.Config, EventTypes.RecordRestored, entity.Id, id, row.Revision + 1, artifact.Revision, []);
+            await sla.ApplyDataAsync(db, ctx, artifact.Config, artifact.Revision, entity, id, row.Revision + 1, JsonNode.Parse(row.Data)!.AsObject(), null, startAsCreate: true, ct);
             await db.SaveChangesAsync(ct);
             return 0;
         }, ct);
@@ -373,6 +376,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         AuditWriter.Add(db, ctx, "record.create", entity.Id, id.ToString(), artifact.Revision, new { source = "system" });
         var systemCreated = AddEvent(db, ctx, artifact.Config, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(write.Data.Select(p => p.Key)), ["source"] = "system" });
         EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, 1, artifact.Revision, write.Emitted, systemCreated);
+        await sla.ApplyAsync(db, ctx, artifact.Config, artifact.Revision, entity, id, 1, write.Variables(), isCreate: true, systemCreated, ct);
         await db.SaveChangesAsync(ct);
         return id;
     }
@@ -473,6 +477,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         AuditWriter.Add(db, ctx, operation == WriteOperations.Transition ? "record.transition" : "record.update", entity.Id, id.ToString(), artifact.Revision, AuditChanges(diff, transitionId, systemActor));
         var recordEvent = AddEvent(db, ctx, artifact.Config, type, entity.Id, id, revision, artifact.Revision, payload);
         EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, revision, artifact.Revision, write.Emitted, recordEvent);
+        await sla.ApplyAsync(db, ctx, artifact.Config, artifact.Revision, entity, id, revision, write.Variables(), isCreate: false, recordEvent, ct);
         await db.SaveChangesAsync(ct);
         return (write, true);
     }

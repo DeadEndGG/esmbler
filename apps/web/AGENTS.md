@@ -4,6 +4,7 @@ The Angular 22 web client: shell, list and record pages, the registry-driven ren
 
 - Styling: Tailwind CSS v4 mapped onto the design tokens ([ADR 0014](../../docs/adr/0014-tailwind-css-for-the-web-ui.md)). Raw colors live only in `src/styles/tokens.css`; `src/styles.css` holds the Tailwind theme and shared primitives (`.btn`, `.input`, `.badge`, `.callout`, `.table-card`). Rules: `.claude/rules/renderer-ui.md`.
 - Approvals (ADR 0016): `/approvals` (`src/app/pages/approvals.page.ts`: inbox, decided-by-you tab, out-of-office delegation) is shown only when the bootstrap's `approvals` flag is set, with a pending-count badge (`Session.pendingApprovals`, `/api/approvals/count`) and a command palette entry; the `activity.approvals` element (`src/app/renderer/approvals.ts`) shows stages and decisions on the record page and offers Approve/Reject only where the server says `canDecide`. The server is authoritative for every decision.
+- SLAs (ADR 0018): the `activity.sla` element (`src/app/renderer/sla.ts`) shows a record's timers from `GET /api/records/{entity}/{id}/sla`; it never computes deadlines itself. The builder's review lists running SLA clocks (`slaImpact`).
 - Icons only through `esm-icon` (`src/app/ui/icon.ts`, Lucide).
 - The production build must not need inline scripts (nginx CSP `script-src 'self'`); keep `inlineCritical` off.
 - Hidden field values never reach the client; components render only what the API sends.

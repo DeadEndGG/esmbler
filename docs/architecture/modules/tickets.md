@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) and `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) and `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -336,6 +336,20 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/ApprovalPolicyTests.cs` (`Relea
 | Record page | The resolution card shows `escalated` and `escalation_reason` |
 
 The generated [events reference](../../reference/asyncapi.json) lists the payload schemas. Evidence: `tests/Esmbler.UnitTests/Configuration/EventTypeTests.cs` (`Release_1_4_0_declares_ticket_events_and_publishes_them_from_transitions_and_rules`), `tests/Esmbler.IntegrationTests/Events/EventPlatformTests.cs`.
+
+## Release 1.5.0: service levels
+
+1.5.0 adds service levels ([ADR 0018](../../adr/0018-sla-and-business-hours.md)). The release is additive with no data migrations. Targets that start on create (ticket response and resolution, request fulfillment) apply to records created after the upgrade; targets with a start condition (task completion) also start on an existing record's next write when the condition holds.
+
+| Element | IDs and detail |
+| --- | --- |
+| Business calendar | `core.tickets.calendar.business_hours` (Service desk hours): America/New_York, Monday to Friday 08:00–18:00, US federal holidays 2026–2027 (ASM-054). Tenants change the time zone, hours and holidays with `business_calendar.update` |
+| Ticket SLA | `core.tickets.sla.ticket`: `response` (First response, stops when the ticket leaves `new`, no restart on reopen) and `resolution` (pauses `on_hold`, stops when resolved, closed or cancelled, resumes on reopen). Goals: P1 30 min / 4 h around the clock; P2 2 h / 10 h, P3 8 h / 30 h, P4 16 h / 50 h in service desk hours. Warning at 75% |
+| Request SLA | `core.tickets.sla.request`: `fulfillment`, 50 service desk hours (five days), paused while awaiting approval, stops when fulfilled, closed, rejected or cancelled. Warning at 80% |
+| Task SLA | `core.tickets.sla.task`: `completion`, 20 service desk hours (two days), starts when a task is open or in progress (blocked tasks wait), stops when done or skipped |
+| Record pages | `core.tickets.record.sla`, `core.tickets.request_record.sla`, `core.tickets.task_record.sla` (`activity.sla`, titled Service levels) |
+
+Evidence: `tests/Esmbler.UnitTests/Configuration/SlaPolicyTests.cs` (`Release_1_5_0_ships_a_calendar_and_service_levels_for_tickets_requests_and_tasks`), `tests/Esmbler.UnitTests/Sla/SlaEngineTests.cs`, `tests/Esmbler.IntegrationTests/Records/SlaTests.cs`, Playwright `sla.spec.ts`.
 
 ## Related documents
 

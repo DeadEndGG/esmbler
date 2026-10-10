@@ -106,6 +106,8 @@ public static class Composer
             config.CatalogItems.AddRange(copy.CatalogItems);
             config.ApprovalPolicies.AddRange(copy.ApprovalPolicies);
             config.EventTypes.AddRange(copy.EventTypes);
+            config.BusinessCalendars.AddRange(copy.BusinessCalendars);
+            config.SlaPolicies.AddRange(copy.SlaPolicies);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -176,6 +178,16 @@ public static class Composer
         foreach (var e in catalog.EventTypes)
         {
             yield return e.Id;
+        }
+
+        foreach (var c in catalog.BusinessCalendars)
+        {
+            yield return c.Id;
+        }
+
+        foreach (var p in catalog.SlaPolicies)
+        {
+            yield return p.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -349,6 +361,69 @@ public static class Composer
 
                 ctx.Config.EventTypes.Remove(eventType);
                 ctx.Config.Provenance.Remove(eventType.Id);
+                break;
+            case AddBusinessCalendar abc:
+                RequireTenantId(abc.Calendar.Id, "business calendar");
+                if (ctx.Config.FindBusinessCalendar(abc.Calendar.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"Business calendar '{abc.Calendar.Id}' already exists.", abc.Calendar.Id, "Choose a new ID.");
+                }
+
+                ctx.Config.BusinessCalendars.Add(SpecJson.Clone(abc.Calendar));
+                ctx.Mark(abc.Calendar.Id);
+                break;
+            case UpdateBusinessCalendar ubc:
+                ApplyUpdateBusinessCalendar(ctx, ubc);
+                break;
+            case RemoveBusinessCalendar rbc:
+                var calendar = ctx.Config.FindBusinessCalendar(rbc.Calendar) ?? throw Missing("business calendar", rbc.Calendar, Expression.Suggest(rbc.Calendar, ctx.Config.BusinessCalendars.Select(c => c.Id)));
+                if (!IsTenant(ctx, calendar.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Business calendar '{calendar.Label}' comes from {ctx.Layer(calendar.Id)} and cannot be removed.", rbc.Calendar, "Change its hours and holidays with business_calendar.update instead.");
+                }
+
+                if (ctx.Config.SlaPolicies.Find(p => p.Targets.Any(t => t.Calendar == calendar.Id || t.Goals.Any(g => g.Calendar == calendar.Id))) is { } calendarUser)
+                {
+                    throw new OverlayException("overlay.in_use", $"SLA policy '{calendarUser.Label}' still measures in business calendar '{calendar.Label}'.", rbc.Calendar, $"Change '{calendarUser.Id}' to another calendar first.");
+                }
+
+                ctx.Config.BusinessCalendars.Remove(calendar);
+                ctx.Config.Provenance.Remove(calendar.Id);
+                break;
+            case AddSlaPolicy asp:
+                RequireTenantId(asp.Policy.Id, "SLA policy");
+                if (ctx.Config.FindSlaPolicy(asp.Policy.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"SLA policy '{asp.Policy.Id}' already exists.", asp.Policy.Id, "Choose a new ID.");
+                }
+
+                ctx.Config.SlaPolicies.Add(SpecJson.Clone(asp.Policy));
+                ctx.Mark(asp.Policy.Id);
+                break;
+            case UpdateSlaPolicy usp:
+                var sla = ctx.Config.FindSlaPolicy(usp.Policy) ?? throw Missing("SLA policy", usp.Policy, Expression.Suggest(usp.Policy, ctx.Config.SlaPolicies.Select(p => p.Id)));
+                var slaTenant = IsTenant(ctx, sla.Id);
+                CheckExpected(ctx, usp.Policy, SpecJson.ToNode(sla)!.AsObject(), usp.Expected, SpecJson.ToNode(usp.Set)!.AsObject());
+                sla.Label = usp.Set.Label ?? sla.Label;
+                sla.Description = usp.Set.Description ?? sla.Description;
+                sla.When = usp.Set.When ?? sla.When;
+                sla.Enabled = usp.Set.Enabled ?? sla.Enabled;
+                if (usp.Set.Targets is { } targets)
+                {
+                    sla.Targets = targets.Select(SpecJson.Clone).ToList();
+                }
+
+                ctx.Mark(sla.Id, keepLayer: !slaTenant);
+                break;
+            case RemoveSlaPolicy rsp:
+                var removedSla = ctx.Config.FindSlaPolicy(rsp.Policy) ?? throw Missing("SLA policy", rsp.Policy, Expression.Suggest(rsp.Policy, ctx.Config.SlaPolicies.Select(p => p.Id)));
+                if (!IsTenant(ctx, removedSla.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"SLA policy '{removedSla.Label}' comes from {ctx.Layer(removedSla.Id)} and cannot be removed.", rsp.Policy, "Disable it with sla_policy.update (enabled: false) instead.");
+                }
+
+                ctx.Config.SlaPolicies.Remove(removedSla);
+                ctx.Config.Provenance.Remove(removedSla.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
@@ -766,6 +841,18 @@ public static class Composer
         }
 
         ctx.Mark(policy.Id, keepLayer: !tenant);
+    }
+
+    private static void ApplyUpdateBusinessCalendar(OpContext ctx, UpdateBusinessCalendar op)
+    {
+        var calendar = ctx.Config.FindBusinessCalendar(op.Calendar) ?? throw Missing("business calendar", op.Calendar, Expression.Suggest(op.Calendar, ctx.Config.BusinessCalendars.Select(c => c.Id)));
+        var tenant = IsTenant(ctx, calendar.Id);
+        CheckExpected(ctx, op.Calendar, SpecJson.ToNode(calendar)!.AsObject(), op.Expected, SpecJson.ToNode(op.Set)!.AsObject());
+        calendar.Label = op.Set.Label ?? calendar.Label;
+        calendar.TimeZone = op.Set.TimeZone ?? calendar.TimeZone;
+        calendar.Week = op.Set.Week?.Select(SpecJson.Clone).ToList() ?? calendar.Week;
+        calendar.Holidays = op.Set.Holidays?.Select(SpecJson.Clone).ToList() ?? calendar.Holidays;
+        ctx.Mark(calendar.Id, keepLayer: !tenant);
     }
 
     private static void ApplyAddWorkflowState(OpContext ctx, AddWorkflowState op)

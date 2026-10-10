@@ -3,7 +3,7 @@ title: "ADR 0003: Configuration artifact and overlay format"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-CFG-001, REQ-CFG-002, REQ-CFG-003, REQ-CFG-005, REQ-CFG-006, REQ-CFG-007, REQ-CFG-008, REQ-CFG-009, REQ-CFG-010, REQ-LAY-004, REQ-LIVE-004, REQ-MIG-002, REQ-ACC-02, REQ-ACC-03, REQ-BIZ-004]
+requirements: [REQ-BIZ-005, REQ-CFG-001, REQ-CFG-002, REQ-CFG-003, REQ-CFG-005, REQ-CFG-006, REQ-CFG-007, REQ-CFG-008, REQ-CFG-009, REQ-CFG-010, REQ-LAY-004, REQ-LIVE-004, REQ-MIG-002, REQ-ACC-02, REQ-ACC-03, REQ-BIZ-004]
 ---
 
 # ADR 0003: Configuration artifact and overlay format
@@ -29,7 +29,7 @@ Tenants customize first-party modules through overlays, by hand or through the A
 
 ### Overlay operations
 
-An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (28 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`, since G2-M2 `catalog_item.*` and `workflow.*` for service catalog items and workflows, see [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md), and since G2-M3 `approval_policy.add`, `approval_policy.update` and `approval_policy.remove` for approval policies, see [ADR 0016](0016-approvals.md), and since G2-M17 `event_type.add` and `event_type.remove` for tenant event types, see [ADR 0017](0017-event-audit-alert-notification-services.md); `workflow.update_transition` also sets a transition's `emits`).
+An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (34 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`, since G2-M2 `catalog_item.*` and `workflow.*` for service catalog items and workflows, see [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md), and since G2-M3 `approval_policy.add`, `approval_policy.update` and `approval_policy.remove` for approval policies, see [ADR 0016](0016-approvals.md), and since G2-M17 `event_type.add` and `event_type.remove` for tenant event types, see [ADR 0017](0017-event-audit-alert-notification-services.md); `workflow.update_transition` also sets a transition's `emits`, and since G2-M4 `business_calendar.add|update|remove` and `sla_policy.add|update|remove`, see [ADR 0018](0018-sla-and-business-hours.md)).
 
 ```json
 [

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/sla_policy.schema.json",
+  "title": "SlaPolicySpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "entity": {
+      "type": "string"
+    },
+    "when": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stop": {
+            "type": "string"
+          },
+          "pause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "onReopen": {
+            "type": "string"
+          },
+          "calendar": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "when": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "minutes": {
+                  "type": "integer"
+                },
+                "calendar": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "minutes"
+              ]
+            }
+          },
+          "warnAtPercent": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "stop"
+        ]
+      }
+    }
+  },
+  "required": [
+    "id",
+    "label",
+    "entity"
+  ]
+}

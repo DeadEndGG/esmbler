@@ -17,7 +17,7 @@ namespace Esmbler.Kernel.Infrastructure.Events;
 /// checkpointed and idempotent: a record already on the target version is never touched twice. Each move is audited
 /// and emits a transition event, so consumers (fulfillment, notifications) see it like any other state change.
 /// </summary>
-public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVersions workflows) : IJobHandler
+public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVersions workflows, Sla.SlaService sla) : IJobHandler
 {
     public const string JobKind = "workflow.migrate";
     private const int BatchSize = 200;
@@ -87,6 +87,7 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
 
                     var from = state;
                     var fromVersion = row.WorkflowVersion;
+                    var prior = (JsonObject)data.DeepClone();
                     data[current.StateField] = target;
                     row.Data = data.ToJsonString();
                     row.Revision++;
@@ -126,6 +127,13 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
                         Actor = job.CreatedBy is { } actor ? $"user:{actor}" : "system",
                         Payload = new JsonObject { ["changed"] = new JsonArray(current.StateField), ["from"] = from, ["to"] = target, ["transition"] = null, ["source"] = "workflow_migration" },
                     });
+
+                    // A migrated state moves SLA clocks like a transition would (cancel stops them; on_hold pauses them).
+                    if (artifact.Config.FindEntity(current.Entity) is { } migrated)
+                    {
+                        var system = new Kernel.Tenancy.RequestContext { TenantId = job.TenantId, EnvironmentId = job.EnvironmentId, PrincipalId = Guid.Empty, Channel = "worker", CorrelationId = job.Id };
+                        await sla.ApplyDataAsync(db, system, artifact.Config, artifact.Revision, migrated, row.Id, row.Revision, data, prior, startAsCreate: false, ct);
+                    }
                 }
 
                 checkpoint["after"] = rows[^1].Id.ToString();

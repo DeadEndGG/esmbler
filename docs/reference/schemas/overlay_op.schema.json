@@ -1718,6 +1718,334 @@
       "required": [
         "eventType"
       ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "business_calendar.add"
+        },
+        "calendar": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "timeZone": {
+              "type": "string"
+            },
+            "week": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "day": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "day",
+                  "start",
+                  "end"
+                ]
+              }
+            },
+            "holidays": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "date"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "calendar"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "business_calendar.update"
+        },
+        "calendar": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeZone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "week": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/28/properties/calendar/properties/week/items"
+              }
+            },
+            "holidays": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/28/properties/calendar/properties/holidays/items"
+              }
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "calendar",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "business_calendar.remove"
+        },
+        "calendar": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "calendar"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "sla_policy.add"
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "entity": {
+              "type": "string"
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "stop": {
+                    "type": "string"
+                  },
+                  "pause": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "onReopen": {
+                    "type": "string"
+                  },
+                  "calendar": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "goals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "when": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "minutes": {
+                          "type": "integer"
+                        },
+                        "calendar": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "minutes"
+                      ]
+                    }
+                  },
+                  "warnAtPercent": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "stop"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "entity"
+          ]
+        }
+      },
+      "required": [
+        "policy"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "sla_policy.update"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "targets": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/31/properties/policy/properties/targets/items"
+              }
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "policy",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "sla_policy.remove"
+        },
+        "policy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy"
+      ]
     }
   ]
 }

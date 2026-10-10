@@ -25,7 +25,11 @@ public sealed record DraftState(
     string? ArtifactHash,
     bool PermissionImpact,
     IReadOnlyList<WorkflowImpact>? WorkflowImpact = null,
-    IReadOnlyList<ApprovalImpact>? ApprovalImpact = null);
+    IReadOnlyList<ApprovalImpact>? ApprovalImpact = null,
+    IReadOnlyList<SlaImpact>? SlaImpact = null);
+
+/// <summary>Running SLA clocks of a policy or calendar the draft changes; they keep the goal and calendar they started with (ADR 0018).</summary>
+public sealed record SlaImpact(string Policy, string PolicyLabel, int Running);
 
 /// <summary>Approvals in flight under a policy the draft changes or moves items away from; they keep the policy they started with (ADR 0016).</summary>
 public sealed record ApprovalImpact(string Policy, string PolicyLabel, int Pending);
@@ -241,7 +245,27 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             compiled.Result.Manifest?.ContentHash,
             compiled.Result.Manifest?.PermissionImpact.Changed ?? false,
             await WorkflowImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct),
-            await ApprovalImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
+            await ApprovalImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct),
+            await SlaImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
+    }
+
+    private static async Task<IReadOnlyList<SlaImpact>> SlaImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)
+    {
+        var changedCalendars = published.BusinessCalendars.Where(c => draft.FindBusinessCalendar(c.Id) is not { } now || !JsonNode.DeepEquals(SpecJson.ToNode(now), SpecJson.ToNode(c))).Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        var affected = published.SlaPolicies.Where(p =>
+            draft.FindSlaPolicy(p.Id) is not { } now || !JsonNode.DeepEquals(SpecJson.ToNode(now), SpecJson.ToNode(p))
+            || p.Targets.Any(t => (t.Calendar is { } c && changedCalendars.Contains(c)) || t.Goals.Any(g => g.Calendar is { } gc && changedCalendars.Contains(gc)))).ToList();
+        var result = new List<SlaImpact>();
+        foreach (var policy in affected.OrderBy(p => p.Id, StringComparer.Ordinal))
+        {
+            var running = await db.SlaTimers.CountAsync(t => t.PolicyId == policy.Id && (t.Status == "running" || t.Status == "paused"), ct);
+            if (running > 0)
+            {
+                result.Add(new SlaImpact(policy.Id, policy.Label, running));
+            }
+        }
+
+        return result;
     }
 
     private static async Task<IReadOnlyList<ApprovalImpact>> ApprovalImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)

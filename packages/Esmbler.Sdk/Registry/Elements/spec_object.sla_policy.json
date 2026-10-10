@@ -1,0 +1,56 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.sla_policy",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "SLA policy",
+  "description": "Service-level targets on the records of one entity, such as response and resolution for tickets. Each target is a clock that starts, pauses and stops on conditions over the record, with a goal chosen by condition (usually by priority) and measured in the business hours of a calendar or around the clock. The platform warns when a target is at risk and records a breach when it passes its goal; both are platform events (platform.sla.warning, platform.sla.breached). Running clocks keep the goal and calendar they started with, so changing a policy never rewrites history.",
+  "usage": [
+    "Typical targets: response (starts on create, stops when someone picks the record up) and resolution (pauses while waiting on the customer, stops when resolved, resumes if reopened).",
+    "Order goals from the most specific (record.priority == 'p1') to a last goal without a condition.",
+    "Measure urgent goals around the clock (calendar 24x7) and the rest in business hours."
+  ],
+  "constraints": [
+    "id is unique; tenant policies start with tenant__. Default policies can be changed or disabled, not removed.",
+    "1–5 targets per policy; target IDs are snake_case; stop is required; onReopen is resume, restart or none.",
+    "Goals are 1 minute to 1 year; calendars must exist (or be 24x7); warnAtPercent is 1–99.",
+    "Conditions are expressions over record (and prior)."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/sla_policy.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly; the SLA panel (activity.sla) shows a record's timers."
+  },
+  "examples": [
+    {
+      "description": "Ticket resolution",
+      "spec": {
+        "id": "tenant__vip_sla",
+        "label": "VIP service levels",
+        "entity": "core.tickets.ticket",
+        "when": "record.priority in ['p1', 'p2']",
+        "targets": [
+          {
+            "id": "resolution",
+            "label": "Resolution",
+            "stop": "record.status in ['resolved', 'closed']",
+            "pause": "record.status == 'on_hold'",
+            "calendar": "core.tickets.calendar.business_hours",
+            "goals": [ { "when": "record.priority == 'p1'", "minutes": 120, "calendar": "24x7" }, { "minutes": 480 } ],
+            "warnAtPercent": 75
+          }
+        ]
+      }
+    }
+  ]
+}

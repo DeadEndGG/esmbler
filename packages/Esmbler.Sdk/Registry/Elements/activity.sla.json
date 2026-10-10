@@ -1,0 +1,44 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "activity.sla",
+  "version": "1.0.0",
+  "category": "activity",
+  "gate": 2,
+  "label": "SLA panel",
+  "description": "The record's service-level targets (for example response and resolution): time left or how late it is, whether the clock is paused, the goal and the business calendar it is measured in, and whether stopped targets were met or missed.",
+  "usage": [
+    "Place it on a record view whose entity has an SLA policy, in the side column or a Service levels tab.",
+    "It shows nothing when no SLA policy applies to the record."
+  ],
+  "constraints": [
+    "Visible to anyone who can read the record.",
+    "Deadlines come from the server; business hours, holidays and daylight-saving changes are applied there."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": { "type": "string", "maxLength": 60, "default": "Service levels" }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab", "layout.card"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Reads the SLA timers of the page's record." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "border.subtle", "accent.green", "accent.red", "accent.amber", "space.2", "space.3"],
+  "accessibility": {
+    "role": "list",
+    "keyboard": "Not interactive.",
+    "notes": "Each target reads as a sentence, e.g. \"Resolution: at risk, 1 h 20 min left\"; the progress bar is a meter with its value."
+  },
+  "responsive": "Targets stack; meta text wraps.",
+  "examples": [
+    {
+      "description": "Service levels in the side column",
+      "spec": { "id": "core.tickets.record.sla", "type": "activity.sla", "props": { "title": "Service levels" }, "children": [] }
+    }
+  ]
+}
