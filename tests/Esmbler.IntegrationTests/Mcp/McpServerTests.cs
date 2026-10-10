@@ -325,6 +325,26 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var badFilter = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_metric", new { entity = "core.tickets.ticket", label = "Reopened", filter = "prior.status == 'resolved'", expected_version = version }));
         Assert.Contains("bad_filter", badFilter.Body);
 
+        // One request adds a field and wires it into the list (column, grouping) and a rule: one change, undone together.
+        var added = await Call(client, "add_field", new
+        {
+            entity = "core.tickets.ticket",
+            label = "Site",
+            type = "single_select",
+            choices = new[] { "London", "Austin" },
+            required_when = "record.category == 'hardware'",
+            list_column = true,
+            list_group = true,
+            expected_version = version,
+        });
+        Assert.Equal(version + 1, added["version"]!.GetValue<int>());
+        Assert.Equal(5, added["steps"]!.AsArray().Count);
+        version = added["version"]!.GetValue<int>();
+        var metricFields = await Call(client, "describe_metric_fields", new { entity = "core.tickets.ticket" });
+        Assert.Contains(metricFields["groupable"]!.AsArray(), f => f!["key"]!.GetValue<string>() == "tenant__site");
+        var notFilterable = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_field", new { entity = "core.tickets.ticket", label = "Asset tag", type = "short_text", list_filter = true, expected_version = version }));
+        Assert.Contains("not_filterable", notFilterable.Body);
+
         // Evaluating real figures needs the records:read scope (T-23).
         var noScope = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "evaluate_metric", new { metric = "core.tickets.metric.open" }));
         Assert.Contains("scope", noScope.Body, StringComparison.OrdinalIgnoreCase);

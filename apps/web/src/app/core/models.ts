@@ -421,6 +421,8 @@ export interface DraftStep {
   actor?: string;
   undone: boolean;
   at: string;
+  /** Steps applied as one change share a batch and are undone together (REQ-WS-005). */
+  batch?: string | null;
 }
 
 export interface Diagnostic {

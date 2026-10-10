@@ -224,7 +224,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
     public Task<CallToolResult> OpenDraft() =>
         runner.RunAsync("open_draft", AgentScopes.ConfigEdit, null, async ctx => await drafts.OpenAsync(ctx, default));
 
-    [McpServerTool(Name = "add_field"), Description("Add a field to an entity and optionally place it on a page card. For single_select/multi_select give choices (labels) and a choice list is created. Returns the new draft version and the step numbers.")]
+    [McpServerTool(Name = "add_field"), Description("Add a field to an entity and, in the same change, optionally place it on a page card, make it required under a condition, and add it to the list as a column, filter or grouping. For single_select/multi_select give choices (labels) and a choice list is created. All parts apply together or not at all, and undo together. New fields become available to metrics (describe_metric_fields) by type. Returns the new draft version and the step numbers.")]
     public Task<CallToolResult> AddField(
         [Description("Entity ID, e.g. core.tickets.ticket.")] string entity,
         [Description("Label people see, e.g. \"Vendor\".")] string label,
@@ -238,7 +238,11 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         [Description("Lookup target entity ID (lookup fields).")] string? target = null,
         [Description("Optional: a layout.card (or column/tab) node ID to place the field in, from get_view.")] string? place_in_view_node = null,
         [Description("Optional: view ID that contains place_in_view_node, e.g. core.tickets.record.")] string? view = null,
-        [Description("Optional: place after this sibling node ID.")] string? after = null) =>
+        [Description("Optional: place after this sibling node ID.")] string? after = null,
+        [Description("Optional condition that makes the field required, e.g. record.category == 'hardware'. Added as a rule in the same change.")] string? required_when = null,
+        [Description("Also show the field as a column in the entity's list.")] bool list_column = false,
+        [Description("Also offer it as a list filter (choice, user and group fields).")] bool list_filter = false,
+        [Description("Also offer \"group by\" on it in the list (choice, user, group and toggle fields).")] bool list_group = false) =>
         runner.RunAsync("add_field", AgentScopes.ConfigEdit, entity, async ctx =>
         {
             var fieldKey = key ?? Namespaces.TenantKeyFromLabel(label);
@@ -266,8 +270,70 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
                 ops.Add(new InsertNode { View = view, Parent = place_in_view_node, Anchor = after is null ? null : new Anchor { After = after }, Node = new NodeSpec { Id = Namespaces.NewTenantNodeId(), Type = "field", Props = new JsonObject { ["field"] = fieldKey } } });
             }
 
+            if (required_when is not null)
+            {
+                var ruleSlug = fieldKey.StartsWith(Namespaces.TenantPrefix, StringComparison.Ordinal) ? fieldKey[Namespaces.TenantPrefix.Length..] : fieldKey;
+                ops.Add(new AddRule
+                {
+                    Rule = new RuleSpec
+                    {
+                        Id = $"{Namespaces.TenantPrefix}require_{ruleSlug}",
+                        Kind = RuleKinds.Conditional,
+                        Entity = entity,
+                        Description = $"{label} is required when {required_when}",
+                        When = required_when,
+                        Actions = [new RuleActionSpec { Type = RuleActionTypes.Require, Field = fieldKey }],
+                    },
+                });
+            }
+
+            if (list_column || list_filter || list_group)
+            {
+                ops.AddRange(await ListOpsAsync(ctx, entity, fieldKey, type, list_column, list_filter, list_group));
+            }
+
             return await ApplyAllAsync(ctx, ops, expected_version);
         });
+
+    /// <summary>Operations that put a new field into the entity's list: a column, a filter and a grouping option.</summary>
+    private async Task<IEnumerable<OverlayOp>> ListOpsAsync(RequestContext ctx, string entity, string fieldKey, string type, bool column, bool filter, bool group)
+    {
+        var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+        var list = config.Views.FirstOrDefault(v => v.Entity == entity && v.Kind == ViewKinds.List)
+            ?? throw new KernelException("no_list", $"'{entity}' has no list view to add the field to.", 400, entity, "Leave list_column, list_filter and list_group off.");
+        var nodes = list.Layout.Descendants().ToList();
+        var table = nodes.FirstOrDefault(n => n.Type == "collection.data_table") ?? throw new KernelException("no_list", $"List view '{list.Id}' has no table.", 400, list.Id);
+        var ops = new List<OverlayOp>();
+        if (column)
+        {
+            ops.Add(new InsertNode { View = list.Id, Parent = table.Id, Node = new NodeSpec { Id = Namespaces.NewTenantNodeId(), Type = "collection.column", Props = new JsonObject { ["field"] = fieldKey } } });
+        }
+
+        if (filter)
+        {
+            if (type is not (FieldTypes.SingleSelect or FieldTypes.Status or FieldTypes.Priority or FieldTypes.User or FieldTypes.Group))
+            {
+                throw new KernelException("not_filterable", $"A {type.Replace('_', ' ')} field cannot be a list filter.", 400, fieldKey, "List filters work on single select, status, priority, user and group fields; use search for text.");
+            }
+
+            var bar = nodes.FirstOrDefault(n => n.Type == "collection.filter_bar") ?? throw new KernelException("no_filter_bar", $"List view '{list.Id}' has no filter bar.", 400, list.Id);
+            var fields = new JsonArray([.. (bar.Props["fields"] as JsonArray ?? []).Select(f => f?.DeepClone()), JsonValue.Create(fieldKey)]);
+            ops.Add(new UpdateNode { View = list.Id, Node = bar.Id, Props = new JsonObject { ["fields"] = fields } });
+        }
+
+        if (group)
+        {
+            if (type is not (FieldTypes.SingleSelect or FieldTypes.Status or FieldTypes.Priority or FieldTypes.User or FieldTypes.Group or FieldTypes.Toggle))
+            {
+                throw new KernelException("not_groupable", $"A list cannot be grouped by a {type.Replace('_', ' ')} field.", 400, fieldKey, "Group by single select, status, priority, user, group or toggle fields.");
+            }
+
+            var options = new JsonArray([.. (table.Props["groupOptions"] as JsonArray ?? []).Select(f => f?.DeepClone()), JsonValue.Create(fieldKey)]);
+            ops.Add(new UpdateNode { View = list.Id, Node = table.Id, Props = new JsonObject { ["groupOptions"] = options } });
+        }
+
+        return ops;
+    }
 
     [McpServerTool(Name = "update_field"), Description("Change a field: relabel, make required (tenants can tighten base fields but not loosen them), help text, limits, pattern, default.")]
     public Task<CallToolResult> UpdateField(
@@ -855,18 +921,16 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("set_workflow_policy", AgentScopes.ConfigEdit, workflow, async ctx =>
             await ApplyAllAsync(ctx, [new SetActiveInstancePolicy { Workflow = workflow, Policy = new ActiveInstancePolicy { Policy = policy, StateMap = state_map ?? [], CancelState = cancel_state } }], expected_version));
 
+    /// <summary>Applies a tool's operations as one change (REQ-WS-005): all or none, one version, undone together.</summary>
     private async Task<object> ApplyAllAsync(RequestContext ctx, IReadOnlyList<OverlayOp> ops, int expectedVersion)
     {
-        var version = expectedVersion;
-        var steps = new List<object>();
-        foreach (var op in ops)
+        var result = await drafts.ApplyBatchAsync(ctx, ops, expectedVersion, "mcp", default);
+        return new
         {
-            var result = await drafts.ApplyAsync(ctx, op, version, "mcp", default);
-            version = result.Version;
-            steps.Add(new { step = result.Seq, result.Summary, result.Targets, warnings = result.Warnings.Count == 0 ? null : result.Warnings });
-        }
-
-        return new { version, steps };
+            version = result.Version,
+            steps = result.Steps.Select(s => new { step = s.Seq, s.Summary, s.Targets, warnings = s.Warnings.Count == 0 ? null : s.Warnings }),
+            note = result.Steps.Count > 1 ? "These steps are one change: undoing any of them undoes all of them." : null,
+        };
     }
 
     internal static string Slug(string label)

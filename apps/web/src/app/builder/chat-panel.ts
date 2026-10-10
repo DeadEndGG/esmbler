@@ -78,14 +78,17 @@ const EXAMPLES = [
           <section class="steps" aria-label="Draft changes">
             <h3><esm-icon name="history" [size]="14" /> Changes in this draft</h3>
             <ol>
-              @for (s of steps(); track s.seq) {
-                <li [class.undone]="s.undone" (mouseenter)="builder.highlight(s.targets)" (focusin)="builder.highlight(s.targets)">
+              @for (s of steps(); track s.seq; let i = $index) {
+                @let part = partOfPrevious(i);
+                <li [class.undone]="s.undone" [class.part]="part" (mouseenter)="builder.highlight(s.targets)" (focusin)="builder.highlight(s.targets)">
                   <span class="who" [class.agent]="s.byAgent" [title]="s.byAgent ? 'Made by the AI' : 'Made by a person'"><esm-icon [name]="s.byAgent ? 'sparkles' : 'check'" [size]="12" /></span>
                   <span class="summary">{{ s.summary }}</span>
-                  @if (s.undone) {
+                  @if (part) {
+                    <!-- Part of the change above: undone and redone with it. -->
+                  } @else if (s.undone) {
                     <button class="btn btn-ghost btn-sm" (click)="builder.redo(s.seq)">Redo</button>
                   } @else {
-                    <button class="btn btn-ghost btn-sm" (click)="builder.undo(s.seq)" [attr.aria-label]="'Undo: ' + s.summary"><esm-icon name="undo" [size]="13" /> Undo</button>
+                    <button class="btn btn-ghost btn-sm" (click)="builder.undo(s.seq)" [attr.aria-label]="'Undo: ' + s.summary + (batchSize(s) > 1 ? ' and ' + (batchSize(s) - 1) + ' related steps' : '')"><esm-icon name="undo" [size]="13" /> Undo</button>
                   }
                 </li>
               }
@@ -251,6 +254,7 @@ const EXAMPLES = [
     .steps ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
     .steps li { display: flex; align-items: center; gap: var(--esm-space-2); padding: var(--esm-space-1) var(--esm-space-1) var(--esm-space-1) var(--esm-space-2); border-radius: var(--esm-radius-sm); font: var(--esm-text-body-sm); }
     .steps li:hover { background: var(--esm-state-hover); }
+    .steps li.part { margin-left: var(--esm-space-5); }
     .steps li.undone .summary { text-decoration: line-through; color: var(--esm-text-muted); }
     .summary { flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .who { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: var(--esm-radius-full); background: var(--esm-surface-sunken); color: var(--esm-text-muted); }
@@ -304,6 +308,16 @@ export class ChatPanel {
 
   protected readonly steps = computed<DraftStep[]>(() => this.builder.draft()?.steps ?? []);
   protected readonly activeSteps = computed(() => this.steps().filter((s) => !s.undone));
+
+  /** True when a step belongs to the same change (batch) as the one before it. */
+  protected partOfPrevious(i: number): boolean {
+    const steps = this.steps();
+    return i > 0 && !!steps[i].batch && steps[i - 1].batch === steps[i].batch;
+  }
+
+  protected batchSize(step: DraftStep): number {
+    return step.batch ? this.steps().filter((s) => s.batch === step.batch).length : 1;
+  }
   protected readonly errors = computed(() => (this.builder.draft()?.diagnostics ?? []).filter((d) => d.severity === 'error'));
 
   constructor() {

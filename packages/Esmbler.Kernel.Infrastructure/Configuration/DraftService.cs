@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Esmbler.Kernel.Infrastructure.Configuration;
 
-public sealed record DraftStep(int Seq, string Op, string Summary, IReadOnlyList<string> Targets, string Source, bool ByAgent, string? Actor, bool Undone, DateTimeOffset At);
+public sealed record DraftStep(int Seq, string Op, string Summary, IReadOnlyList<string> Targets, string Source, bool ByAgent, string? Actor, bool Undone, DateTimeOffset At, Guid? Batch = null);
 
 public sealed record DraftState(
     Guid Id,
@@ -41,6 +41,12 @@ public sealed record ApprovalImpact(string Policy, string PolicyLabel, int Pendi
 public sealed record WorkflowImpact(string Workflow, string Entity, string EntityLabel, string Policy, int Running, int Moving, int StayingPinned, IReadOnlyList<string> UnmappedStates);
 
 public sealed record ApplyResult(int Version, int Seq, string Summary, IReadOnlyList<string> Targets, IReadOnlyList<Diagnostic> Warnings, DraftState Draft);
+
+/// <summary>One step of an applied batch.</summary>
+public sealed record AppliedStep(int Seq, string Summary, IReadOnlyList<string> Targets, IReadOnlyList<Diagnostic> Warnings);
+
+/// <summary>A batch applied as one change (REQ-WS-005): all steps or none, one draft version, undone together.</summary>
+public sealed record BatchResult(int Version, Guid? Batch, IReadOnlyList<AppliedStep> Steps, DraftState Draft);
 
 /// <summary>A compiled draft: published overlay + active draft commands composed on the installed base.</summary>
 public sealed record CompiledDraft(DraftRow Draft, List<DraftCommandRow> Commands, CompileResult Result, ActiveArtifact Published, IReadOnlyList<OverlayOp> Overlay);
@@ -78,11 +84,27 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             return draft is null ? null : await StateAsync(db, ctx, draft, ct);
         }, ct);
 
-    public Task<ApplyResult> ApplyAsync(RequestContext ctx, OverlayOp op, int expectedVersion, string source, CancellationToken ct) =>
+    public async Task<ApplyResult> ApplyAsync(RequestContext ctx, OverlayOp op, int expectedVersion, string source, CancellationToken ct)
+    {
+        var result = await ApplyBatchAsync(ctx, [op], expectedVersion, source, ct);
+        var step = result.Steps.Single();
+        return new ApplyResult(result.Version, step.Seq, step.Summary, step.Targets, step.Warnings, result.Draft);
+    }
+
+    /// <summary>
+    /// Applies several operations as one change (REQ-WS-005): they are validated together, either all are recorded or
+    /// none, the draft version moves once, and undoing any of them undoes the whole batch.
+    /// </summary>
+    public Task<BatchResult> ApplyBatchAsync(RequestContext ctx, IReadOnlyList<OverlayOp> ops, int expectedVersion, string source, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            if (ops.Count == 0)
+            {
+                throw new KernelException("empty_batch", "There is nothing to apply.", 400);
+            }
+
             var (_, perms) = await RequireEditAsync(db, ctx, ct);
-            if (op.AffectsPermissions && !perms.Can(PlatformActions.PermissionsAdmin))
+            if (ops.Any(op => op.AffectsPermissions) && !perms.Can(PlatformActions.PermissionsAdmin))
             {
                 throw KernelException.Forbidden(
                     ctx.AgentId is null ? "Changing who can see or edit fields requires the permission administration right." : "AI agents cannot change permissions. Ask an administrator to make this change.",
@@ -92,17 +114,16 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             var draft = await LockOpenDraftAsync(db, ct) ?? throw new KernelException("no_draft", "There is no open draft. Open one first.", 409, suggestion: "Call open_draft.");
             await CheckVersionAsync(db, draft, expectedVersion, ct);
             var before = await CompileAsync(db, ctx, draft, ct);
-            if (before.Commands.Count(c => !c.Undone) >= MaxCommandsPerDraft)
+            if (before.Commands.Count(c => !c.Undone) + ops.Count > MaxCommandsPerDraft)
             {
                 throw new KernelException("draft_too_large", $"A draft can hold at most {MaxCommandsPerDraft} changes. Publish or discard it first.", 409);
             }
 
-            var candidateOps = before.Overlay.Append(op).ToList();
-            var after = Compile(before.Published, candidateOps);
-            var outcome = after.Composition.Outcomes[^1];
-            if (outcome.Status is OpStatus.Failed or OpStatus.Conflict)
+            var after = Compile(before.Published, [.. before.Overlay, .. ops]);
+            var outcomes = after.Composition.Outcomes.Skip(after.Composition.Outcomes.Count - ops.Count).ToList();
+            if (outcomes.FirstOrDefault(o => o.Status is OpStatus.Failed or OpStatus.Conflict) is { } failed)
             {
-                throw Refuse(outcome.Diagnostics);
+                throw Refuse(failed.Diagnostics);
             }
 
             // Refuse changes that introduce new validation errors; existing ones (e.g. after an upgrade) don't block unrelated edits.
@@ -113,30 +134,40 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                 throw Refuse(introduced);
             }
 
-            var seq = (before.Commands.Count == 0 ? 0 : before.Commands.Max(c => c.Seq)) + 1;
-            var summary = op.Describe();
-            var targets = op.Targets().ToArray();
-            db.DraftCommands.Add(new DraftCommandRow
+            var first = (before.Commands.Count == 0 ? 0 : before.Commands.Max(c => c.Seq)) + 1;
+            Guid? batch = ops.Count > 1 ? Guid.NewGuid() : null;
+            var steps = new List<AppliedStep>();
+            for (var i = 0; i < ops.Count; i++)
             {
-                TenantId = ctx.TenantId,
-                EnvironmentId = ctx.EnvironmentId,
-                DraftId = draft.Id,
-                Seq = seq,
-                Op = SpecJson.Serialize<OverlayOp>(op),
-                Summary = summary,
-                Targets = targets,
-                Actor = ctx.PrincipalId,
-                Agent = ctx.AgentId,
-                Source = source,
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
+                var op = ops[i];
+                var seq = first + i;
+                var summary = op.Describe();
+                var targets = op.Targets().ToArray();
+                db.DraftCommands.Add(new DraftCommandRow
+                {
+                    TenantId = ctx.TenantId,
+                    EnvironmentId = ctx.EnvironmentId,
+                    DraftId = draft.Id,
+                    Seq = seq,
+                    Op = SpecJson.Serialize<OverlayOp>(op),
+                    Summary = summary,
+                    Targets = targets,
+                    Actor = ctx.PrincipalId,
+                    Agent = ctx.AgentId,
+                    Source = source,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    BatchId = batch,
+                });
+                AuditWriter.Add(db, ctx, "draft.apply", "draft", draft.Id.ToString(), before.Published.Revision, new { seq, op = Composer.OpName(op), summary, targets, batch });
+                steps.Add(new AppliedStep(seq, summary, targets, outcomes[i].Diagnostics.Where(d => !d.IsError).ToList()));
+            }
+
             draft.Version++;
             draft.UpdatedAt = DateTimeOffset.UtcNow;
-            AuditWriter.Add(db, ctx, "draft.apply", "draft", draft.Id.ToString(), before.Published.Revision, new { seq, op = Composer.OpName(op), summary, targets });
             await db.SaveChangesAsync(ct);
-            await NotifyAsync(db, ctx, draft, seq, "apply", targets, ct);
+            await NotifyAsync(db, ctx, draft, steps[^1].Seq, "apply", [.. steps.SelectMany(s => s.Targets).Distinct(StringComparer.Ordinal)], ct);
             var state = await StateAsync(db, ctx, draft, ct);
-            return new ApplyResult(draft.Version, seq, summary, targets, outcome.Diagnostics.Where(d => !d.IsError).ToList(), state);
+            return new BatchResult(draft.Version, batch, steps, state);
         }, ct);
 
     /// <summary>Undoes one step. Refused when later active steps depend on it (draft.undo_has_dependents).</summary>
@@ -153,11 +184,14 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                 return await StateAsync(db, ctx, draft, ct);
             }
 
+            // Steps applied as one change are undone and redone together (REQ-WS-005).
+            var group = command.BatchId is { } batch ? commands.Where(c => c.BatchId == batch).ToList() : [command];
+            var inGroup = group.Select(c => c.Seq).ToHashSet();
             var current = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-            var ops = current.Overlay.Concat(commands.Where(c => c.Seq == seq ? !undone : !c.Undone).Select(c => SpecJson.Deserialize<OverlayOp>(c.Op))).ToList();
+            var activeAfter = commands.Where(c => inGroup.Contains(c.Seq) ? !undone : !c.Undone).ToList();
+            var ops = current.Overlay.Concat(activeAfter.Select(c => SpecJson.Deserialize<OverlayOp>(c.Op))).ToList();
             var result = Compile(current, ops);
             var failing = result.Composition.Outcomes.Skip(current.Overlay.Count).Where(o => o.Status is OpStatus.Failed).ToList();
-            var activeAfter = commands.Where(c => c.Seq == seq ? !undone : !c.Undone).ToList();
             if (failing.Count > 0 || result.Errors.Any())
             {
                 var dependents = new List<string>();
@@ -166,11 +200,11 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                     // Later active steps whose elements depend on what this step created or changed.
                     var full = Compile(current, current.Overlay.Concat(commands.Where(c => !c.Undone).Select(c => SpecJson.Deserialize<OverlayOp>(c.Op))).ToList());
                     var graph = DependencyGraph.Build(full.Config);
-                    var impact = command.Targets.SelectMany(graph.ImpactOf).ToHashSet(StringComparer.Ordinal);
-                    dependents = commands.Where(c => c.Seq > seq && !c.Undone && c.Targets.Any(impact.Contains)).Select(c => $"step {c.Seq} ({c.Summary})").ToList();
+                    var impact = group.SelectMany(c => c.Targets).SelectMany(graph.ImpactOf).ToHashSet(StringComparer.Ordinal);
+                    dependents = commands.Where(c => c.Seq > seq && !inGroup.Contains(c.Seq) && !c.Undone && c.Targets.Any(impact.Contains)).Select(c => $"step {c.Seq} ({c.Summary})").ToList();
                 }
 
-                dependents.AddRange(failing.Select(o => activeAfter[o.Index - current.Overlay.Count]).Where(c => c.Seq != seq).Select(c => $"step {c.Seq} ({c.Summary})").Where(x => !dependents.Contains(x)));
+                dependents.AddRange(failing.Select(o => activeAfter[o.Index - current.Overlay.Count]).Where(c => !inGroup.Contains(c.Seq)).Select(c => $"step {c.Seq} ({c.Summary})").Where(x => !dependents.Contains(x)));
                 throw new KernelException(
                     undone ? "draft.undo_has_dependents" : "draft.redo_invalid",
                     undone && dependents.Count > 0 ? $"Step {seq} can't be undone on its own: {string.Join("; ", dependents)} depend on it." : $"Step {seq} can't be {(undone ? "undone" : "redone")}: {string.Join(" ", result.Errors.Select(e => e.Message).Take(3))}",
@@ -178,12 +212,12 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                     suggestion: undone && dependents.Count > 0 ? "Undo the dependent steps first (latest first)." : null);
             }
 
-            command.Undone = undone;
+            group.ForEach(c => c.Undone = undone);
             draft.Version++;
             draft.UpdatedAt = DateTimeOffset.UtcNow;
-            AuditWriter.Add(db, ctx, undone ? "draft.undo" : "draft.redo", "draft", draft.Id.ToString(), current.Revision, new { seq });
+            AuditWriter.Add(db, ctx, undone ? "draft.undo" : "draft.redo", "draft", draft.Id.ToString(), current.Revision, new { seq, steps = group.Count > 1 ? inGroup.Order().ToArray() : null });
             await db.SaveChangesAsync(ct);
-            await NotifyAsync(db, ctx, draft, seq, undone ? "undo" : "redo", command.Targets, ct);
+            await NotifyAsync(db, ctx, draft, seq, undone ? "undo" : "redo", [.. group.SelectMany(c => c.Targets).Distinct(StringComparer.Ordinal)], ct);
             return await StateAsync(db, ctx, draft, ct);
         }, ct);
 
@@ -233,7 +267,7 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
         var compiled = await CompileAsync(db, ctx, draft, ct);
         var actors = compiled.Commands.Select(c => c.Actor).Distinct().ToList();
         var names = await db.Principals.Where(p => actors.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
-        var steps = compiled.Commands.Select(c => new DraftStep(c.Seq, Composer.OpName(SpecJson.Deserialize<OverlayOp>(c.Op)), c.Summary, c.Targets, c.Source, c.Agent is not null, names.GetValueOrDefault(c.Actor), c.Undone, c.CreatedAt)).ToList();
+        var steps = compiled.Commands.Select(c => new DraftStep(c.Seq, Composer.OpName(SpecJson.Deserialize<OverlayOp>(c.Op)), c.Summary, c.Targets, c.Source, c.Agent is not null, names.GetValueOrDefault(c.Actor), c.Undone, c.CreatedAt, c.BatchId)).ToList();
         return new DraftState(
             draft.Id,
             draft.Version,

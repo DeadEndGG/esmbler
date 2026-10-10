@@ -159,6 +159,35 @@ public class ConfigLifecycleTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task A_batch_is_one_change_applied_whole_and_undone_together()
+    {
+        // REQ-WS-005: one request (a field plus its card placement and rule) is one reviewable change.
+        var t = await f.NewTenantAsync("tbatch");
+        var admin = f.As(t, "admin");
+        var draft = await Drafts.OpenAsync(admin, default);
+        var ops = Customization();
+
+        // A batch with an invalid step records nothing.
+        var broken = ops.Take(2).Append(new InsertNode { View = RecordView, Parent = "core.tickets.record.c_side", Node = new NodeSpec { Id = "tenant__n_bad", Type = "field", Props = new JsonObject { ["field"] = "tenant__missing" } } }).ToList();
+        var refused = await Assert.ThrowsAsync<KernelException>(() => Drafts.ApplyBatchAsync(admin, broken, draft.Version, "mcp", default));
+        Assert.Equal("layout.unknown_field", refused.Code);
+        var unchanged = await Drafts.CurrentAsync(admin, default);
+        Assert.Equal((draft.Version, 0), (unchanged!.Version, unchanged.Steps.Count));
+
+        var applied = await Drafts.ApplyBatchAsync(admin, ops, draft.Version, "mcp", default);
+        Assert.Equal(draft.Version + 1, applied.Version);
+        Assert.Equal(ops.Length, applied.Steps.Count);
+        Assert.All(applied.Draft.Steps, s => Assert.Equal(applied.Batch, s.Batch));
+
+        // Undoing any step of the batch undoes all of it; redo brings all of it back.
+        var undone = await Drafts.SetUndoneAsync(admin, 2, true, applied.Version, default);
+        Assert.All(undone.Steps, s => Assert.True(s.Undone));
+        Assert.DoesNotContain(undone.Changes, c => c.Id == $"{Ticket}/tenant__vendor");
+        var redone = await Drafts.SetUndoneAsync(admin, 1, false, undone.Version, default);
+        Assert.All(redone.Steps, s => Assert.False(s.Undone));
+    }
+
+    [Fact]
     public async Task Agents_request_publish_but_only_humans_publish_and_permissions_need_admin()
     {
         var t = await f.NewTenantAsync("te");

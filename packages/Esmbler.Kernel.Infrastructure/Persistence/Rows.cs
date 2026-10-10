@@ -219,6 +219,9 @@ public sealed class DraftCommandRow
     public bool Undone { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>Steps applied together share a batch and are undone together (REQ-WS-005).</summary>
+    public Guid? BatchId { get; set; }
 }
 
 public sealed class PublishRequestRow
