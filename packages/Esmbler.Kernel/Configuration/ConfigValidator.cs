@@ -58,7 +58,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
         foreach (var entity in config.Entities.Where(e => e.Request is null))
         {
-            foreach (var f in entity.Fields.Where(f => f.Type is FieldTypes.CatalogItem or FieldTypes.Variables))
+            foreach (var f in entity.Fields.Where(f => f.Type is FieldTypes.CatalogItem or FieldTypes.Variables or FieldTypes.Principals))
             {
                 d.Add(Diagnostic.Error("config.bad_field_type", $"Field '{f.Key}' of {entity.Label} has type {f.Type}, which only entities that receive requests can use.", $"{entity.Id}/{f.Key}", "Use another type, or add the field to a request entity."));
             }
@@ -67,6 +67,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         foreach (var item in config.CatalogItems)
         {
             ValidateCatalogItem(config, item, d);
+        }
+
+        foreach (var policy in config.ApprovalPolicies)
+        {
+            ValidateApprovalPolicy(config, policy, d);
         }
 
         foreach (var wf in config.Workflows)
@@ -132,6 +137,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Check(config.PermissionSets.Select(p => p.Id), "permission set");
         Check(config.Relationships.Select(r => r.Id), "relationship");
         Check(config.CatalogItems.Select(c => c.Id), "catalog item");
+        Check(config.ApprovalPolicies.Select(p => p.Id), "approval policy");
     }
 
     private void ValidateEntity(SpecCatalog config, EntitySpec entity, List<Diagnostic> d)
@@ -231,9 +237,9 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
         foreach (var access in entity.AccessFields)
         {
-            if (entity.FindField(access.Field) is not { Type: FieldTypes.User or FieldTypes.Group })
+            if (entity.FindField(access.Field) is not { Type: FieldTypes.User or FieldTypes.Group or FieldTypes.Principals })
             {
-                d.Add(Diagnostic.Error("config.bad_access_field", $"Access field '{access.Field}' on {entity.Label} must be a user or group field.", entity.Id));
+                d.Add(Diagnostic.Error("config.bad_access_field", $"Access field '{access.Field}' on {entity.Label} must be a user, group or principals field.", entity.Id));
             }
         }
     }
@@ -603,6 +609,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
 
         NeedTransition(requestFlow, binding.CompleteTransition, "completion");
+        if (binding.Approval is { } approval)
+        {
+            ValidateApprovalBinding(entity, approval, requestFlow, d);
+        }
+
         NeedTransition(taskFlow, binding.TaskReleaseTransition, "task release");
         if (taskFlow.FindTransition(binding.TaskReleaseTransition) is { } release && release.To == taskFlow.InitialState)
         {
@@ -628,6 +639,203 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
     private const int MaxVariables = 50;
 
     private const int MaxTasks = 50;
+
+    private static void ValidateApprovalBinding(EntitySpec entity, ApprovalBindingSpec approval, WorkflowSpec flow, List<Diagnostic> d)
+    {
+        if (flow.FindState(approval.State) is null)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Approval state '{approval.State}' is not a state of {flow.Id}.", entity.Id));
+        }
+
+        void Need(string id, string role, Func<WorkflowTransition, bool> shape, string expected)
+        {
+            if (flow.FindTransition(id) is not { } t)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"The {role} transition '{id}' is not in {flow.Id}.", entity.Id));
+            }
+            else if (!t.System)
+            {
+                d.Add(Diagnostic.Error("config.not_system", $"The {role} transition '{id}' must be a system transition so only the approval engine fires it.", entity.Id));
+            }
+            else if (!shape(t))
+            {
+                d.Add(Diagnostic.Error("config.bad_approval_binding", $"The {role} transition '{id}' must {expected}.", entity.Id));
+            }
+        }
+
+        Need(approval.RequestTransition, "approval request", t => t.From.Contains(flow.InitialState) && t.To == approval.State, $"go from '{flow.InitialState}' to '{approval.State}'");
+        Need(approval.ApprovedTransition, "approved", t => t.From.Contains(approval.State) && t.To != approval.State, $"leave '{approval.State}'");
+        Need(approval.DeclinedTransition, "declined", t => t.From.Contains(approval.State) && flow.FindState(t.To)?.Category == StateCategories.Cancelled, $"go from '{approval.State}' to a cancelled-category state");
+
+        if (entity.FindField(approval.ApproversField) is not { Type: FieldTypes.Principals } field)
+        {
+            d.Add(Diagnostic.Error("config.bad_approval_binding", $"{entity.Label} needs a '{approval.ApproversField}' field of type principals for its approvers.", entity.Id));
+        }
+        else if (!field.ReadOnly)
+        {
+            d.Add(Diagnostic.Error("config.bad_approval_binding", $"The approvers field '{field.Key}' must be read-only; only the approval engine writes it.", $"{entity.Id}/{field.Key}"));
+        }
+
+        if (!entity.AccessFields.Exists(a => a.Field == approval.ApproversField && !a.CanEdit))
+        {
+            d.Add(Diagnostic.Warning("config.approvers_not_related", $"Approvers of {entity.PluralLabel.ToLowerInvariant()} cannot open them: '{approval.ApproversField}' is not a read-only access field.", entity.Id, $"Add an access field {{ field: {approval.ApproversField}, relation: approver, canEdit: false }}."));
+        }
+
+        // A migration must keep requests in the approval state there, or cancel them (pending approvals are preserved or explicitly cancelled).
+        if (flow.ActiveInstances.Policy == ActiveInstancePolicies.Migrate
+            && flow.ActiveInstances.StateMap.TryGetValue(approval.State, out var target)
+            && target != approval.State
+            && flow.FindState(target)?.Category != StateCategories.Cancelled)
+        {
+            d.Add(Diagnostic.Error("config.strands_approvals", $"Migrating {entity.PluralLabel.ToLowerInvariant()} from '{approval.State}' to '{target}' would abandon their pending approvals.", flow.Id, $"Keep '{approval.State}' or map it to a cancelled state."));
+        }
+
+    }
+
+    private static readonly HashSet<string> ApproverFieldTypes = [FieldTypes.User, FieldTypes.Group];
+
+    private static void ValidateApprovalPolicy(SpecCatalog config, ApprovalPolicySpec policy, List<Diagnostic> d)
+    {
+        if (!Namespaces.IsValidId(policy.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{policy.Id}' is not a valid approval policy ID.", policy.Id));
+        }
+
+        if (string.IsNullOrWhiteSpace(policy.Label) || policy.Label.Length > 80)
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"Approval policy '{policy.Id}' needs a label of 1–80 characters.", policy.Id));
+        }
+
+        var entity = config.FindEntity(policy.Entity);
+        if (entity?.Request?.Approval is null)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_entity", $"Approval policy '{policy.Label}' applies to '{policy.Entity}', which has no approval binding.", policy.Id, string.Join(", ", config.Entities.Where(e => e.Request?.Approval is not null).Select(e => e.Id))));
+            return;
+        }
+
+        if (policy.Stages.Count == 0 || policy.Stages.Count > MaxStages)
+        {
+            d.Add(Diagnostic.Error("config.bad_stages", $"Approval policy '{policy.Label}' needs 1–{MaxStages} stages.", policy.Id));
+        }
+
+        foreach (var dup in policy.Stages.GroupBy(s => s.Id).Where(g => g.Count() > 1))
+        {
+            d.Add(Diagnostic.Error("config.duplicate_id", $"Approval policy '{policy.Label}' has two stages '{dup.Key}'.", policy.Id));
+        }
+
+        // Stage conditions see the request and, when every item using the policy shares them, nothing more: variables
+        // differ per item, so they are checked against each item that uses the policy.
+        var items = config.CatalogItems.Where(i => i.ApprovalPolicy == policy.Id).ToList();
+        foreach (var stage in policy.Stages)
+        {
+            var target = $"{policy.Id}/{stage.Id}";
+            if (!Namespaces.IsValidFieldKey(stage.Id))
+            {
+                d.Add(Diagnostic.Error("config.invalid_key", $"'{stage.Id}' is not a valid stage ID (lowercase letters, digits, underscores).", target));
+            }
+
+            if (string.IsNullOrWhiteSpace(stage.Label) || stage.Label.Length > 80)
+            {
+                d.Add(Diagnostic.Error("config.bad_label", $"Stage '{stage.Id}' needs a label of 1–80 characters.", target));
+            }
+
+            if (!ApprovalModes.Values.Contains(stage.Mode))
+            {
+                d.Add(Diagnostic.Error("config.bad_mode", $"Stage '{stage.Label}' has mode '{stage.Mode}'.", target, "Use all or any."));
+            }
+
+            if (stage.Approvers.Count == 0 || stage.Approvers.Count > MaxApprovers)
+            {
+                d.Add(Diagnostic.Error("config.bad_approvers", $"Stage '{stage.Label}' needs 1–{MaxApprovers} approvers.", target));
+            }
+
+            foreach (var approver in stage.Approvers.Concat(stage.EscalateTo))
+            {
+                ValidateApprover(config, entity, items, approver, target, d);
+            }
+
+            if (stage.ExpiresAfterHours is { } hours && (hours < 1 || hours > 24 * 90))
+            {
+                d.Add(Diagnostic.Error("config.bad_expiry", $"Stage '{stage.Label}' expires after {hours} hours; use 1 to 2160.", target));
+            }
+
+            if (!ApprovalExpiry.Values.Contains(stage.OnExpiry))
+            {
+                d.Add(Diagnostic.Error("config.bad_expiry", $"Stage '{stage.Label}' has onExpiry '{stage.OnExpiry}'.", target, "Use reject or escalate."));
+            }
+            else if (stage.OnExpiry == ApprovalExpiry.Escalate && (stage.EscalateTo.Count == 0 || stage.ExpiresAfterHours is null))
+            {
+                d.Add(Diagnostic.Error("config.bad_expiry", $"Stage '{stage.Label}' escalates but has no escalateTo approvers or no expiresAfterHours.", target));
+            }
+
+            if (!string.IsNullOrWhiteSpace(stage.When))
+            {
+                var schemas = items.Count == 0 ? [EntitySchema.ForRequest(entity, new CatalogItemSpec { Id = policy.Id, Label = policy.Label, RequestEntity = entity.Id })] : items.Select(i => EntitySchema.ForRequest(entity, i));
+                foreach (var schema in schemas)
+                {
+                    try
+                    {
+                        Expression.Compile(stage.When, schema);
+                    }
+                    catch (ExpressionException ex)
+                    {
+                        d.Add(Diagnostic.Error(ex.Code, $"The condition of stage '{stage.Label}' is invalid: {ex.Message}", target, ex.Suggestion));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private static void ValidateApprover(SpecCatalog config, EntitySpec entity, List<CatalogItemSpec> items, ApproverSpec approver, string target, List<Diagnostic> d)
+    {
+        switch (approver.Kind)
+        {
+            case ApproverKinds.Group:
+                if (string.IsNullOrWhiteSpace(approver.Ref))
+                {
+                    d.Add(Diagnostic.Error("config.bad_approvers", "A group approver needs a group key.", target));
+                }
+
+                break;
+            case ApproverKinds.Role:
+                if (!config.Roles.Exists(r => r.Id == approver.Ref))
+                {
+                    d.Add(Diagnostic.Error("config.not_found", $"Approver role '{approver.Ref}' does not exist.", target, Expression.Suggest(approver.Ref, config.Roles.Select(r => r.Id))));
+                }
+
+                break;
+            case ApproverKinds.Field:
+                var parts = approver.Ref.Split('.', 2);
+                if (parts is ["record", var key])
+                {
+                    if (entity.FindField(key) is not { } f || !ApproverFieldTypes.Contains(f.Type))
+                    {
+                        d.Add(Diagnostic.Error("config.bad_approvers", $"Approver field '{approver.Ref}' must be a user or group field of {entity.Label}.", target, Expression.Suggest(key, entity.Fields.Where(x => ApproverFieldTypes.Contains(x.Type)).Select(x => x.Key))));
+                    }
+                }
+                else if (parts is ["variables", var question])
+                {
+                    foreach (var item in items.Where(i => i.FindVariable(question) is not { } v || !ApproverFieldTypes.Contains(v.Type)))
+                    {
+                        d.Add(Diagnostic.Error("config.bad_approvers", $"Approver '{approver.Ref}' must be a user or group question of every item using the policy; '{item.Label}' has none.", target));
+                    }
+                }
+                else
+                {
+                    d.Add(Diagnostic.Error("config.bad_approvers", $"Approver field '{approver.Ref}' must look like record.<field> or variables.<question>.", target));
+                }
+
+                break;
+            default:
+                d.Add(Diagnostic.Error("config.bad_approvers", $"Approver kind '{approver.Kind}' is unknown.", target, string.Join(", ", ApproverKinds.Configurable)));
+                break;
+        }
+    }
+
+    private const int MaxStages = 10;
+
+    private const int MaxApprovers = 20;
 
     private static void ValidateCatalogItem(SpecCatalog config, CatalogItemSpec item, List<Diagnostic> d)
     {
@@ -723,6 +931,18 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         if (FindTaskCycle(item) is { } cycle)
         {
             d.Add(Diagnostic.Error("config.task_cycle", $"Tasks of '{item.Label}' depend on each other in a cycle: {cycle}.", item.Id, "Remove one dependency so the tasks can start."));
+        }
+
+        if (item.ApprovalPolicy is { } policyId)
+        {
+            if (config.FindApprovalPolicy(policyId) is not { } policy)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Catalog item '{item.Label}' uses unknown approval policy '{policyId}'.", item.Id, Expression.Suggest(policyId, config.ApprovalPolicies.Select(p => p.Id))));
+            }
+            else if (policy.Entity != item.RequestEntity)
+            {
+                d.Add(Diagnostic.Error("config.bad_approval_policy", $"Approval policy '{policy.Label}' applies to {policy.Entity}, not to {item.RequestEntity}.", item.Id));
+            }
         }
 
         if (item.Tasks.Count == 0)

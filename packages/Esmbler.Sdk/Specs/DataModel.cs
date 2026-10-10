@@ -29,10 +29,16 @@ public static class FieldTypes
     /// <summary>Typed answers to a catalog item's variables, as an object keyed by variable key (requests).</summary>
     public const string Variables = "variables";
 
+    /// <summary>
+    /// A platform-maintained list of user and group IDs (approvers, ADR 0016). Never written by people; usable as an
+    /// access field so everyone listed is related to the record.
+    /// </summary>
+    public const string Principals = "principals";
+
     public static IReadOnlyList<string> All { get; } =
     [
         ShortText, LongText, RichText, Integer, Decimal, Date, DateTime, SingleSelect, MultiSelect, Toggle, Status, Priority,
-        Email, Lookup, User, Group, AutoNumber, CatalogItem, Variables,
+        Email, Lookup, User, Group, AutoNumber, CatalogItem, Variables, Principals,
     ];
 
     public static bool UsesChoiceList(string type) => type is SingleSelect or MultiSelect or Status or Priority;

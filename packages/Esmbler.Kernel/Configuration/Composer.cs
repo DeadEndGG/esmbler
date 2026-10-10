@@ -100,6 +100,7 @@ public static class Composer
             config.NotificationTemplates.AddRange(copy.NotificationTemplates);
             config.ExtensionPoints.AddRange(copy.ExtensionPoints);
             config.CatalogItems.AddRange(copy.CatalogItems);
+            config.ApprovalPolicies.AddRange(copy.ApprovalPolicies);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -160,6 +161,11 @@ public static class Composer
         foreach (var c in catalog.CatalogItems)
         {
             yield return c.Id;
+        }
+
+        foreach (var p in catalog.ApprovalPolicies)
+        {
+            yield return p.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -284,6 +290,35 @@ public static class Composer
 
                 ctx.Config.CatalogItems.Remove(item);
                 ctx.Config.Provenance.Remove(item.Id);
+                break;
+            case AddApprovalPolicy aap:
+                RequireTenantId(aap.Policy.Id, "approval policy");
+                if (ctx.Config.FindApprovalPolicy(aap.Policy.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"Approval policy '{aap.Policy.Id}' already exists.", aap.Policy.Id, "Change it with update_approval_policy, or choose a new ID.");
+                }
+
+                RequireEntity(ctx.Config, aap.Policy.Entity);
+                ctx.Config.ApprovalPolicies.Add(SpecJson.Clone(aap.Policy));
+                ctx.Mark(aap.Policy.Id);
+                break;
+            case UpdateApprovalPolicy uap:
+                ApplyUpdateApprovalPolicy(ctx, uap);
+                break;
+            case RemoveApprovalPolicy rap:
+                var policy = RequireApprovalPolicy(ctx.Config, rap.Policy);
+                if (!IsTenant(ctx, policy.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Approval policy '{rap.Policy}' comes from {ctx.Layer(policy.Id)} and cannot be removed.", rap.Policy, "Point catalog items at another policy with update_catalog_item instead.");
+                }
+
+                if (ctx.Config.CatalogItems.Find(i => i.ApprovalPolicy == policy.Id) is { } user)
+                {
+                    throw new OverlayException("overlay.in_use", $"Catalog item '{user.Label}' still uses approval policy '{policy.Label}'.", rap.Policy, $"Change '{user.Id}' to another policy first.");
+                }
+
+                ctx.Config.ApprovalPolicies.Remove(policy);
+                ctx.Config.Provenance.Remove(policy.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
@@ -651,6 +686,16 @@ public static class Composer
         item.Icon = op.Set.Icon ?? item.Icon;
         item.Active = op.Set.Active ?? item.Active;
         item.Order = op.Set.Order ?? item.Order;
+        if (op.Set.ApprovalPolicy is { } approval)
+        {
+            if (approval.Length > 0)
+            {
+                RequireApprovalPolicy(ctx.Config, approval);
+            }
+
+            item.ApprovalPolicy = approval.Length == 0 ? null : approval;
+        }
+
         if (op.Set.Variables is not null)
         {
             item.Variables = op.Set.Variables.Select(SpecJson.Clone).ToList();
@@ -662,6 +707,35 @@ public static class Composer
         }
 
         ctx.Mark(item.Id, keepLayer: !tenant);
+    }
+
+    private static ApprovalPolicySpec RequireApprovalPolicy(EffectiveConfig config, string id) =>
+        config.FindApprovalPolicy(id) ?? throw Missing("approval policy", id, Expression.Suggest(id, config.ApprovalPolicies.Select(p => p.Id)));
+
+    private static void ApplyUpdateApprovalPolicy(OpContext ctx, UpdateApprovalPolicy op)
+    {
+        var policy = RequireApprovalPolicy(ctx.Config, op.Policy);
+        var tenant = IsTenant(ctx, policy.Id);
+        if (!tenant && op.Set.Stages is not null)
+        {
+            throw new OverlayException(
+                "overlay.base_immutable",
+                $"The stages of '{policy.Label}' come from {ctx.Layer(policy.Id)} and cannot be replaced.",
+                op.Policy,
+                "Add your own policy with add_approval_policy and point the catalog item at it.");
+        }
+
+        var patch = SpecJson.ToNode(op.Set)!.AsObject();
+        patch.Remove("stages");
+        CheckExpected(ctx, op.Policy, SpecJson.ToNode(policy)!.AsObject(), op.Expected, patch);
+        policy.Label = op.Set.Label ?? policy.Label;
+        policy.Description = op.Set.Description ?? policy.Description;
+        if (op.Set.Stages is not null)
+        {
+            policy.Stages = op.Set.Stages.Select(SpecJson.Clone).ToList();
+        }
+
+        ctx.Mark(policy.Id, keepLayer: !tenant);
     }
 
     private static void ApplyAddWorkflowState(OpContext ctx, AddWorkflowState op)

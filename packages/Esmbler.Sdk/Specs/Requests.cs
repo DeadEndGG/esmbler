@@ -33,6 +33,9 @@ public sealed class CatalogItemSpec
 
     public List<FulfillmentTaskSpec> Tasks { get; set; } = [];
 
+    /// <summary>Approval policy requests for this item pass before fulfillment (ADR 0016); null means no approval.</summary>
+    public string? ApprovalPolicy { get; set; }
+
     public VariableSpec? FindVariable(string key) => Variables.Find(v => v.Key == key);
 }
 
@@ -144,6 +147,9 @@ public sealed class RequestBindingSpec
 
     /// <summary>System transition that cancels an unfinished task when its request is rejected or cancelled.</summary>
     public required string TaskCancelTransition { get; set; }
+
+    /// <summary>How approvals drive this entity's workflow; required for catalog items with an approval policy.</summary>
+    public ApprovalBindingSpec? Approval { get; set; }
 }
 
 public static class FulfillmentOutcomes

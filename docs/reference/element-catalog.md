@@ -201,6 +201,7 @@ Accessibility: role `group`; Tab moves between fields; type-specific keys apply 
 | `field.long_text` | 1 | no | Multi-line plain text up to 10,000 characters, such as resolution notes, steps to reproduce, or an internal summary. |
 | `field.lookup` | 1 | no | A reference from this record to one record of another (or the same) entity, such as a ticket's parent ticket or an asset's vendor. |
 | `field.multi_select` | 1 | no | Several options chosen from one choice list, such as labels, affected services, or skills. |
+| `field.principals` | 2 | no | A list of user and group IDs that the platform maintains, such as the approvers of a request. |
 | `field.priority` | 1 | no | How urgent a record is, chosen from an ordered choice list (P1 critical to P4 low) and rendered as a tone badge. |
 | `field.rich_text` | 1 | no | Formatted text — paragraphs, bold, italics, lists, links, inline code, and quotes — stored as sanitized HTML. |
 | `field.short_text` | 1 | no | A single line of plain text up to 500 characters, such as a title, a vendor name, a serial number, or an external reference. |
@@ -390,6 +391,18 @@ Constraints:
 - An empty selection is stored as an empty array, never null.
 
 Accessibility: role `combobox`; Alt+Down opens the list; Space toggles the focused option; Backspace in the empty input removes the last chip; Esc closes.
+
+### People and groups (platform) (`field.principals`)
+
+A list of user and group IDs that the platform maintains, such as the approvers of a request. People never edit it. Declared as an access field, everyone listed is related to the record and can open it with the field permissions of their own roles.
+
+Constraints:
+
+- Read-only; written only by platform services.
+- At most 500 distinct IDs.
+- Valid only on request entities.
+
+Accessibility: role `list`; Not focusable; read as a list of names.
 
 ### Priority (`field.priority`)
 
@@ -747,8 +760,27 @@ Accessibility: role `tablist`; Left/Right arrows move between views; Enter or Sp
 
 | Element | Gate | Placeable | Description |
 | --- | --- | --- | --- |
+| `activity.approvals` | 2 | yes | The approval stages of a request: who approves each stage, what they decided, on whose behalf, when, and why, plus what is still pending and when it expires. |
 | `activity.audit_history` | 1 | yes | A read-only, append-only timeline of every field change on a record: what changed (old → new), when, by which actor — a user, an AI agent acting for a user, or a module/automation — and under which configuration revision. |
 | `activity.feed` | 1 | yes | The conversation on a record: public replies that the requester sees and internal work notes that only agents see, in one timeline with a composer. |
+
+### Approvals panel (`activity.approvals`)
+
+The approval stages of a request: who approves each stage, what they decided, on whose behalf, when, and why, plus what is still pending and when it expires. People who may decide a pending step see Approve and Reject right here.
+
+| Prop | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `title` | string | no |  |
+
+Parents: `layout.column`, `layout.tab`, `layout.card`. Children: none.
+
+Constraints:
+
+- Visible to anyone who can read the record; decisions are checked on the server (approver, delegate, separation of duties).
+- Rejecting needs a comment.
+- AI agents cannot decide approvals.
+
+Accessibility: role `list`; Tab reaches each pending step's Approve and Reject buttons; the reject dialog traps focus and Escape closes it.
 
 ### Audit history (`activity.audit_history`)
 
@@ -976,6 +1008,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 
 | Element | Gate | Placeable | Description |
 | --- | --- | --- | --- |
+| `spec_object.approval_policy` | 2 | no | Who must approve a request before fulfillment starts. |
 | `spec_object.assignment_rule` | 1 | no | Routes records to a group when a condition holds, such as sending network tickets to the Network queue. |
 | `spec_object.catalog_item` | 2 | no | A requestable service offering, such as "New laptop" or "Software access". |
 | `spec_object.choice_list` | 1 | no | A reusable, ordered list of options for single_select, multi_select, status, and priority fields. |
@@ -991,6 +1024,22 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | `spec_object.role` | 1 | no | A named job function, such as Agent or Requester, that people hold in a tenant. |
 | `spec_object.validation_rule` | 1 | no | A rule (RuleSpec, kind validation) that blocks a write unless its assert expression is true, with a message shown on a field. |
 | `spec_object.workflow` | 1 | no | The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, and button tone. |
+
+### Approval policy (`spec_object.approval_policy`)
+
+Who must approve a request before fulfillment starts. Stages run in order; the approvers of one stage decide in parallel, and the stage passes when all of them approve (mode all) or when the first one approves (mode any). A stage can be conditional, expire, and escalate. Catalog items name the policy their requests use.
+
+Constraints:
+
+- id is unique; tenant policies start with tenant__.
+- entity must be a request entity with an approval binding.
+- 1–10 stages with unique snake_case IDs; each has 1–20 approvers of kind group (group key), role (role ID) or field (record.<field> or variables.<question> holding a user or group).
+- mode is all or any; expiresAfterHours is 1–2160; onExpiry is reject or escalate, and escalate needs escalateTo and expiresAfterHours.
+- when is a CEL-subset boolean over record and variables.
+- The requester never approves their own request, and one person decides at most one step per stage.
+- Approvals in flight keep the policy they started with; changing stages is a permission change.
+
+Accessibility: role `none`; Not rendered directly; the approvals panel and the approvals inbox show its stages.
 
 ### Assignment rule (`spec_object.assignment_rule`)
 

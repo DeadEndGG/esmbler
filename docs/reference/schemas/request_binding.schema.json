@@ -54,6 +54,35 @@
     },
     "taskCancelTransition": {
       "type": "string"
+    },
+    "approval": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "requestTransition": {
+          "type": "string"
+        },
+        "approvedTransition": {
+          "type": "string"
+        },
+        "declinedTransition": {
+          "type": "string"
+        },
+        "approversField": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "requestTransition",
+        "approvedTransition",
+        "declinedTransition"
+      ]
     }
   },
   "required": [

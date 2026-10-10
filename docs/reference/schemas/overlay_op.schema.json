@@ -1024,6 +1024,12 @@
                   "title"
                 ]
               }
+            },
+            "approvalPolicy": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
@@ -1101,6 +1107,12 @@
               "items": {
                 "$ref": "#/anyOf/16/properties/item/properties/tasks/items"
               }
+            },
+            "approvalPolicy": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
@@ -1407,6 +1419,160 @@
       },
       "required": [
         "workflow",
+        "policy"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "approval_policy.add"
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "entity": {
+              "type": "string"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  },
+                  "approvers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref"
+                      ]
+                    }
+                  },
+                  "when": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAfterHours": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "onExpiry": {
+                    "type": "string"
+                  },
+                  "escalateTo": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/anyOf/23/properties/policy/properties/stages/items/properties/approvers/items"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "label"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "entity"
+          ]
+        }
+      },
+      "required": [
+        "policy"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "approval_policy.update"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stages": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/23/properties/policy/properties/stages/items"
+              }
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "policy",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "approval_policy.remove"
+        },
+        "policy": {
+          "type": "string"
+        }
+      },
+      "required": [
         "policy"
       ]
     }

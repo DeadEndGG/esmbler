@@ -1,0 +1,50 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.principals",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 2,
+  "label": "People and groups (platform)",
+  "description": "A list of user and group IDs that the platform maintains, such as the approvers of a request. People never edit it. Declared as an access field, everyone listed is related to the record and can open it with the field permissions of their own roles.",
+  "usage": [
+    "Use it for the approvers field of a request entity with an approval binding.",
+    "Declare it as a read-only access field (canEdit false)."
+  ],
+  "constraints": [
+    "Read-only; written only by platform services.",
+    "At most 500 distinct IDs.",
+    "Valid only on request entities."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "valueSchema": {
+    "type": "array",
+    "items": { "type": "string", "format": "uuid" },
+    "maxItems": 500
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "field",
+    "description": "Rendered by a field placement node bound to a field of this type."
+  },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "space.1", "space.2"],
+  "accessibility": {
+    "role": "list",
+    "keyboard": "Not focusable; read as a list of names.",
+    "notes": "Shown as names with avatars."
+  },
+  "responsive": "Names wrap onto several lines.",
+  "examples": [
+    {
+      "description": "Approvers of a request",
+      "spec": { "key": "approvers", "type": "principals", "label": "Approvers", "readOnly": true }
+    }
+  ]
+}

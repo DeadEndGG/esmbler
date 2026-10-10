@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "activity.approvals",
+  "version": "1.0.0",
+  "category": "activity",
+  "gate": 2,
+  "label": "Approvals panel",
+  "description": "The approval stages of a request: who approves each stage, what they decided, on whose behalf, when, and why, plus what is still pending and when it expires. People who may decide a pending step see Approve and Reject right here.",
+  "usage": [
+    "Place it on the request record view, in the side column or in an Approvals tab.",
+    "It shows nothing for requests without an approval policy."
+  ],
+  "constraints": [
+    "Visible to anyone who can read the record; decisions are checked on the server (approver, delegate, separation of duties).",
+    "Rejecting needs a comment.",
+    "AI agents cannot decide approvals."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": { "type": "string", "maxLength": 60, "default": "Approvals" }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab", "layout.card"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Reads the approval of the page's record." },
+  "events": ["decide"],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "border.subtle", "accent.green", "accent.red", "accent.amber", "space.2", "space.3"],
+  "accessibility": {
+    "role": "list",
+    "keyboard": "Tab reaches each pending step's Approve and Reject buttons; the reject dialog traps focus and Escape closes it.",
+    "notes": "Each step reads as a sentence, e.g. \"Manager approval: approved by Jamie Ortiz for Quinn Patel, 10 Oct 14:30\"."
+  },
+  "responsive": "Stages stack; decision details wrap below 720px.",
+  "examples": [
+    {
+      "description": "Approvals in the side column",
+      "spec": { "id": "core.tickets.request_record.approvals", "type": "activity.approvals", "props": { "title": "Approvals" }, "children": [] }
+    }
+  ]
+}

@@ -33,6 +33,9 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddTransition), "workflow.add_transition")]
 [JsonDerivedType(typeof(UpdateTransition), "workflow.update_transition")]
 [JsonDerivedType(typeof(SetActiveInstancePolicy), "workflow.set_active_instances")]
+[JsonDerivedType(typeof(AddApprovalPolicy), "approval_policy.add")]
+[JsonDerivedType(typeof(UpdateApprovalPolicy), "approval_policy.update")]
+[JsonDerivedType(typeof(RemoveApprovalPolicy), "approval_policy.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -350,6 +353,9 @@ public sealed class CatalogItemPatch
     public List<VariableSpec>? Variables { get; set; }
 
     public List<FulfillmentTaskSpec>? Tasks { get; set; }
+
+    /// <summary>Approval policy ID; an empty string removes the item's approval (ADR 0016).</summary>
+    public string? ApprovalPolicy { get; set; }
 }
 
 public sealed class UpdateCatalogItem : OverlayOp
@@ -373,6 +379,10 @@ public sealed class UpdateCatalogItem : OverlayOp
     }
 
     public override IEnumerable<string> Targets() => [Item];
+
+    /// <summary>Removing an item's approval lets its requests skip approvers: a permission change (ADR 0016).</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.ApprovalPolicy is "";
 }
 
 /// <summary>Removes a tenant catalog item. Base items are deactivated instead (requests keep their item).</summary>
@@ -486,4 +496,59 @@ public sealed class SetActiveInstancePolicy : OverlayOp
     };
 
     public override IEnumerable<string> Targets() => [$"{Workflow}/active_instances"];
+}
+
+/// <summary>Adds a tenant approval policy (ADR 0016). It takes effect once a catalog item names it.</summary>
+public sealed class AddApprovalPolicy : OverlayOp
+{
+    public required ApprovalPolicySpec Policy { get; set; }
+
+    public override string Describe() =>
+        $"Add approval policy \"{Policy.Label}\" with {Policy.Stages.Count} stage(s): {string.Join(" → ", Policy.Stages.Select(s => s.Label))}";
+
+    public override IEnumerable<string> Targets() => [Policy.Id];
+}
+
+/// <summary>Patch of an approval policy. Null members are left unchanged; stages replace the whole list.</summary>
+public sealed class ApprovalPolicyPatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public List<ApprovalStageSpec>? Stages { get; set; }
+}
+
+/// <summary>Changes an approval policy. Base policies accept only label and description. Approvals in flight keep their snapshot.</summary>
+public sealed class UpdateApprovalPolicy : OverlayOp
+{
+    public required string Policy { get; set; }
+
+    public required ApprovalPolicyPatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() =>
+        Set.Stages is { } stages
+            ? $"Change approval policy {Policy}: stages {string.Join(" → ", stages.Select(s => s.Label))}"
+            : $"Change approval policy {Policy}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => $"{p.Key} = {p.Value?.ToJsonString()}"))}";
+
+    public override IEnumerable<string> Targets() => [Policy];
+
+    /// <summary>Changing stages changes who approves: a permission change.</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.Stages is not null;
+}
+
+/// <summary>Removes a tenant approval policy that no catalog item uses.</summary>
+public sealed class RemoveApprovalPolicy : OverlayOp
+{
+    public required string Policy { get; set; }
+
+    public override string Describe() => $"Remove approval policy {Policy}";
+
+    public override IEnumerable<string> Targets() => [Policy];
+
+    [JsonIgnore]
+    public override bool AffectsPermissions => true;
 }

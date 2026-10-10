@@ -143,6 +143,35 @@ public sealed partial class DependencyGraph
             {
                 g.AddExpression(item.Id, item.RequestEntity, t.When, "task_condition");
             }
+
+            if (item.ApprovalPolicy is { } policy)
+            {
+                g.Add(item.Id, policy, "catalog_approval_policy");
+            }
+        }
+
+        foreach (var policy in config.ApprovalPolicies)
+        {
+            g.Add(policy.Id, policy.Entity, "approval_entity");
+            foreach (var stage in policy.Stages)
+            {
+                foreach (var approver in stage.Approvers.Concat(stage.EscalateTo))
+                {
+                    if (approver.Kind == ApproverKinds.Role)
+                    {
+                        g.Add(policy.Id, approver.Ref, "approver_role");
+                    }
+                    else if (approver.Kind == ApproverKinds.Field && approver.Ref.StartsWith("record.", StringComparison.Ordinal))
+                    {
+                        g.Add(policy.Id, $"{policy.Entity}/{approver.Ref["record.".Length..]}", "approver_field");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(stage.When))
+                {
+                    g.AddExpression(policy.Id, policy.Entity, stage.When, "stage_condition");
+                }
+            }
         }
 
         foreach (var view in config.Views)

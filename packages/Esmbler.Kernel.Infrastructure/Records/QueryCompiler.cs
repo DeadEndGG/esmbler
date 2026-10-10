@@ -99,7 +99,12 @@ public sealed class QueryCompiler
                 foreach (var af in entity.AccessFields)
                 {
                     var field = entity.FindField(af.Field);
-                    if (field?.Type == FieldTypes.Group)
+                    if (field?.Type == FieldTypes.Principals)
+                    {
+                        var ids = permissions.Facts.Groups.Select(g => g.ToString()).Prepend(permissions.Facts.PrincipalId.ToString()).ToArray();
+                        parts.Add($"(r.data->{ctx.Param(af.Field)}) ?| {ctx.Param(ids)}");
+                    }
+                    else if (field?.Type == FieldTypes.Group)
                     {
                         if (permissions.Facts.Groups.Count > 0)
                         {

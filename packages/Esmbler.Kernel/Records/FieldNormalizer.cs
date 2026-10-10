@@ -50,6 +50,7 @@ public sealed partial class FieldNormalizer(IRichTextSanitizer sanitizer)
                 FieldTypes.Variables => input is JsonObject obj
                     ? (obj.DeepClone(), null)
                     : (null, Error(field, "invalid_type", $"{field.Label} must be an object of answers keyed by question.", "Send {\"question_key\": value}.")),
+                FieldTypes.Principals => Principals(field, input),
                 _ => (null, Error(field, "unknown_type", $"{field.Label} has an unsupported type.")),
             };
         }
@@ -57,6 +58,34 @@ public sealed partial class FieldNormalizer(IRichTextSanitizer sanitizer)
         {
             return (null, Error(field, "invalid_type", $"{field.Label} has a value of the wrong type.", Hint(field)));
         }
+    }
+
+    /// <summary>A platform-maintained list of user and group IDs: distinct UUID strings, at most 500.</summary>
+    private static (JsonNode?, FieldError?) Principals(FieldSpec field, JsonNode input)
+    {
+        if (input is not JsonArray list)
+        {
+            return (null, Error(field, "invalid_type", $"{field.Label} must be a list of user and group IDs."));
+        }
+
+        var ids = new List<string>();
+        foreach (var item in list)
+        {
+            if (item is not JsonValue v || !v.TryGetValue<string>(out var raw) || !Guid.TryParse(raw, out var id))
+            {
+                return (null, Error(field, "invalid_type", $"{field.Label} must contain only user and group IDs."));
+            }
+
+            var normalized = id.ToString();
+            if (!ids.Contains(normalized))
+            {
+                ids.Add(normalized);
+            }
+        }
+
+        return ids.Count > 500
+            ? (null, Error(field, "too_many", $"{field.Label} can list at most 500 people and groups."))
+            : (new JsonArray(ids.Select(i => (JsonNode)JsonValue.Create(i)).ToArray()), null);
     }
 
     private (JsonNode?, FieldError?) Text(FieldSpec field, JsonNode input, bool sanitize)

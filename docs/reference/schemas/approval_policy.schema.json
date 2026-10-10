@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/approval_policy.schema.json",
+  "title": "ApprovalPolicySpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "entity": {
+      "type": "string"
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "approvers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "ref"
+              ]
+            }
+          },
+          "when": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAfterHours": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "onExpiry": {
+            "type": "string"
+          },
+          "escalateTo": {
+            "type": "array",
+            "items": {
+              "$ref": "#/properties/stages/items/properties/approvers/items"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      }
+    }
+  },
+  "required": [
+    "id",
+    "label",
+    "entity"
+  ]
+}

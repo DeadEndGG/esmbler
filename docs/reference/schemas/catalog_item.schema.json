@@ -140,6 +140,12 @@
           "title"
         ]
       }
+    },
+    "approvalPolicy": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

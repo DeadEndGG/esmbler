@@ -76,12 +76,24 @@ public sealed class EffectivePermissions
         bool related = false, canEdit = false;
         foreach (var access in entity.AccessFields)
         {
+            var field = entity.FindField(access.Field);
+            if (field?.Type == FieldTypes.Principals)
+            {
+                // A platform-maintained list of users and groups (approvers, ADR 0016).
+                if (data[access.Field] is JsonArray list && list.OfType<JsonValue>().Any(v => v.TryGetValue<string>(out var s) && Guid.TryParse(s, out var p) && (p == Facts.PrincipalId || Facts.Groups.Contains(p))))
+                {
+                    related = true;
+                    canEdit |= access.CanEdit;
+                }
+
+                continue;
+            }
+
             if (data[access.Field] is not JsonValue value || !value.TryGetValue<string>(out var raw) || !Guid.TryParse(raw, out var id))
             {
                 continue;
             }
 
-            var field = entity.FindField(access.Field);
             var match = field?.Type == FieldTypes.Group ? Facts.Groups.Contains(id) : id == Facts.PrincipalId;
             if (match)
             {

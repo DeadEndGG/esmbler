@@ -11,7 +11,7 @@ public static class EntitySchema
     {
         FieldTypes.Integer or FieldTypes.Decimal => ExprType.Number,
         FieldTypes.Toggle => ExprType.Bool,
-        FieldTypes.MultiSelect => ExprType.List,
+        FieldTypes.MultiSelect or FieldTypes.Principals => ExprType.List,
         _ => ExprType.String,
     };
 

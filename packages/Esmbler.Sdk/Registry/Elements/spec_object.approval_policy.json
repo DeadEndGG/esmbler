@@ -1,0 +1,64 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.approval_policy",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "Approval policy",
+  "description": "Who must approve a request before fulfillment starts. Stages run in order; the approvers of one stage decide in parallel, and the stage passes when all of them approve (mode all) or when the first one approves (mode any). A stage can be conditional, expire, and escalate. Catalog items name the policy their requests use.",
+  "usage": [
+    "Keep policies short: one stage for routine items, a second stage only for higher risk (e.g. when variables.access_level == 'admin').",
+    "Prefer group or role approvers over a single person so approvals do not stall during absences; people can also delegate.",
+    "Give stages an expiry with escalation for time-sensitive requests."
+  ],
+  "constraints": [
+    "id is unique; tenant policies start with tenant__.",
+    "entity must be a request entity with an approval binding.",
+    "1–10 stages with unique snake_case IDs; each has 1–20 approvers of kind group (group key), role (role ID) or field (record.<field> or variables.<question> holding a user or group).",
+    "mode is all or any; expiresAfterHours is 1–2160; onExpiry is reject or escalate, and escalate needs escalateTo and expiresAfterHours.",
+    "when is a CEL-subset boolean over record and variables.",
+    "The requester never approves their own request, and one person decides at most one step per stage.",
+    "Approvals in flight keep the policy they started with; changing stages is a permission change."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/approval_policy.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly; the approvals panel and the approvals inbox show its stages."
+  },
+  "examples": [
+    {
+      "description": "Manager approval, then security for admin access",
+      "spec": {
+        "id": "core.tickets.approval.access",
+        "label": "Access approval",
+        "entity": "core.tickets.request",
+        "stages": [
+          {
+            "id": "manager",
+            "label": "Manager approval",
+            "mode": "any",
+            "approvers": [{ "kind": "role", "ref": "core.tickets.approver" }],
+            "expiresAfterHours": 72,
+            "onExpiry": "escalate",
+            "escalateTo": [{ "kind": "group", "ref": "service_desk" }]
+          },
+          {
+            "id": "security",
+            "label": "Security sign-off",
+            "approvers": [{ "kind": "role", "ref": "core.tickets.admin" }],
+            "when": "variables.access_level == 'admin'"
+          }
+        ]
+      }
+    }
+  ]
+}
