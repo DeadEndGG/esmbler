@@ -102,7 +102,9 @@ public class EventDeliveryTests(PlatformFixture f)
         Assert.Equal(t.Id, envelope.RecordId);
         Assert.Equal(t.Revision, envelope.RecordRevision);
         Assert.Equal(t.ConfigRevision, envelope.ConfigRevision);
-        Assert.Equal(1, envelope.SchemaVersion);
+        Assert.Equal(2, envelope.SchemaVersion);
+        Assert.Equal("core.tickets", envelope.Source);
+        Assert.NotNull(envelope.RecordedAt);
         Assert.NotEqual(Guid.Empty, envelope.CorrelationId);
         Assert.False(string.IsNullOrEmpty(envelope.Actor));
 

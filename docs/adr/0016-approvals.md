@@ -3,7 +3,7 @@ title: "ADR 0016: Approvals"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-BIZ-004, REQ-AUTHZ-011, REQ-MIG-003, REQ-ACC-05, REQ-AISAFE-001]
+requirements: [REQ-BIZ-004, REQ-AUTHZ-011, REQ-MIG-003, REQ-ACC-05, REQ-AISAFE-001, REQ-EVT-008]
 ---
 
 # ADR 0016: Approvals
@@ -56,6 +56,7 @@ The request binding gains the approval state, three system transitions (into app
 - `ApprovalService.DecideAsync` locks the request row, checks eligibility, records the decision, evaluates the stage and either waits, starts the next stage, or finishes the approval with a system transition, all in one transaction with audit and events.
 - Stage expiry is a durable timer (`approval.expire`, dedup key per approval and stage). On expiry, `reject` declines the request and `escalate` adds steps for `escalateTo` with a second deadline. The escalation replaces the original approvers: their open steps expire, and the first escalation decision, approve or reject, decides the stage (approvals recorded before the escalation do not count; ASM-047). A second expiry declines.
 - When the request enters a cancelled-category state (cancelled by the requester, rejected, or a workflow `cancel` policy), the consumer cancels its pending steps.
+- Since G2-M17 the engine publishes platform events in the same transaction (source `platform.approvals`): `platform.approval.requested` when a stage starts, and `platform.approval.approved`, `.rejected` or `.cancelled` when the approval ends ([ADR 0017](0017-event-audit-alert-notification-services.md)).
 
 ### Who may decide
 

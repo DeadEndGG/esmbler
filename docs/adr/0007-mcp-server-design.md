@@ -3,7 +3,7 @@ title: "ADR 0007: MCP server design"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004]
+requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008]
 ---
 
 # ADR 0007: MCP server design
@@ -58,7 +58,7 @@ No tool takes a tenant or environment argument. Each call resolves the `RequestC
 | Build | `open_draft` | none | draft ID and version (opens or resumes the single draft) | config:edit |
 | | `add_field`, `update_field`, `hide_field`, `add_choice_option` | entity, field spec or patch, `expected_version` | steps (`step`, `summary`, `targets`), new version, diagnostics | config:edit |
 | | `add_card`, `insert_node`, `update_node`, `move_node`, `remove_node` | view, parent/node, anchor, spec, `expected_version` | same | config:edit |
-| | `add_rule`, `set_rule_enabled`, `remove_rule` | rule spec or ID, `expected_version` | same + plain-English restatement and scope | config:edit |
+| | `add_rule`, `set_rule_enabled`, `remove_rule` | rule spec or ID (actions include `emit_event` with `event` and `payload`, G2-M17), `expected_version` | same + plain-English restatement and scope | config:edit |
 | | `reset_to_default` | `element`, `expected_version` | same; appends `element.reset` ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)) | config:edit |
 | | `undo_step` | `step`, `expected_version` | new version | config:edit |
 | Review | `get_draft` | none | steps, version, status | config:read |
@@ -81,7 +81,7 @@ Service catalog and workflow tools (G2-M2, [ADR 0015](0015-requests-catalog-fulf
 | | `update_catalog_item` | `item`, `label?`, `description?`, `category?`, `active?`, `approval_policy?` (G2-M3), `expected_version` | `catalog_item.update` | config:edit |
 | | `add_workflow_state` | `workflow`, `label`, `category`, `expected_version` | `workflow.add_state` | config:edit |
 | | `add_transition` | `workflow`, `label`, `from`, `to`, `roles?`, `required_fields?`, `guard?`, `guard_message?`, `tone?`, `expected_version` | `workflow.add_transition` | config:edit |
-| | `update_transition` | `workflow`, `transition`, `label?`, `enabled?`, `guard_message?`, `tone?`, `from?`, `to?`, `guard?`, `expected_version` | `workflow.update_transition` | config:edit |
+| | `update_transition` | `workflow`, `transition`, `label?`, `enabled?`, `guard_message?`, `tone?`, `from?`, `to?`, `guard?`, `publish_events?` (each `event`, `payload`, `severity?`; appended to the transition's events, G2-M17), `expected_version` | `workflow.update_transition` | config:edit |
 | | `set_workflow_policy` | `workflow`, `policy` (pin, migrate, cancel), `state_map?`, `cancel_state?`, `expected_version` | `workflow.set_active_instances` | config:edit |
 
 Approval tools (G2-M3, [ADR 0016](0016-approvals.md)). `list_catalog_items` also returns each item's `approvalPolicy`.
@@ -92,6 +92,13 @@ Approval tools (G2-M3, [ADR 0016](0016-approvals.md)). `list_catalog_items` also
 | Build | `add_approval_policy` | `label`, `stages` (each `label`, `mode?`, `roles?`, `groups?`, `fields?`, `when?`, `expiresAfterHours?`, `escalateToGroups?`), `description?`, `request_entity?`, `expected_version` | `approval_policy.add` (`tenant__` ID) | config:edit |
 
 Clearing an item's `approval_policy` is a permission change, so the agent's call is refused (`permissions.admin` is never delegated). There is no tool to approve, reject or delegate: decisions need an interactive human session, and `ApprovalService` refuses agent contexts (REQ-AISAFE-001).
+
+Event type tools (G2-M17, [ADR 0017](0017-event-audit-alert-notification-services.md)). Rules publish declared events through the `emit_event` action of `add_rule`, transitions through `publish_events` on `update_transition` (both above). No tool returns event envelopes.
+
+| Family | Tool | Input (summary) | Overlay op | Scope |
+|---|---|---|---|---|
+| Discovery | `list_event_types` | none | none; event types in the open draft with payload fields, severity, sensitivity and the transitions and rules that publish each | config:read |
+| Build | `add_event_type` | `label`, `fields` (key to `string`, `number`, `boolean` or `list`), `subject_entity?`, `severity?`, `description?`, `expected_version` | `event_type.add` (`tenant__` ID) | config:edit |
 
 Most build tools append one draft command; composite tools (`add_field` with placement, `add_card` with fields) append one per op and report each step ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 

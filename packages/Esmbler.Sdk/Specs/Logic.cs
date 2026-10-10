@@ -24,10 +24,13 @@ public static class RuleActionTypes
     public const string Hide = "hide";
     public const string ReadOnly = "read_only";
     public const string SetValue = "set_value";
+
+    /// <summary>Publishes a domain event when the rule's condition becomes true (ADR 0017).</summary>
+    public const string EmitEvent = "emit_event";
     public const string RestrictOptions = "restrict_options";
     public const string Message = "message";
 
-    public static IReadOnlyList<string> All { get; } = [Require, Show, Hide, ReadOnly, SetValue, RestrictOptions, Message];
+    public static IReadOnlyList<string> All { get; } = [Require, Show, Hide, ReadOnly, SetValue, RestrictOptions, Message, EmitEvent];
 }
 
 public sealed class RuleSpec
@@ -80,6 +83,9 @@ public sealed class RuleActionSpec
 
     /// <summary>message: info, warning, or critical.</summary>
     public string? Tone { get; set; }
+
+    /// <summary>emit_event: the event to publish when the condition turns true (false before the change, true after).</summary>
+    public EventEmitSpec? Emit { get; set; }
 }
 
 public static class StateCategories
@@ -179,6 +185,9 @@ public sealed class WorkflowTransition
 
     /// <summary>Fired only by the platform (fulfillment, migrations); never offered as a button or accepted from people.</summary>
     public bool System { get; set; }
+
+    /// <summary>Domain events published when the transition fires (ADR 0017), e.g. core.tickets.ticket.escalated.</summary>
+    public List<EventEmitSpec> Emits { get; set; } = [];
 }
 
 public sealed class AssignmentRuleSpec

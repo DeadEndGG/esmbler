@@ -111,10 +111,13 @@ public sealed class MigrationExecutor(Database database, FieldNormalizer normali
                             Outcome = "success",
                             Details = JsonSerializer.Serialize(new { migration = migration.Id, changes = new Dictionary<string, object?> { [target.Key] = new { from = JsonNode.Parse(before)![target.Key]?.ToJsonString(), to = data[target.Key]?.ToJsonString() } } }),
                         });
-                        var envelope = new EventEnvelope
+                        Events.EventWriter.Add(db, new EventEnvelope
                         {
                             EventId = Guid.NewGuid(),
                             Type = EventTypes.RecordUpdated,
+                            Source = Events.EventWriter.SourceOf(candidate, entity.Id),
+                            Severity = EventSeverities.Info,
+                            Sensitivity = EventSensitivities.Internal,
                             TenantId = tenantId,
                             EnvironmentId = environmentId,
                             Entity = entity.Id,
@@ -124,8 +127,7 @@ public sealed class MigrationExecutor(Database database, FieldNormalizer normali
                             CorrelationId = runId,
                             Actor = "system",
                             Payload = new JsonObject { ["changed"] = new JsonArray(target.Key), ["source"] = "migration:" + migration.Id },
-                        };
-                        db.Outbox.Add(new OutboxRow { Id = envelope.EventId, TenantId = tenantId, EnvironmentId = environmentId, Type = envelope.Type, RecordId = row.Id, RecordRevision = row.Revision, Event = JsonSerializer.Serialize(envelope, SpecJson.Options), AvailableAt = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow });
+                        });
                     }
                 }
 

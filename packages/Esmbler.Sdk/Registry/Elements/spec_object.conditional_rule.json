@@ -5,7 +5,7 @@
   "category": "spec_object",
   "gate": 1,
   "label": "Conditional rule",
-  "description": "A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, or show a message. With scope data it applies on every write path and drives the field rule hooks in all views; with scope form it only affects one view's presentation.",
+  "description": "A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, show a message, or publish a declared event (emit_event, once each time the condition becomes true; data scope only). With scope data it applies on every write path and drives the field rule hooks in all views; with scope form it only affects one view's presentation.",
   "usage": [
     "Express each business policy as one rule with a clear when (\"record.category == 'access'\").",
     "Use scope data for anything that must hold everywhere; use scope form only for presentation tweaks.",

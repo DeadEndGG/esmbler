@@ -514,6 +514,32 @@ public sealed class OutboxRow
     public DateTimeOffset? DispatchedAt { get; set; }
 }
 
+/// <summary>A consumer that failed on an event (ADR 0017): retried and dead-lettered on its own.</summary>
+public sealed class ConsumerFailureRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string Consumer { get; set; } = "";
+
+    public Guid EventId { get; set; }
+
+    public string EventType { get; set; } = "";
+
+    public int Attempts { get; set; }
+
+    public bool Dead { get; set; }
+
+    public string? LastError { get; set; }
+
+    public DateTimeOffset FirstFailedAt { get; set; }
+
+    public DateTimeOffset LastFailedAt { get; set; }
+}
+
 public sealed class InboxRow
 {
     public string Consumer { get; set; } = "";

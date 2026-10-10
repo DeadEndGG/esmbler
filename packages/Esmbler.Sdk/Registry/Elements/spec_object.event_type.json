@@ -1,0 +1,52 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.event_type",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "Event type",
+  "description": "Something that happens in the workspace that other parts of the platform can react to, such as \"Ticket escalated\". Modules and tenants declare the events they publish with a small payload; notifications, alerts, automations and integrations subscribe to them by ID, so the publisher never needs to know who listens. Transitions publish events with emits, and rules with an emit_event action when their condition becomes true.",
+  "usage": [
+    "Name events after what happened, in the past tense: <module>.<entity>.<what_happened>, e.g. core.tickets.ticket.escalated.",
+    "Keep payloads small: IDs, choice IDs, numbers and flags; subscribers read the record for everything else under their own permissions.",
+    "Set a default severity, and compute a different one where it matters (e.g. critical for P1)."
+  ],
+  "constraints": [
+    "id is unique; tenant event types start with tenant__.",
+    "version starts at 1; a breaking payload change publishes version + 1.",
+    "Payload field keys are snake_case with type string, number, boolean or list; at most 30 fields.",
+    "severity is info, low, medium, high or critical; sensitivity is public, internal or restricted (external recipients only ever get public values).",
+    "Emitters must set every required field and only declared fields; their expressions are type-checked."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/event_type.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket escalated",
+      "spec": {
+        "id": "core.tickets.ticket.escalated",
+        "version": 1,
+        "label": "Ticket escalated",
+        "subjectEntity": "core.tickets.ticket",
+        "fields": {
+          "priority": { "type": "string", "required": true },
+          "reason": { "type": "string" }
+        },
+        "severity": "high",
+        "sensitivity": "internal"
+      }
+    }
+  ]
+}

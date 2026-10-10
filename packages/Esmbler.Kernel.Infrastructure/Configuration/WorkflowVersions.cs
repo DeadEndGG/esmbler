@@ -154,6 +154,7 @@ public sealed class WorkflowVersions
             t.GuardMessage = now.GuardMessage;
             t.Label = now.Label;
             t.Tone = now.Tone;
+            t.Emits = [.. now.Emits.Select(SpecJson.Clone)];
         }
 
         return merged;

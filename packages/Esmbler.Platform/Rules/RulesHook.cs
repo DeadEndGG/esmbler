@@ -51,6 +51,24 @@ public sealed class RulesHook : IRecordWriteHook
         }
 
         ctx.Messages.AddRange(states.Messages);
+
+        // emit_event fires on the edge: the rule matches now and did not match before the change (or on create).
+        var emitting = ctx.Config.Rules.Where(r => r.Entity == ctx.Entity.Id && states.Matched.Contains(r.Id) && r.Actions.Exists(a => a.Type == Sdk.Specs.RuleActionTypes.EmitEvent)).ToList();
+        if (emitting.Count > 0)
+        {
+            var matchedBefore = ctx.Prior is null ? [] : RuleEvaluator.Evaluate(ctx.Config, ctx.Entity, ctx.PriorVariables()).Matched;
+            var vars = ctx.Variables();
+            foreach (var rule in emitting.Where(r => !matchedBefore.Contains(r.Id)))
+            {
+                foreach (var action in rule.Actions.Where(a => a.Type == Sdk.Specs.RuleActionTypes.EmitEvent && a.Emit is not null))
+                {
+                    if (EventEmission.Evaluate(ctx.Config, ctx.Entity, action.Emit!, vars, rule.Id) is { } emitted)
+                    {
+                        ctx.Emitted.Add(emitted);
+                    }
+                }
+            }
+        }
         ctx.Errors.AddRange(RuleEvaluator.Validate(ctx.Config, ctx.Entity, ctx.Variables()));
         return ValueTask.CompletedTask;
     }

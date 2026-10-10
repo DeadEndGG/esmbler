@@ -62,6 +62,9 @@ public sealed class RecordWriteContext
     /// <summary>A platform write (fulfillment, migrations): may fire system transitions.</summary>
     public bool SystemActor { get; init; }
 
+    /// <summary>Domain events this write publishes (transition emits, emit_event rules); written to the outbox with the change.</summary>
+    public List<EmittedEvent> Emitted { get; } = [];
+
     /// <summary>Workflow state before and after a transition.</summary>
     public string? FromState { get; set; }
 

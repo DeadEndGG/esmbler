@@ -109,6 +109,15 @@ public class BoundaryTests
     }
 
     [Fact]
+    public void The_doc_generator_references_only_the_sdk_and_the_kernel()
+    {
+        // ADR 0012: DocGen reads module releases as JSON and the platform's built-in event types from the kernel.
+        var csproj = Path.Combine(RepoRoot(), "tools", "Esmbler.DocGen", "Esmbler.DocGen.csproj");
+        var references = XDocument.Load(csproj).Descendants("ProjectReference").Select(r => Path.GetFileNameWithoutExtension(r.Attribute("Include")!.Value.Replace('\\', '/')));
+        Assert.All(references, r => Assert.True(r is "Esmbler.Sdk" or "Esmbler.Kernel", $"DocGen must not reference {r}"));
+    }
+
+    [Fact]
     public void Platform_code_does_not_hard_code_business_module_ids()
     {
         // ADR 0012: the kernel, platform services and hosts (API, MCP, worker) know no business module. Module IDs belong in specs,

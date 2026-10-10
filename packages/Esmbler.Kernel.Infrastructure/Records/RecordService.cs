@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
 using Esmbler.Kernel.Infrastructure.Configuration;
+using Esmbler.Kernel.Infrastructure.Events;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Services;
@@ -76,7 +77,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             await UpdateSearchAsync(db, artifact.Config, entity, row, write.Data, ct);
             var changes = entity.Fields.Where(f => write.Data.ContainsKey(f.Key)).ToDictionary(f => f.Key, f => (From: (JsonNode?)null, To: write.Data[f.Key]));
             AuditWriter.Add(db, ctx, "record.create", entity.Id, id.ToString(), artifact.Revision, AuditChanges(changes));
-            AddEvent(db, ctx, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(changes.Keys) });
+            var created = AddEvent(db, ctx, artifact.Config, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(changes.Keys) });
+            EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, 1, artifact.Revision, write.Emitted, created);
             await db.SaveChangesAsync(ct);
             return await ViewAsync(db, artifact.Config, entity, perms, row, write.Data, write.Messages, ct);
         }, ct);
@@ -119,7 +121,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             var now = clock.UtcNow;
             await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.DeletedAt, now).SetProperty(r => r.Revision, row.Revision + 1).SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId), ct);
             AuditWriter.Add(db, ctx, "record.delete", entity.Id, id.ToString(), artifact.Revision);
-            AddEvent(db, ctx, EventTypes.RecordDeleted, entity.Id, id, row.Revision + 1, artifact.Revision, []);
+            AddEvent(db, ctx, artifact.Config, EventTypes.RecordDeleted, entity.Id, id, row.Revision + 1, artifact.Revision, []);
             await db.SaveChangesAsync(ct);
         }, ct);
 
@@ -151,7 +153,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
 
             await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.DeletedAt, (DateTimeOffset?)null).SetProperty(r => r.Revision, row.Revision + 1).SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId), ct);
             AuditWriter.Add(db, ctx, "record.restore", entity.Id, id.ToString(), artifact.Revision);
-            AddEvent(db, ctx, EventTypes.RecordRestored, entity.Id, id, row.Revision + 1, artifact.Revision, []);
+            AddEvent(db, ctx, artifact.Config, EventTypes.RecordRestored, entity.Id, id, row.Revision + 1, artifact.Revision, []);
             await db.SaveChangesAsync(ct);
             return 0;
         }, ct);
@@ -277,7 +279,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             };
             db.Activity.Add(activity);
             AuditWriter.Add(db, ctx, "activity.add", entity.Id, id.ToString(), artifact.Revision, new { kind });
-            AddEvent(db, ctx, EventTypes.ActivityAdded, entity.Id, id, row.Revision, artifact.Revision, new JsonObject { ["kind"] = kind, ["activityId"] = activity.Id.ToString() });
+            AddEvent(db, ctx, artifact.Config, EventTypes.ActivityAdded, entity.Id, id, row.Revision, artifact.Revision, new JsonObject { ["kind"] = kind, ["activityId"] = activity.Id.ToString() });
             await db.SaveChangesAsync(ct);
             var name = await db.Principals.Where(p => p.Id == ctx.PrincipalId).Select(p => p.DisplayName).FirstOrDefaultAsync(ct);
             return new ActivityView(activity.Id, kind, clean, ctx.PrincipalId, name, ctx.AgentId is not null, activity.CreatedAt);
@@ -369,7 +371,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         await db.SaveChangesAsync(ct);
         await UpdateSearchAsync(db, artifact.Config, entity, row, write.Data, ct);
         AuditWriter.Add(db, ctx, "record.create", entity.Id, id.ToString(), artifact.Revision, new { source = "system" });
-        AddEvent(db, ctx, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(write.Data.Select(p => p.Key)), ["source"] = "system" });
+        var systemCreated = AddEvent(db, ctx, artifact.Config, EventTypes.RecordCreated, entity.Id, id, 1, artifact.Revision, new JsonObject { ["changed"] = Keys(write.Data.Select(p => p.Key)), ["source"] = "system" });
+        EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, 1, artifact.Revision, write.Emitted, systemCreated);
         await db.SaveChangesAsync(ct);
         return id;
     }
@@ -468,7 +471,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         }
 
         AuditWriter.Add(db, ctx, operation == WriteOperations.Transition ? "record.transition" : "record.update", entity.Id, id.ToString(), artifact.Revision, AuditChanges(diff, transitionId, systemActor));
-        AddEvent(db, ctx, type, entity.Id, id, revision, artifact.Revision, payload);
+        var recordEvent = AddEvent(db, ctx, artifact.Config, type, entity.Id, id, revision, artifact.Revision, payload);
+        EventWriter.AddEmitted(db, ctx, artifact.Config, entity.Id, id, revision, artifact.Revision, write.Emitted, recordEvent);
         await db.SaveChangesAsync(ct);
         return (write, true);
     }
@@ -860,12 +864,12 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
 
     private static JsonArray Keys(IEnumerable<string> keys) => new(keys.Order(StringComparer.Ordinal).Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
 
-    private static void AddEvent(KernelDbContext db, RequestContext ctx, string type, string entityId, Guid recordId, int revision, int configRevision, JsonObject payload)
-    {
-        var envelope = new EventEnvelope
+    private static Guid AddEvent(KernelDbContext db, RequestContext ctx, EffectiveConfig config, string type, string entityId, Guid recordId, int revision, int configRevision, JsonObject payload) =>
+        EventWriter.Add(db, new EventEnvelope
         {
             EventId = Guid.NewGuid(),
             Type = type,
+            Source = EventWriter.SourceOf(config, entityId),
             TenantId = ctx.TenantId,
             EnvironmentId = ctx.EnvironmentId,
             Entity = entityId,
@@ -875,21 +879,10 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             OccurredAt = DateTimeOffset.UtcNow,
             CorrelationId = ctx.CorrelationId,
             Actor = ctx.ActorRef,
+            Severity = EventSeverities.Info,
+            Sensitivity = EventSensitivities.Internal,
             Payload = payload,
-        };
-        db.Outbox.Add(new OutboxRow
-        {
-            Id = envelope.EventId,
-            TenantId = ctx.TenantId,
-            EnvironmentId = ctx.EnvironmentId,
-            Type = type,
-            RecordId = recordId,
-            RecordRevision = revision,
-            Event = JsonSerializer.Serialize(envelope, SpecJson.Options),
-            AvailableAt = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow,
         });
-    }
 
     private async Task<RecordView> Idempotent(RequestContext ctx, string? key, object request, Func<KernelDbContext, Task<RecordView>> work, CancellationToken ct)
     {

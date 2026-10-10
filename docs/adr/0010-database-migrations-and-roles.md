@@ -3,7 +3,7 @@ title: "ADR 0010: Database migrations and roles"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004, REQ-EVT-005, REQ-EVT-009]
 ---
 
 # ADR 0010: Database migrations and roles
@@ -100,6 +100,7 @@ Only `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler
 | `kernel.claim_outbox(worker, batch, lease_seconds)` | Worker claim of outbox events ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `kernel.claim_jobs(worker, batch, lease_seconds)` | Fair worker claim of jobs ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `kernel.refresh_lookup(hash)` | Look up a refresh token by its hash before the principal is known ([ADR 0011](0011-identity-and-development-authentication.md)); migration `0002_refresh_tokens.sql` |
+| `kernel.purge_outbox(days)` | Outbox retention across tenants: deletes dispatched events older than the window with their inbox marks and consumer failures, nothing else ([ADR 0017](0017-event-audit-alert-notification-services.md)); migration `0009_event_platform.sql` |
 | `kernel.bump_authz_revision()` | Trigger on `memberships`, `group_members` and `role_assignments` that increments `kernel.tenants.authz_revision` in the same transaction, so permission caches never reuse facts from before a revocation ([ADR 0004](0004-authorization-engine.md)); migration `0003_authz_revision.sql`. `EXECUTE` stays with `PUBLIC` because PostgreSQL only calls it as a trigger, and `esmbler_definer` may update only that column |
 
 The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_allow_listed_security_definer_functions_exist` fails if any other `SECURITY DEFINER` function appears in `kernel`, or if one is not owned by `esmbler_definer` or lacks the fixed `search_path`.
@@ -115,6 +116,8 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0005_durable_jobs.sql` | Durable jobs and timers: `jobs.dedup_key` (one live job per key), `causation_id` and `depth` for automation limits, and a tenant-interleaving `claim_outbox` ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `0006_workflow_versions.sql` | `kernel.workflow_definitions` (FORCE RLS, `esmbler_app` gets `SELECT`/`INSERT` only) and `records.workflow_version` with its index ([ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md)) |
 | `0007_approvals.sql` | `kernel.approvals` (one per request approval, with a policy snapshot; at most one pending per record), `kernel.approval_steps` and `kernel.approval_delegations`; FORCE RLS on tenant and environment; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`, so decisions stay an audit trail ([ADR 0016](0016-approvals.md)) |
+| `0008_approval_requesters.sql` | `kernel.approvals.requesters`: the separation-of-duties snapshot ([ADR 0016](0016-approvals.md)) |
+| `0009_event_platform.sql` | `kernel.consumer_failures` (per-consumer delivery state, FORCE RLS) and `kernel.purge_outbox` ([ADR 0017](0017-event-audit-alert-notification-services.md)) |
 
 ### Consequences
 

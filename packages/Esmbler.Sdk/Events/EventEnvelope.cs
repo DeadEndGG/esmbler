@@ -13,7 +13,26 @@ public sealed record EventEnvelope
     /// <summary>e.g. record.created, record.updated, record.transitioned, config.published.</summary>
     public required string Type { get; init; }
 
-    public int SchemaVersion { get; init; } = 1;
+    /// <summary>Envelope version: 2 adds source, type version, severity, sensitivity, trace context (ADR 0017). Consumers read 1 and 2.</summary>
+    public int SchemaVersion { get; init; } = 2;
+
+    /// <summary>Module or platform service that published the event (core.tickets, platform.approvals, …).</summary>
+    public string? Source { get; init; }
+
+    /// <summary>Payload schema version of <see cref="Type"/> (the event type registry).</summary>
+    public int TypeVersion { get; init; } = 1;
+
+    /// <summary>info, low, medium, high or critical; declared by the event type, possibly computed by the emitter.</summary>
+    public string? Severity { get; init; }
+
+    /// <summary>public, internal or restricted: limits who may receive payload values.</summary>
+    public string? Sensitivity { get; init; }
+
+    /// <summary>Rule or transition (<c>workflow/transition</c>) that published a declared domain event; null for record and platform events.</summary>
+    public string? Emitter { get; init; }
+
+    /// <summary>W3C trace context of the request that caused the event, when there was one.</summary>
+    public string? Traceparent { get; init; }
 
     public required Guid TenantId { get; init; }
 
@@ -29,6 +48,9 @@ public sealed record EventEnvelope
     public int? ConfigRevision { get; init; }
 
     public required DateTimeOffset OccurredAt { get; init; }
+
+    /// <summary>When the platform recorded the event (outbox write); equals <see cref="OccurredAt"/> unless the source was late.</summary>
+    public DateTimeOffset? RecordedAt { get; init; }
 
     public required Guid CorrelationId { get; init; }
 
@@ -54,4 +76,10 @@ public static class EventTypes
     public const string ActivityAdded = "activity.added";
     public const string ConfigPublished = "config.published";
     public const string DraftChanged = "draft.changed";
+
+    // Platform service events (ADR 0016, ADR 0017).
+    public const string ApprovalRequested = "platform.approval.requested";
+    public const string ApprovalApproved = "platform.approval.approved";
+    public const string ApprovalRejected = "platform.approval.rejected";
+    public const string ApprovalCancelled = "platform.approval.cancelled";
 }

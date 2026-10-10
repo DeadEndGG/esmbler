@@ -10,6 +10,7 @@ Gate 2: private pilot (in progress).
 
 ### Added
 
+- Event platform v2 (ADR 0017): modules, tenants and the AI builder declare event types with typed payloads and publish them from workflow transitions and rules (when the rule's condition becomes true); Tickets 1.4.0 adds an Escalate transition and publishes ticket escalated, became critical and resolved events; approvals publish platform events; envelopes carry source, emitter, severity, sensitivity and trace context; each event consumer now retries and dead-letters on its own and can be replayed alone from the Operations page; dispatched events are purged after 14 days; a generated AsyncAPI reference lists every event. MCP: `list_event_types`, `add_event_type`, `emit_event` rule actions, `publish_events` on transitions. REQ-EVT-008, REQ-EVT-009
 - Approvals (ADR 0016): Tickets 1.3.0 puts New laptop and Software access behind approval policies with sequential stages, all/any approvers, conditional stages, expiry and escalation; approvers decide from the Approvals page or the request's approvals panel; out-of-office delegation with an admin review; the publish review shows approvals in flight; approval policy overlay operations and MCP tools (`list_approval_policies`, `add_approval_policy`); migrations 0007 and 0008. REQ-BIZ-004, REQ-AUTHZ-011, REQ-MIG-003, REQ-ACC-05
 - Requirements addendum for a connected workspace and guided creation (REQ-WS-001 to 006, REQ-ACC-15), from the product owner's review.
 - Service requests (ADR 0015): Tickets 1.2.0 adds requests and fulfillment tasks, a service catalog with typed questions (New laptop, Software access, New hire onboarding), fulfillment tasks with dependencies and conditions, partial completion, rejection and cancellation; catalog page and request form; catalog and workflow overlay operations and MCP tools. REQ-BIZ-004, REQ-AI-003
@@ -19,6 +20,7 @@ Gate 2: private pilot (in progress).
 
 ### Security
 
+- Events: configuration cannot publish platform events (`record.*`, `platform.approval.*`, `config.published`) or another module's events, payloads cannot carry fields some people may not see unless the event type is restricted, and module-declared events on a transition cannot be removed by an overlay. Replays are audited with the consumer and event; retention keeps unreplayed dead letters and never shortens the replay window below seven days.
 - Approvals: nobody decides on a request they made or that is for them, directly or through a delegate; one person's authority counts once per stage; AI agents cannot approve, reject or delegate; rejecting needs a reason; denied decisions are audited.
 - People cannot step around approval: requests that need approval cannot leave intake except to be rejected or cancelled, cannot leave the approval state except to be cancelled, and migrations cannot skip or strand approvals. Changing which policy approves an item, or a used policy's approvers, needs permission administration.
 - An escalated stage is decided by the escalation alone, so an escalation's rejection rejects the request.

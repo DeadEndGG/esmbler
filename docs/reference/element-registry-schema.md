@@ -198,13 +198,14 @@ Every error carries `code`, `message`, `target` and `suggestion` so the AI can s
 
 ## Gate 2 additions
 
-Six elements so far, `gate: 2`. The generated [element catalog](element-catalog.md) has their props and examples.
+Seven elements so far, `gate: 2`. The generated [element catalog](element-catalog.md) has their props and examples.
 
 - `spec_object.catalog_item` (G2-M2, [ADR 0015](../adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)): a requestable service with typed questions and fulfillment tasks.
 - `field.catalog_item` and `field.variables` (G2-M2): the catalog item a request was raised from, and its typed answers.
 - `spec_object.approval_policy` (G2-M3, [ADR 0016](../adr/0016-approvals.md)): ordered approval stages with approvers, conditions, expiry and escalation.
 - `field.principals` (G2-M3): a platform-maintained list of user and group IDs, such as a request's approvers; usable as an access field.
 - `activity.approvals` (G2-M3): the approvals panel on a request record, with Approve and Reject for people who may decide.
+- `spec_object.event_type` (G2-M17, [ADR 0017](../adr/0017-event-audit-alert-notification-services.md)): an event a module or tenant publishes, with a small typed payload, default severity and sensitivity; transitions publish it through `emits` and rules through an `emit_event` action.
 
 ## Adding an element
 

@@ -74,6 +74,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             ValidateApprovalPolicy(config, policy, d);
         }
 
+        foreach (var eventType in config.EventTypes)
+        {
+            ValidateEventType(config, eventType, d);
+        }
+
         foreach (var wf in config.Workflows)
         {
             ValidateWorkflow(config, wf, d);
@@ -138,6 +143,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Check(config.Relationships.Select(r => r.Id), "relationship");
         Check(config.CatalogItems.Select(c => c.Id), "catalog item");
         Check(config.ApprovalPolicies.Select(p => p.Id), "approval policy");
+        Check(config.EventTypes.Select(e => e.Id), "event type");
     }
 
     private void ValidateEntity(SpecCatalog config, EntitySpec entity, List<Diagnostic> d)
@@ -308,6 +314,25 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
                 if (!RuleActionTypes.All.Contains(action.Type))
                 {
                     d.Add(Diagnostic.Error("config.bad_action", $"Rule '{rule.Id}' has unknown action '{action.Type}'.", rule.Id, Expression.Suggest(action.Type, RuleActionTypes.All)));
+                    continue;
+                }
+
+                if (action.Type == RuleActionTypes.EmitEvent)
+                {
+                    if (rule.Scope != RuleScopes.Data)
+                    {
+                        d.Add(Diagnostic.Error("config.emit_needs_data_scope", $"Rule '{rule.Id}' publishes an event but is {rule.Scope}-scoped; only data rules run on the server.", rule.Id, "Make it a data rule."));
+                    }
+
+                    if (action.Emit is null)
+                    {
+                        d.Add(Diagnostic.Error("config.missing_event", $"emit_event in rule '{rule.Id}' needs an event to publish.", rule.Id));
+                    }
+                    else
+                    {
+                        ValidateEmit(config, entity, action.Emit, rule.Id, d);
+                    }
+
                     continue;
                 }
 
@@ -492,6 +517,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             }
 
             CheckExpression(entity, t.Guard, $"{wf.Id}/{t.Id}", "guard", d);
+            foreach (var emit in t.Emits)
+            {
+                ValidateEmit(config, entity, emit, $"{wf.Id}/{t.Id}", d);
+            }
+
             foreach (var f in t.RequiredFields.Where(f => entity.FindField(f) is null))
             {
                 d.Add(Diagnostic.Error("config.not_found", $"Transition '{t.Id}' requires unknown field '{f}'.", wf.Id));
@@ -735,6 +765,151 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
 
     }
+
+    /// <summary>Event type ID prefixes only the platform declares and publishes (ADR 0017).</summary>
+    private static readonly string[] PlatformEventPrefixes = ["platform.", "record.", "config.", "activity.", "draft."];
+
+    private static bool IsPlatformEvent(SpecCatalog config, string typeId) =>
+        PlatformEventPrefixes.Any(p => typeId.StartsWith(p, StringComparison.Ordinal)) || LayerModule(config, typeId) == PlatformModule.ModuleId;
+
+    /// <summary>The module that contributed an element ("core.tickets"), "tenant", or null without provenance.</summary>
+    private static string? LayerModule(SpecCatalog config, string key) =>
+        config is EffectiveConfig effective && effective.Provenance.TryGetValue(key, out var layer)
+            ? layer.Contains('@', StringComparison.Ordinal) ? layer[..layer.IndexOf('@', StringComparison.Ordinal)] : layer
+            : null;
+
+    private static void ValidateEventType(SpecCatalog config, EventTypeSpec type, List<Diagnostic> d)
+    {
+        var module = LayerModule(config, type.Id);
+        if (PlatformEventPrefixes.Any(p => type.Id.StartsWith(p, StringComparison.Ordinal)))
+        {
+            if (module is not null && module != PlatformModule.ModuleId)
+            {
+                d.Add(Diagnostic.Error("config.reserved_event_type", $"'{type.Id}' uses a namespace only the platform publishes in.", type.Id, "Name it after your module or tenant, e.g. tenant__vendor_contract_expiring."));
+            }
+        }
+        else if (!Namespaces.IsValidId(type.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{type.Id}' is not a valid event type ID.", type.Id, "Use <module>.<entity>.<what_happened>, e.g. core.tickets.ticket.escalated."));
+        }
+        else if (module is not null && module != Composer.TenantLayer && module != PlatformModule.ModuleId && !type.Id.StartsWith(module + ".", StringComparison.Ordinal))
+        {
+            // A module declares events only in its own namespace, so nobody can publish in another module's name.
+            d.Add(Diagnostic.Error("config.foreign_event_type", $"Event type '{type.Id}' is declared by {module} outside its namespace.", type.Id, $"Use {module}.<entity>.<what_happened>."));
+        }
+
+        if (type.Version < 1)
+        {
+            d.Add(Diagnostic.Error("config.bad_version", $"Event type '{type.Id}' needs a version of 1 or more.", type.Id));
+        }
+
+        if (!EventSeverities.All.Contains(type.Severity))
+        {
+            d.Add(Diagnostic.Error("config.bad_severity", $"Event type '{type.Id}' has severity '{type.Severity}'.", type.Id, string.Join(", ", EventSeverities.All)));
+        }
+
+        if (!EventSensitivities.All.Contains(type.Sensitivity))
+        {
+            d.Add(Diagnostic.Error("config.bad_sensitivity", $"Event type '{type.Id}' has sensitivity '{type.Sensitivity}'.", type.Id, string.Join(", ", EventSensitivities.All)));
+        }
+
+        if (type.SubjectEntity is { } subject && config.FindEntity(subject) is null)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Event type '{type.Id}' is about unknown entity '{subject}'.", type.Id, Expression.Suggest(subject, config.Entities.Select(e => e.Id))));
+        }
+
+        foreach (var (key, field) in type.Fields)
+        {
+            if (!Namespaces.IsValidFieldKey(key))
+            {
+                d.Add(Diagnostic.Error("config.invalid_key", $"Payload field '{key}' of '{type.Id}' must be snake_case.", type.Id));
+            }
+
+            if (!EventFieldTypes.All.Contains(field.Type))
+            {
+                d.Add(Diagnostic.Error("config.bad_field_type", $"Payload field '{key}' of '{type.Id}' has type '{field.Type}'.", type.Id, string.Join(", ", EventFieldTypes.All)));
+            }
+        }
+
+        if (type.Fields.Count > 30)
+        {
+            d.Add(Diagnostic.Error("config.too_large", $"Event type '{type.Id}' has {type.Fields.Count} payload fields; keep payloads small (30 at most) and let subscribers read the record.", type.Id));
+        }
+    }
+
+    /// <summary>An emission names a known event type, fills its required fields, and uses only its fields, with valid expressions.</summary>
+    private static void ValidateEmit(SpecCatalog config, EntitySpec entity, EventEmitSpec emit, string target, List<Diagnostic> d)
+    {
+        if (config.FindEventType(emit.Type) is not { } type)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"'{target}' publishes unknown event type '{emit.Type}'.", target, Expression.Suggest(emit.Type, config.EventTypes.Select(e => e.Id)) ?? "Add it with add_event_type."));
+            return;
+        }
+
+        if (IsPlatformEvent(config, type.Id))
+        {
+            d.Add(Diagnostic.Error("config.platform_event", $"'{target}' publishes '{type.Id}', which only the platform publishes.", target, "Declare your own event type with add_event_type."));
+            return;
+        }
+
+        // A module publishes only its own event types; tenant types and tenant emitters may be combined with anything
+        // non-platform (the event's source is then "tenant").
+        if (LayerModule(config, target) is { } emitterModule && emitterModule != Composer.TenantLayer && LayerModule(config, type.Id) is { } owner && owner != Composer.TenantLayer && owner != emitterModule)
+        {
+            d.Add(Diagnostic.Error("config.foreign_event", $"'{target}' from {emitterModule} publishes '{type.Id}', which belongs to {owner}.", target, $"Declare the event in {emitterModule}."));
+        }
+
+        if (type.SubjectEntity is { } subject && subject != entity.Id)
+        {
+            d.Add(Diagnostic.Error("config.bad_event_subject", $"'{target}' publishes '{type.Id}', which is about {subject}, not {entity.Id}.", target));
+        }
+
+        // Fields some people may not see stay out of payloads unless the event type is restricted (ADR 0017).
+        var hidden = config.PermissionSets.SelectMany(p => p.Fields).Where(f => f.Entity == entity.Id && f.Access == FieldAccessLevels.Hidden).Select(f => f.Field).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var key in emit.Payload.Keys.Where(k => !type.Fields.ContainsKey(k)))
+        {
+            d.Add(Diagnostic.Error("config.unknown_payload_field", $"'{target}' sets payload field '{key}', which '{type.Id}' does not declare.", target, Expression.Suggest(key, type.Fields.Keys)));
+        }
+
+        foreach (var key in type.Fields.Where(f => f.Value.Required && !emit.Payload.ContainsKey(f.Key)).Select(f => f.Key))
+        {
+            d.Add(Diagnostic.Error("config.missing_payload_field", $"'{target}' publishes '{type.Id}' without its required field '{key}'.", target));
+        }
+
+        foreach (var (key, expression) in emit.Payload)
+        {
+            var compiled = CheckExpression(entity, expression, target, $"payload {key}", d);
+            if (compiled is null)
+            {
+                continue;
+            }
+
+            var reads = compiled.References.Where(r => r.StartsWith("record.", StringComparison.Ordinal) || r.StartsWith("prior.", StringComparison.Ordinal)).Select(r => r[(r.IndexOf('.', StringComparison.Ordinal) + 1)..]);
+            if (type.Sensitivity != EventSensitivities.Restricted && reads.FirstOrDefault(hidden.Contains) is { } secret)
+            {
+                d.Add(Diagnostic.Error("config.payload_hidden_field", $"'{target}' puts '{secret}' in '{type.Id}', but some people may not see that field.", target, "Leave it out (subscribers can read the record), or mark the event type restricted."));
+            }
+
+            // A payload value that is a plain field must have the declared type.
+            var direct = System.Text.RegularExpressions.Regex.Match(expression.Trim(), "^(?:record|prior)\\.([a-z0-9_]+)$");
+            if (direct.Success && type.Fields.TryGetValue(key, out var declared) && entity.Fields.Find(f => f.Key == direct.Groups[1].Value) is { } field && PayloadType(field.Type) != declared.Type)
+            {
+                d.Add(Diagnostic.Error("config.payload_type_mismatch", $"'{target}' puts {field.Type} field '{field.Key}' in payload field '{key}' of '{type.Id}', which is a {declared.Type}.", target, $"Use a {PayloadType(field.Type)} field, or change the payload field's type."));
+            }
+        }
+
+        CheckExpression(entity, emit.Severity, target, "severity", d);
+    }
+
+    /// <summary>The payload type a record field's values have.</summary>
+    private static string PayloadType(string fieldType) => fieldType switch
+    {
+        FieldTypes.Integer or FieldTypes.Decimal => EventFieldTypes.Number,
+        FieldTypes.Toggle => EventFieldTypes.Boolean,
+        FieldTypes.MultiSelect or FieldTypes.Principals => EventFieldTypes.List,
+        _ => EventFieldTypes.String,
+    };
 
     private static readonly HashSet<string> ApproverFieldTypes = [FieldTypes.User, FieldTypes.Group];
 

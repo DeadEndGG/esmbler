@@ -87,6 +87,10 @@ public static class Composer
         {
             var layer = $"{module.Id}@{module.Version}";
             var copy = SpecJson.Clone(module);
+            if (module.Id == PlatformModule.ModuleId)
+            {
+                copy.EventTypes = PlatformModule.EventTypes.Select(SpecJson.Clone).ToList();
+            }
             config.Modules.Add(new LockedModule(module.Id, module.Version, Hash(SpecJson.Canonical(SpecJson.ToNode(module)))));
             config.Entities.AddRange(copy.Entities);
             config.ChoiceLists.AddRange(copy.ChoiceLists);
@@ -101,6 +105,7 @@ public static class Composer
             config.ExtensionPoints.AddRange(copy.ExtensionPoints);
             config.CatalogItems.AddRange(copy.CatalogItems);
             config.ApprovalPolicies.AddRange(copy.ApprovalPolicies);
+            config.EventTypes.AddRange(copy.EventTypes);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -166,6 +171,11 @@ public static class Composer
         foreach (var p in catalog.ApprovalPolicies)
         {
             yield return p.Id;
+        }
+
+        foreach (var e in catalog.EventTypes)
+        {
+            yield return e.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -319,6 +329,26 @@ public static class Composer
 
                 ctx.Config.ApprovalPolicies.Remove(policy);
                 ctx.Config.Provenance.Remove(policy.Id);
+                break;
+            case AddEventType aet:
+                RequireTenantId(aet.EventType.Id, "event type");
+                if (ctx.Config.FindEventType(aet.EventType.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"Event type '{aet.EventType.Id}' already exists.", aet.EventType.Id, "Choose a new ID.");
+                }
+
+                ctx.Config.EventTypes.Add(SpecJson.Clone(aet.EventType));
+                ctx.Mark(aet.EventType.Id);
+                break;
+            case RemoveEventType ret:
+                var eventType = ctx.Config.FindEventType(ret.EventType) ?? throw Missing("event type", ret.EventType, Expression.Suggest(ret.EventType, ctx.Config.EventTypes.Select(e => e.Id)));
+                if (!IsTenant(ctx, eventType.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Event type '{ret.EventType}' comes from {ctx.Layer(eventType.Id)} and cannot be removed.", ret.EventType);
+                }
+
+                ctx.Config.EventTypes.Remove(eventType);
+                ctx.Config.Provenance.Remove(eventType.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
@@ -794,9 +824,16 @@ public static class Composer
         {
             throw new OverlayException(
                 "overlay.base_immutable",
-                $"Transition '{t.Label}' comes from {ctx.Layer(target)}; tenants can change only its label, guard message, tone and whether it is enabled.",
+                $"Transition '{t.Label}' comes from {ctx.Layer(target)}; tenants can change only its label, guard message, tone, whether it is enabled, and add events it publishes.",
                 target,
                 "Disable it and add your own transition with add_transition.");
+        }
+
+        // Subscribers rely on the events a module publishes: tenants may add emits to a module transition, never drop its own.
+        // (Element reset restores the module's list.)
+        if (!tenant && p.Emits is not null && t.Emits.Select(e => e.Type).Where(type => !Namespaces.IsTenantOwned(type)).Except(p.Emits.Select(e => e.Type), StringComparer.Ordinal).FirstOrDefault() is { } dropped)
+        {
+            throw new OverlayException("overlay.base_immutable", $"Transition '{t.Label}' publishes '{dropped}' for {ctx.Layer(target)}; tenants can add events but not remove the module's.", target, "Keep the module's events and add yours.");
         }
 
         if (t.System && p.Enabled == false)
@@ -815,6 +852,7 @@ public static class Composer
         t.Set = p.Set ?? t.Set;
         t.Tone = p.Tone ?? t.Tone;
         t.Enabled = p.Enabled ?? t.Enabled;
+        t.Emits = p.Emits?.Select(SpecJson.Clone).ToList() ?? t.Emits;
         ctx.Mark(target, keepLayer: !tenant);
     }
 

@@ -14,10 +14,10 @@ This is the design for turning the platform's events, audit, alerting and notifi
 
 | Area | Implemented | Where | Gap |
 | --- | --- | --- | --- |
-| Event envelope | Event ID, type, schema version, tenant, environment, entity, record, record revision, config revision, occurred-at, correlation and causation IDs, actor, depth, minimal payload | `packages/Esmbler.Sdk/Events/EventEnvelope.cs` | No `source`, no `subject` object, no payload schema reference, no trace context; `config.published` is not an envelope (special-cased by the dispatcher) |
-| Event types | `record.created/updated/transitioned/deleted/restored`, `activity.added`, `config.published`, `draft.changed` | `EventTypes` | Modules cannot publish their own domain events ("ticket escalated"); no type registry or payload schemas |
+| Event envelope | Event ID, type, schema version, tenant, environment, entity, record, record revision, config revision, occurred-at, correlation and causation IDs, actor, depth, minimal payload. Since G2-M17 (v2): source, type version, emitter, severity, sensitivity, trace context, recorded-at; `config.published` is a normal envelope | `packages/Esmbler.Sdk/Events/EventEnvelope.cs`, `EventWriter` | The wire shape stays v1-compatible (section 3.1) |
+| Event types | Registry since G2-M17: platform types built in (`record.*`, `activity.added`, `config.published`, `platform.approval.*`), module types declared in releases (Tickets 1.4.0), tenant types through `event_type.add`; transitions `emits`, `emit_event` rule actions; [AsyncAPI reference](../reference/asyncapi.json) | `EventTypeSpec`, `PlatformModule.EventTypes`, `EventEmission` | SLA events with G2-M4 |
 | Transactional outbox | Record change, audit row and outbox row in one transaction; privileged claim across tenants with tenant interleaving | `RecordService`, `Migrations/0001`, `0005` | None for publishing |
-| Delivery to consumers | At least once, durable inbox per consumer and event, per-record ordering, backoff, dead letters, operator replay | `OutboxDispatcher`, `OperationsService` | Consumers run in sequence in one transaction per event: a failing consumer holds back the others on that event and a poison consumer dead-letters the event for all of them |
+| Delivery to consumers | At least once, durable inbox per consumer and event, backoff, dead letters, operator replay. Since G2-M17 each consumer runs in its own transaction, fails, retries and dead-letters alone (`kernel.consumer_failures`), is replayed alone, and dispatched events are purged after 14 days | `OutboxDispatcher`, `OperationsService` | Consumers still tolerate reordering (projections check revisions) rather than getting per-record order |
 | Subscribers | Code consumers registered in the composition root: projection, in-app notification templates, fulfillment, approvals | `IEventConsumer` (internal), `ServiceRegistration` | Not a public contract; no configurable subscriptions; packages cannot subscribe |
 | Durable jobs and timers | Leases, jittered backoff, max attempts, dead letters, replay, dedup keys, idempotent timers, depth and fan-out governors | `Jobs.cs`, `JobRunner.cs` | Ready to carry deliveries and escalations |
 | Automation engine | Governors only (causation depth, fan-out, queue quotas) | `JobScheduler` | The trigger → condition → action engine is not built |
@@ -92,6 +92,8 @@ Version 2 is additive; consumers read both versions. Field names are the JSON wi
 }
 ```
 
+**As built (G2-M17).** The wire shape stays the v1 envelope plus additive fields, so v1 consumers keep working: `schemaVersion` (2), `eventId`, `type`, `typeVersion`, `source` (the layer that published it: for record events the entity's module, for declared events the module of the rule or transition, else `tenant`; `core.platform` for configuration events and `platform.approvals` for approval events), `emitter` (the rule or `workflow/transition`), `severity`, `sensitivity`, `traceparent` (W3C, from the current activity), `recordedAt`, and the v1 fields. The subject is `entity` + `recordId` + `recordRevision`; the payload schema reference is `type` + `typeVersion`, resolved in the registry and in the generated [AsyncAPI reference](../reference/asyncapi.json); the actor stays the `user:`/`agent:`/`system` reference. A structured subject and actor can be added later without breaking readers (ASM-052).
+
 Rules: payloads carry IDs and small, non-secret values; hidden or restricted field values never enter payloads ("claim check": consumers that need content read the record under the recipient's or the subscriber's permissions). The envelope is the same for record events, domain events and platform events (`config.published` becomes a normal envelope).
 
 ### 3.2 Event type registry (public SDK)
@@ -119,12 +121,16 @@ Publishing without code (declarative modules):
 | --- | --- |
 | Workflow transition | `"emits": ["core.tickets.ticket.escalated"]` on the transition; payload mapped from the transition and record by expressions |
 | Rule | New action `emit_event` with type and payload expressions |
-| Platform services | SLA (`platform.sla.warning`, `platform.sla.breached`), approvals (`platform.approval.requested`, `.decided`), alerts (`platform.alert.opened`, `.acknowledged`, `.escalated`, `.resolved`), notifications (`platform.notification.failed`) |
+| Platform services | SLA (`platform.sla.warning`, `platform.sla.breached`), approvals (`platform.approval.requested`, `.approved`, `.rejected`, `.cancelled`; built in G2-M17), alerts (`platform.alert.opened`, `.acknowledged`, `.escalated`, `.resolved`), notifications (`platform.notification.failed`) |
 | Code (first-party services, extension runtime) | `IEventPublisher.Publish(db, envelope)` inside the caller's transaction |
 
 The validator checks that emitted payloads conform to the declared schema (expressions are type-checked against the payload schema).
 
+**As built (G2-M17).** Payload fields are typed `string`, `number`, `boolean` or `list` (at most 30). `emits` entries map payload keys to expressions over `record`, `prior`, `user` and `now`, with an optional severity expression; the validator refuses unknown types, missing required fields, undeclared keys, a plain field whose type does not match, fields any permission set hides (unless the type is `restricted`), emits of platform types, platform namespaces (`platform.`, `record.`, `config.`, `activity.`, `draft.`) outside the platform, module types outside the module's namespace, and `emit_event` on form rules. At run time a value that fails or does not match its type is left out and text is capped at 1,000 characters. `emit_event` publishes on the edge: when the rule's condition becomes true (or on create when it is true). Tenants may add emits to a module's transition but not remove the module's own. Approval events are `platform.approval.requested`, `.approved`, `.rejected` and `.cancelled`. Platform event types are built in, so every tenant's registry lists them whatever platform version it installed (ASM-051).
+
 ### 3.3 Subscriptions
+
+Built in G2-M18 with the notification service, which is their first target.
 
 One public contract for "something reacts to events", stored as configuration:
 
@@ -146,9 +152,9 @@ One public contract for "something reacts to events", stored as configuration:
 
 ### 3.4 Dispatcher improvements
 
-- **Per-consumer progress.** Replace "all consumers in one transaction per event" with per-consumer delivery state (`kernel.consumer_events`: consumer, event, status, attempts, next attempt, last error). A failing consumer retries and dead-letters on its own; the others carry on. Per-record ordering is kept per consumer.
-- **Replay by consumer.** Operators replay one consumer from a point in time (scoped to a tenant and environment), audited; deliveries still deduplicate by event ID so replay cannot resend what was sent.
-- **Outbox retention.** Dispatched events are kept for a replay window (default 14 days), then deleted; audit is the long-term record.
+- **Per-consumer progress.** Replace "all consumers in one transaction per event" with per-consumer delivery state. A failing consumer retries and dead-letters on its own; the others carry on. *As built:* the inbox records successes and `kernel.consumer_failures` records failing consumers (attempts, last error, dead); the event backs off while any consumer is still retrying and counts as dispatched once every consumer succeeded or is dead. Per-record ordering is not enforced per consumer; consumers keep tolerating reordering (projections check revisions, ADR 0005).
+- **Replay by consumer.** Operators replay one dead consumer for one event (queue `consumers` on the Operations page), audited with the consumer and event; the inbox keeps every other consumer from running again. Replay of one consumer from a point in time is not built yet.
+- **Outbox retention.** Dispatched events are kept for a replay window (default 14 days, never under 7), then deleted with their inbox marks by `kernel.purge_outbox` in batches; events with a dead consumer stay until replayed; audit is the long-term record.
 
 ## 4. Audit
 
@@ -432,8 +438,8 @@ What each store holds afterwards:
 
 | Phase | Milestone | Scope | Exit evidence |
 | --- | --- | --- | --- |
-| 1 | G2-M17 Event platform v2 | Envelope v2 (source, subject, dataSchema, traceparent, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and the `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention | Tickets 1.4.0 emits `ticket.escalated`; a poison consumer no longer blocks others; contract tests for envelope v1/v2 |
-| 2 | G2-M18 Notification service | Channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
+| 1 | G2-M17 Event platform v2 (done; SLA events moved to G2-M4, subscriptions to G2-M18, subject and payload schema reference as in ASM-052) | Envelope v2 (source, subject, dataSchema, traceparent, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and the `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention | Tickets 1.4.0 emits `ticket.escalated`; a poison consumer no longer blocks others; contract tests for envelope v1/v2 |
+| 2 | G2-M18 Notification service | Subscriptions spec object and the subscription router (section 3.3); channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
 | 3 | G2-M19 Alerts and audit policy | Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, maintenance suppression, alerts page; SLA breach alerts; audit retention and legal hold, export, hash-chain verifier | The section 8 example runs as an acceptance test |
 | 4 | Gate 3 | User preferences UI and team-level routes; digests; on-call schedules (with the org model); webhook, Teams, Slack and push channels; package subscribers through the extension runtime; the automation engine (trigger → condition → action) as a subscription target | Package subscriber conformance tests; automation governors enforced end to end |
 

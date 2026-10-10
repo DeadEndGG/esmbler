@@ -82,6 +82,11 @@ public sealed partial class DependencyGraph
                 g.Add(rule.Id, $"{rule.Entity}/{rule.Field}", "rule_message_field");
             }
 
+            foreach (var action in rule.Actions.Where(a => a.Emit is not null))
+            {
+                g.Add(rule.Id, action.Emit!.Type, "rule_emits");
+            }
+
             foreach (var action in rule.Actions)
             {
                 if (action.Field is not null)
@@ -104,6 +109,11 @@ public sealed partial class DependencyGraph
             foreach (var t in wf.Transitions)
             {
                 g.AddExpression(wf.Id, wf.Entity, t.Guard, "transition_guard");
+                foreach (var emit in t.Emits)
+                {
+                    g.Add(wf.Id, emit.Type, "transition_emits");
+                }
+
                 foreach (var f in t.RequiredFields)
                 {
                     g.Add(wf.Id, $"{wf.Entity}/{f}", "transition_required_field");

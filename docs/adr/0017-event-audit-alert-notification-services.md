@@ -62,6 +62,11 @@ Today the platform has a transactional outbox with an at-least-once dispatcher a
 | 2. External broker and notification SaaS | Scale and features off the shelf | Breaks the single-transaction guarantee without an outbox anyway; tenant isolation, permissions and environment safety become integration problems; data leaves the platform |
 | 3. Grow `NotificationConsumer` | Smallest change | Couples publishers, routing and channels; one failure blocks all; no alerts; nothing configurable or previewable |
 
+## Implementation status
+
+- **G2-M17 (done): event platform v2.** Envelope v2 with source, type version, emitter, severity, sensitivity, trace context and recorded-at, read alongside v1 (ASM-052); the event type registry (`EventTypeSpec`, `event_type.add` and `.remove`, built-in platform types per ASM-051, generated [AsyncAPI reference](../reference/asyncapi.json)); `emits` on transitions and the edge-triggered `emit_event` rule action with type checks and hidden-field protection (ASM-053); approval platform events; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and audited replay per consumer; outbox retention. Tickets 1.4.0 publishes `core.tickets.ticket.escalated`, `.priority_raised` and `.resolved`. MCP: `list_event_types`, `add_event_type`, `emit_event` in `add_rule`, `publish_events` in `update_transition`. Verification: `Events.EventPlatformTests`, `Configuration.EventTypeTests`, `Events.EventEnvelopeContractTests`, `Mcp.McpServerTests.Agent_declares_an_event_and_publishes_it_from_a_rule_and_a_transition`.
+- **Moved:** the subscriptions spec object and router to G2-M18 (their first target is notifications); SLA platform events to G2-M4; replay of one consumer from a point in time is not built.
+
 ## More information
 
 - Design, schemas, example and phases: [Events, audit, alerts and notifications](../architecture/events-audit-alerts-notifications.md).

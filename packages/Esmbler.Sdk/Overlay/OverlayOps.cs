@@ -36,6 +36,8 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddApprovalPolicy), "approval_policy.add")]
 [JsonDerivedType(typeof(UpdateApprovalPolicy), "approval_policy.update")]
 [JsonDerivedType(typeof(RemoveApprovalPolicy), "approval_policy.remove")]
+[JsonDerivedType(typeof(AddEventType), "event_type.add")]
+[JsonDerivedType(typeof(RemoveEventType), "event_type.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -458,6 +460,9 @@ public sealed class TransitionPatch
     public string? Tone { get; set; }
 
     public bool? Enabled { get; set; }
+
+    /// <summary>Domain events the transition publishes (replaces the list); allowed on base transitions too (ADR 0017).</summary>
+    public List<EventEmitSpec>? Emits { get; set; }
 }
 
 /// <summary>Changes a transition. Base transitions accept only label, guardMessage, tone and enabled.</summary>
@@ -554,4 +559,24 @@ public sealed class RemoveApprovalPolicy : OverlayOp
 
     [JsonIgnore]
     public override bool AffectsPermissions => true;
+}
+
+/// <summary>Adds a tenant event type (ADR 0017) that tenant rules and transitions can publish.</summary>
+public sealed class AddEventType : OverlayOp
+{
+    public required EventTypeSpec EventType { get; set; }
+
+    public override string Describe() => $"Add event type \"{EventType.Label}\" ({EventType.Id}) with {EventType.Fields.Count} payload field(s)";
+
+    public override IEnumerable<string> Targets() => [EventType.Id];
+}
+
+/// <summary>Removes a tenant event type that nothing publishes or subscribes to.</summary>
+public sealed class RemoveEventType : OverlayOp
+{
+    public required string EventType { get; set; }
+
+    public override string Describe() => $"Remove event type {EventType}";
+
+    public override IEnumerable<string> Targets() => [EventType];
 }

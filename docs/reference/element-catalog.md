@@ -1012,8 +1012,9 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | `spec_object.assignment_rule` | 1 | no | Routes records to a group when a condition holds, such as sending network tickets to the Network queue. |
 | `spec_object.catalog_item` | 2 | no | A requestable service offering, such as "New laptop" or "Software access". |
 | `spec_object.choice_list` | 1 | no | A reusable, ordered list of options for single_select, multi_select, status, and priority fields. |
-| `spec_object.conditional_rule` | 1 | no | A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, or show a message. |
+| `spec_object.conditional_rule` | 1 | no | A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, show a message, or publish a declared event (emit_event, once each time the condition becomes true; data scope only). |
 | `spec_object.entity` | 1 | no | A record type, such as Ticket or Vendor: its labels, the field that names a record (titleField), its fields, and the user/group fields that relate people to records for record-level access (accessFields). |
+| `spec_object.event_type` | 2 | no | Something that happens in the workspace that other parts of the platform can react to, such as "Ticket escalated". |
 | `spec_object.field_definition` | 1 | no | The definition of one field of an entity (FieldSpec): a stable key, a field type (one of the field.<type> elements), a label, and the constraint props that apply to that type, plus flags such as required, readOnly, hidden, deprecated, and system. |
 | `spec_object.form` | 1 | no | A ViewSpec of kind form: a compact create or edit form for an entity, used for quick create dialogs (action.button with action quick_create:<view id>) and portal request forms. |
 | `spec_object.list_view` | 1 | no | A ViewSpec of kind list: the page for finding and working many records of an entity, typically saved views, a filter bar, and a data table with columns. |
@@ -1023,7 +1024,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | `spec_object.relationship` | 1 | no | Describes a lookup between two entities in both directions: the many-to-one side stored in a lookup field (a ticket's parent) and the one-to-many inverse shown in related lists (a ticket's child tickets). |
 | `spec_object.role` | 1 | no | A named job function, such as Agent or Requester, that people hold in a tenant. |
 | `spec_object.validation_rule` | 1 | no | A rule (RuleSpec, kind validation) that blocks a write unless its assert expression is true, with a message shown on a field. |
-| `spec_object.workflow` | 1 | no | The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, and button tone. |
+| `spec_object.workflow` | 1 | no | The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, button tone, and the declared events a transition publishes when it fires (emits, with payload expressions). |
 
 ### Approval policy (`spec_object.approval_policy`)
 
@@ -1082,7 +1083,7 @@ Accessibility: role `none`; Not rendered directly.
 
 ### Conditional rule (`spec_object.conditional_rule`)
 
-A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, or show a message. With scope data it applies on every write path and drives the field rule hooks in all views; with scope form it only affects one view's presentation.
+A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, show a message, or publish a declared event (emit_event, once each time the condition becomes true; data scope only). With scope data it applies on every write path and drives the field rule hooks in all views; with scope form it only affects one view's presentation.
 
 Constraints:
 
@@ -1104,6 +1105,20 @@ Constraints:
 - Field keys are unique within the entity; base keys contain no "__" and tenant-added keys start with tenant__.
 - accessFields must reference user or group fields of the entity.
 - Entities and fields are never physically removed from a published layer; they are hidden or deprecated so data is kept.
+
+Accessibility: role `none`; Not rendered directly.
+
+### Event type (`spec_object.event_type`)
+
+Something that happens in the workspace that other parts of the platform can react to, such as "Ticket escalated". Modules and tenants declare the events they publish with a small payload; notifications, alerts, automations and integrations subscribe to them by ID, so the publisher never needs to know who listens. Transitions publish events with emits, and rules with an emit_event action when their condition becomes true.
+
+Constraints:
+
+- id is unique; tenant event types start with tenant__.
+- version starts at 1; a breaking payload change publishes version + 1.
+- Payload field keys are snake_case with type string, number, boolean or list; at most 30 fields.
+- severity is info, low, medium, high or critical; sensitivity is public, internal or restricted (external recipients only ever get public values).
+- Emitters must set every required field and only declared fields; their expressions are type-checked.
 
 Accessibility: role `none`; Not rendered directly.
 
@@ -1222,7 +1237,7 @@ Accessibility: role `none`; Not rendered directly.
 
 ### Workflow (`spec_object.workflow`)
 
-The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, and button tone. The workflow owns the entity's status field, which changes only through transitions.
+The state machine of an entity: its states (each in a category such as active or resolved), the initial state, and the transitions between them, with guards, required fields, role restrictions, field values set on firing, button tone, and the declared events a transition publishes when it fires (emits, with payload expressions). The workflow owns the entity's status field, which changes only through transitions.
 
 Constraints:
 

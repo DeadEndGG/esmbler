@@ -41,7 +41,7 @@ The master spec ("Architecture model") asks for a modular monolith with enforced
 | `modules/<name>/Esmbler.Modules.<Name>` (+ `.Contracts`) | Business module; declarative releases in `Releases/<version>/module.json` | Contracts only |
 | `apps/Esmbler.Api`, `apps/Esmbler.Mcp`, `apps/Esmbler.Worker`, `apps/web` | Deployables (one container image each) | n/a |
 | `tests/Esmbler.UnitTests`, `.IntegrationTests`, `.ArchitectureTests`, `tests/e2e` | Tests | n/a |
-| `tools/Esmbler.DocGen`, `tools/check-links.mjs` | Generated references (`docs/reference/schemas/*.schema.json`, `docs/reference/element-catalog.md`; CI runs `--check`) and the docs link check | n/a |
+| `tools/Esmbler.DocGen`, `tools/check-links.mjs` | Generated references (`docs/reference/schemas/*.schema.json`, `docs/reference/element-catalog.md`, `docs/reference/asyncapi.json` from the platform's built-in event types and the newest module release files; CI runs `--check`) and the docs link check. DocGen references only `Esmbler.Sdk` and `Esmbler.Kernel` and reads module releases as JSON (architecture test) | n/a |
 | `deploy/` | `docker-compose.yml`, `docker/dotnet.Dockerfile` (one image per .NET host via the `APP` build argument), `docker/web.Dockerfile`, `postgres/00-roles.sh` | n/a |
 | `spikes/*` | Throwaway spike code behind ADRs | n/a |
 

@@ -111,5 +111,16 @@ public sealed class WorkflowHook : IRecordWriteHook
 
         ctx.FromState = current;
         ctx.ToState = transition.To;
+        if (transition.Emits.Count > 0)
+        {
+            var emitVars = ctx.Variables();
+            foreach (var emit in transition.Emits)
+            {
+                if (EventEmission.Evaluate(ctx.Config, ctx.Entity, emit, emitVars, $"{wf.Id}/{transition.Id}") is { } emitted)
+                {
+                    ctx.Emitted.Add(emitted);
+                }
+            }
+        }
     }
 }

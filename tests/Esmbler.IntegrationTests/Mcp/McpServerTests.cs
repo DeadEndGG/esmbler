@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type" })
         {
             Assert.Contains(expected, tools);
         }
@@ -189,6 +189,52 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var finance = after["policies"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "tenant__finance_approval")!;
         Assert.Empty(finance["usedBy"]!.AsArray());
         Assert.Equal(2, finance["stages"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public async Task Agent_declares_an_event_and_publishes_it_from_a_rule_and_a_transition()
+    {
+        // REQ-EVT-008 (ADR 0017): event types and emits are configuration the AI builder edits in the draft.
+        var tenant = await platform.NewTenantAsync("mevt", "1.4.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var types = await Call(client, "list_event_types");
+        var escalated = types["eventTypes"]!.AsArray().Single(e => e!["id"]!.GetValue<string>() == "core.tickets.ticket.escalated")!;
+        Assert.Contains(escalated["publishedBy"]!.AsArray(), p => p!.GetValue<string>() == "core.tickets.lifecycle/escalate");
+
+        version = (await Call(client, "add_event_type", new { label = "Hardware ticket reopened", fields = new { priority = "string" }, subject_entity = "core.tickets.ticket", severity = "medium", expected_version = version }))["version"]!.GetValue<int>();
+        version = (await Call(client, "add_rule", new
+        {
+            entity = "core.tickets.ticket",
+            description = "Announce hardware P2s",
+            when = "record.priority == 'p2'",
+            actions = new object[] { new { type = "emit_event", @event = "tenant__hardware_ticket_reopened", payload = new { priority = "record.priority" } } },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+        version = (await Call(client, "update_transition", new
+        {
+            workflow = "core.tickets.lifecycle",
+            transition = "reopen",
+            publish_events = new object[] { new { @event = "tenant__hardware_ticket_reopened", payload = new { priority = "record.priority" } } },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+
+        var after = (await Call(client, "list_event_types"))["eventTypes"]!.AsArray().Single(e => e!["id"]!.GetValue<string>() == "tenant__hardware_ticket_reopened")!;
+        var publishers = after["publishedBy"]!.AsArray().Select(p => p!.GetValue<string>()).ToList();
+        Assert.Contains("core.tickets.lifecycle/reopen", publishers);
+        Assert.Contains(publishers, p => p.StartsWith("tenant__r_announce_hardware_p2s", StringComparison.Ordinal));
+
+        // Payloads are type-checked: an undeclared field is refused with a suggestion.
+        var bad = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_transition", new
+        {
+            workflow = "core.tickets.lifecycle",
+            transition = "resolve",
+            publish_events = new object[] { new { @event = "tenant__hardware_ticket_reopened", payload = new { priorty = "record.priority" } } },
+            expected_version = version,
+        }));
+        Assert.Contains("unknown_payload_field", bad.Body);
     }
 
     [Fact]

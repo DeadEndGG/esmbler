@@ -34,6 +34,8 @@ public class SpecCatalog
 
     public List<ApprovalPolicySpec> ApprovalPolicies { get; set; } = [];
 
+    public List<EventTypeSpec> EventTypes { get; set; } = [];
+
     public EntitySpec? FindEntity(string id) => Entities.Find(e => e.Id == id);
 
     public ChoiceListSpec? FindChoiceList(string id) => ChoiceLists.Find(c => c.Id == id);
@@ -47,6 +49,8 @@ public class SpecCatalog
     public CatalogItemSpec? FindCatalogItem(string id) => CatalogItems.Find(c => c.Id == id);
 
     public ApprovalPolicySpec? FindApprovalPolicy(string id) => ApprovalPolicies.Find(p => p.Id == id);
+
+    public EventTypeSpec? FindEventType(string id) => EventTypes.Find(e => e.Id == id);
 
     /// <summary>The entity whose request binding names <paramref name="taskEntityId"/> as its task entity.</summary>
     public EntitySpec? RequestEntityForTask(string taskEntityId) => Entities.Find(e => e.Request?.TaskEntity == taskEntityId);

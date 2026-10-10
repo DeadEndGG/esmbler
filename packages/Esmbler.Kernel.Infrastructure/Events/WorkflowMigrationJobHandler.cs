@@ -108,10 +108,13 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
                         Outcome = "success",
                         Details = JsonSerializer.Serialize(new { workflow = workflowId, fromVersion, toVersion, policy = policy.Policy, changes = new Dictionary<string, object?> { [current.StateField] = new { from, to = target } } }),
                     });
-                    var envelope = new EventEnvelope
+                    EventWriter.Add(db, new EventEnvelope
                     {
                         EventId = Guid.NewGuid(),
                         Type = EventTypes.RecordTransitioned,
+                        Source = EventWriter.SourceOf(artifact.Config, current.Entity),
+                        Severity = EventSeverities.Info,
+                        Sensitivity = EventSensitivities.Internal,
                         TenantId = job.TenantId,
                         EnvironmentId = job.EnvironmentId,
                         Entity = current.Entity,
@@ -122,8 +125,7 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
                         CorrelationId = job.Id,
                         Actor = job.CreatedBy is { } actor ? $"user:{actor}" : "system",
                         Payload = new JsonObject { ["changed"] = new JsonArray(current.StateField), ["from"] = from, ["to"] = target, ["transition"] = null, ["source"] = "workflow_migration" },
-                    };
-                    db.Outbox.Add(new OutboxRow { Id = envelope.EventId, TenantId = job.TenantId, EnvironmentId = job.EnvironmentId, Type = envelope.Type, RecordId = row.Id, RecordRevision = row.Revision, Event = JsonSerializer.Serialize(envelope, SpecJson.Options), AvailableAt = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow });
+                    });
                 }
 
                 checkpoint["after"] = rows[^1].Id.ToString();

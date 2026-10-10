@@ -523,6 +523,32 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "emit": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      },
+                      "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "severity": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
                   }
                 },
                 "required": [
@@ -1273,6 +1299,29 @@
             },
             "system": {
               "type": "boolean"
+            },
+            "emits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/anyOf/7/properties/rule/properties/actions/items/properties/emit/properties/payload"
+                  },
+                  "severity": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
             }
           },
           "required": [
@@ -1372,6 +1421,15 @@
                 "boolean",
                 "null"
               ]
+            },
+            "emits": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/20/properties/transition/properties/emits/items"
+              }
             }
           }
         },
@@ -1574,6 +1632,91 @@
       },
       "required": [
         "policy"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "event_type.add"
+        },
+        "eventType": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subjectEntity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "severity": {
+              "type": "string"
+            },
+            "sensitivity": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "eventType"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "event_type.remove"
+        },
+        "eventType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventType"
       ]
     }
   ]

@@ -98,6 +98,32 @@
           },
           "system": {
             "type": "boolean"
+          },
+          "emits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "payload": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "severity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
           }
         },
         "required": [

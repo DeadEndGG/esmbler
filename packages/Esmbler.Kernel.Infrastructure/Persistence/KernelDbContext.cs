@@ -63,6 +63,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<WorkflowDefinitionRow> WorkflowDefinitions => Set<WorkflowDefinitionRow>();
 
+    public DbSet<ConsumerFailureRow> ConsumerFailures => Set<ConsumerFailureRow>();
+
     public DbSet<ApprovalRow> Approvals => Set<ApprovalRow>();
 
     public DbSet<ApprovalStepRow> ApprovalSteps => Set<ApprovalStepRow>();
@@ -87,6 +89,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<PublishRequestRow>().ToTable("publish_requests").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RecordRow>().ToTable("records").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<WorkflowDefinitionRow>().ToTable("workflow_definitions").HasKey(x => new { x.TenantId, x.EnvironmentId, x.WorkflowId, x.Version });
+        b.Entity<ConsumerFailureRow>().ToTable("consumer_failures").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalRow>().ToTable("approvals").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalStepRow>().ToTable("approval_steps").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<ApprovalDelegationRow>().ToTable("approval_delegations").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });

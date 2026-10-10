@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)) and `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) and `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -322,6 +322,20 @@ Tenants and the AI builder add their own items with `catalog_item.add`, and deac
 The requester never approves their own request, even if they hold the Approver role. In the Globex demo tenant, Jamie Ortiz (`jamie@globex.example`) holds the Approver role next to Requester, so the laptop flow in `requests.spec.ts` is: Taylor orders, Jamie approves in Approvals, Morgan's team fulfils.
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/ApprovalPolicyTests.cs` (`Release_1_3_0_puts_laptops_and_software_access_behind_approval` and policy validation), `tests/Esmbler.IntegrationTests/Requests/ApprovalTests.cs`, `Api/ApprovalApiTests.cs`, and Playwright `requests.spec.ts`.
+
+## Release 1.4.0: ticket events
+
+1.4.0 declares the module's domain events so notifications, alerts and integrations can subscribe to what happened instead of decoding record changes ([ADR 0017](../../adr/0017-event-audit-alert-notification-services.md)). The release is additive with no data migrations.
+
+| Element | IDs and detail |
+| --- | --- |
+| Ticket fields | `escalated` (toggle, read-only, set by the transition), `escalation_reason` (long text, required by the transition). Requesters read both (`core.tickets.ps_requester`) |
+| Transition | `escalate` (Escalate, tone danger): from assigned, in_progress or on_hold to in_progress, agents and admins, requires `escalation_reason`, sets `escalated` |
+| Event types | `core.tickets.ticket.escalated` (severity high; payload `priority` required, `from`, `reason`, `assignment_group`), `core.tickets.ticket.priority_raised` (critical; `priority` required, `previous`), `core.tickets.ticket.resolved` (info; `priority` required, `escalated`) |
+| Publishers | `escalate` emits `escalated` with severity `record.priority == 'p1' ? 'critical' : 'high'`; `resolve` emits `resolved`; rule `core.tickets.rules.p1_raised` emits `priority_raised` each time a ticket becomes P1 (on create or later) |
+| Record page | The resolution card shows `escalated` and `escalation_reason` |
+
+The generated [events reference](../../reference/asyncapi.json) lists the payload schemas. Evidence: `tests/Esmbler.UnitTests/Configuration/EventTypeTests.cs` (`Release_1_4_0_declares_ticket_events_and_publishes_them_from_transitions_and_rules`), `tests/Esmbler.IntegrationTests/Events/EventPlatformTests.cs`.
 
 ## Related documents
 

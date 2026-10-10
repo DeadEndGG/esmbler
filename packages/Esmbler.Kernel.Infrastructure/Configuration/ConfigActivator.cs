@@ -88,15 +88,21 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
             }, ct);
         }
 
-        db.Outbox.Add(new OutboxRow
+        // A normal v2 envelope (ADR 0017), so subscribers can react to publishes like any other event.
+        EventWriter.Add(db, new EventEnvelope
         {
-            Id = Guid.NewGuid(),
+            EventId = Guid.NewGuid(),
+            Type = EventTypes.ConfigPublished,
+            Source = PlatformModule.ModuleId,
             TenantId = tenantId,
             EnvironmentId = environmentId,
-            Type = EventTypes.ConfigPublished,
-            Event = JsonSerializer.Serialize(new { type = EventTypes.ConfigPublished, revision, source, contentHash = result.Manifest.ContentHash }, SpecJson.Options),
-            AvailableAt = DateTimeOffset.UtcNow,
-            CreatedAt = DateTimeOffset.UtcNow,
+            ConfigRevision = revision,
+            OccurredAt = DateTimeOffset.UtcNow,
+            CorrelationId = Guid.NewGuid(),
+            Actor = (approvedBy ?? createdBy) is { } by ? $"user:{by}" : "system",
+            Severity = EventSeverities.Info,
+            Sensitivity = EventSensitivities.Internal,
+            Payload = new JsonObject { ["revision"] = revision, ["source"] = source, ["content_hash"] = result.Manifest.ContentHash },
         });
         await db.SaveChangesAsync(ct);
 

@@ -14,7 +14,7 @@ internal static class CompilerFixture
 
     public static ModuleSpec Tickets(string version) => new TicketsModule().Releases.Single(r => r.Version == version);
 
-    public static ModuleSpec PlatformSpec => new PlatformModule().Releases[0];
+    public static ModuleSpec PlatformSpec => new PlatformModule().Releases[^1];
 
     public static CompileResult Compile(string ticketsVersion, params OverlayOp[] ops) =>
         Compiler.Compile([PlatformSpec, Tickets(ticketsVersion)], ops);

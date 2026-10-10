@@ -29,7 +29,7 @@ Tenants customize first-party modules through overlays, by hand or through the A
 
 ### Overlay operations
 
-An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (26 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`, since G2-M2 `catalog_item.*` and `workflow.*` for service catalog items and workflows, see [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md), and since G2-M3 `approval_policy.add`, `approval_policy.update` and `approval_policy.remove` for approval policies, see [ADR 0016](0016-approvals.md)).
+An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (28 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`, since G2-M2 `catalog_item.*` and `workflow.*` for service catalog items and workflows, see [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md), and since G2-M3 `approval_policy.add`, `approval_policy.update` and `approval_policy.remove` for approval policies, see [ADR 0016](0016-approvals.md), and since G2-M17 `event_type.add` and `event_type.remove` for tenant event types, see [ADR 0017](0017-event-audit-alert-notification-services.md); `workflow.update_transition` also sets a transition's `emits`).
 
 ```json
 [

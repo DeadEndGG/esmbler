@@ -37,6 +37,32 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
             };
         });
 
+    [McpServerTool(Name = "list_event_types", ReadOnly = true), Description("Event types in the open draft: what each means, its payload fields, default severity and sensitivity, and which transitions and rules publish it. Notifications, alerts and integrations subscribe to these.")]
+    public Task<CallToolResult> ListEventTypes() =>
+        runner.RunAsync("list_event_types", AgentScopes.ConfigRead, null, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            var publishers = config.Workflows.SelectMany(w => w.Transitions.SelectMany(t => t.Emits.Select(e => (e.Type, By: $"{w.Id}/{t.Id}"))))
+                .Concat(config.Rules.SelectMany(r => r.Actions.Where(a => a.Emit is not null).Select(a => (a.Emit!.Type, By: r.Id))))
+                .ToLookup(p => p.Type, p => p.By);
+            return new
+            {
+                draftVersion,
+                eventTypes = config.EventTypes.Select(e => new
+                {
+                    e.Id,
+                    e.Version,
+                    e.Label,
+                    e.Description,
+                    e.SubjectEntity,
+                    e.Severity,
+                    e.Sensitivity,
+                    fields = e.Fields.Select(f => new { key = f.Key, f.Value.Type, f.Value.Required }),
+                    publishedBy = publishers[e.Id],
+                }),
+            };
+        });
+
     [McpServerTool(Name = "list_approval_policies", ReadOnly = true), Description("Approval policies in the open draft: stages in order with their approvers, conditions and expiry, and which catalog items use each policy.")]
     public Task<CallToolResult> ListApprovalPolicies() =>
         runner.RunAsync("list_approval_policies", AgentScopes.ConfigRead, null, async ctx =>

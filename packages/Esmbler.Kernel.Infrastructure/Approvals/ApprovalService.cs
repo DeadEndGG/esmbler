@@ -9,6 +9,7 @@ using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Records;
 using Esmbler.Kernel.Infrastructure.Services;
 using Esmbler.Kernel.Tenancy;
+using Esmbler.Sdk.Events;
 using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -452,6 +453,8 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             }
 
             await NotifyAsync(db, artifact.Config, approval, stage, approvers, ct);
+            EventWriter.AddPlatform(db, ctx, EventTypes.ApprovalRequested, "platform.approvals", entity.Id, approval.RecordId, await RevisionAsync(db, approval.RecordId, ct), artifact.Revision, new JsonObject { ["policy"] = approval.PolicyId, ["stage"] = stage.Id }, EventSeverities.Low);
+            await db.SaveChangesAsync(ct);
             return;
         }
 
@@ -562,6 +565,19 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         await JobScheduler.CancelAsync(db, ExpiryKey(approval.Id, approval.StageIndex), ct);
         await JobScheduler.CancelAsync(db, ExpiryKey(approval.Id, approval.StageIndex) + ":escalated", ct);
         AuditWriter.Add(db, ctx, $"approval.{status}", entity.Id, approval.RecordId.ToString(), artifact.Revision, new { approval = approval.Id, policy = approval.PolicyId, reason, source = "system" });
+        var (eventType, severity) = status switch
+        {
+            Statuses.Approved => (EventTypes.ApprovalApproved, EventSeverities.Info),
+            Statuses.Rejected => (EventTypes.ApprovalRejected, EventSeverities.Medium),
+            _ => (EventTypes.ApprovalCancelled, EventSeverities.Info),
+        };
+        var payload = new JsonObject { ["policy"] = approval.PolicyId };
+        if (status == Statuses.Rejected && reason is not null)
+        {
+            payload["reason"] = reason;
+        }
+
+        EventWriter.AddPlatform(db, ctx, eventType, "platform.approvals", entity.Id, approval.RecordId, await RevisionAsync(db, approval.RecordId, ct), artifact.Revision, payload, severity);
         await db.SaveChangesAsync(ct);
         if (fireTransition)
         {
@@ -1119,6 +1135,11 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         Channel = "worker",
         CorrelationId = correlation,
     };
+
+    /// <summary>The request's current revision, for platform events about it (the envelope names the revision it saw).</summary>
+    private static Task<int> RevisionAsync(KernelDbContext db, Guid recordId, CancellationToken ct) =>
+        db.Records.Where(r => r.Id == recordId).Select(r => r.Revision).FirstAsync(ct);
+
 }
 
 public sealed record RecordApprovalView(Guid Id, string PolicyId, string PolicyLabel, string Status, int StageIndex, string? OutcomeReason, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt, IReadOnlyList<ApprovalStageView> Stages);

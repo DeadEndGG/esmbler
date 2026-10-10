@@ -92,6 +92,32 @@
               "string",
               "null"
             ]
+          },
+          "emit": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "severity": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
           }
         },
         "required": [

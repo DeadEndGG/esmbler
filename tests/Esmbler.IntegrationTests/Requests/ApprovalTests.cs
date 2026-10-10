@@ -108,7 +108,14 @@ public class ApprovalTests(PlatformFixture f)
         var done = await ApprovalAsync(t, request.Id);
         Assert.Equal("approved", done.Status);
         Assert.Equal("Jamie " + PlatformFixture.Slugs[t.TenantId], done.Stages[0].Steps.Single(s => s.Status == "approved").DecidedBy);
+
+        // ADR 0017: the approval publishes platform events subscribers can route on.
+        Assert.Equal(["platform.approval.requested", "platform.approval.approved"], await ApprovalEventsAsync(t, request.Id));
     }
+
+    private async Task<List<string>> ApprovalEventsAsync(ProvisionedTenant t, Guid id) =>
+        await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.Outbox
+            .Where(o => o.RecordId == id && o.Type.StartsWith("platform.approval.")).OrderBy(o => o.CreatedAt).Select(o => o.Type).ToListAsync(), default);
 
     [Fact]
     public async Task A_request_without_an_approval_policy_goes_straight_to_the_agents()
@@ -200,6 +207,7 @@ public class ApprovalTests(PlatformFixture f)
         var view = await ApprovalAsync(t, request.Id, "dana");
         Assert.Equal("rejected", view.Status);
         Assert.Equal("Use the spare in the cupboard.", view.Stages[0].Steps.Single(s => s.Status == "rejected").Comment);
+        Assert.Equal(["platform.approval.requested", "platform.approval.rejected"], await ApprovalEventsAsync(t, request.Id));
 
         var again = await Assert.ThrowsAsync<KernelException>(() => Approvals.DecideAsync(f.As(t, "quinn"), view.Stages[0].Steps[0].Id, "approved", null, default));
         Assert.Equal(409, again.Status);

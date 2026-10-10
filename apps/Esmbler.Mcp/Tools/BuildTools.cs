@@ -13,7 +13,7 @@ namespace Esmbler.Mcp.Tools;
 
 public sealed class RuleActionInput
 {
-    [Description("require, show, hide, read_only, set_value, restrict_options, or message")]
+    [Description("require, show, hide, read_only, set_value, restrict_options, message, or emit_event")]
     public required string Type { get; set; }
 
     [Description("Field key the action applies to (not needed for message).")]
@@ -27,6 +27,24 @@ public sealed class RuleActionInput
 
     [Description("message: text to show.")]
     public string? Message { get; set; }
+
+    [Description("emit_event: event type ID to publish when the condition becomes true (see list_event_types).")]
+    public string? Event { get; set; }
+
+    [Description("emit_event: payload field key to expression, e.g. {\"priority\": \"record.priority\"}.")]
+    public Dictionary<string, string>? Payload { get; set; }
+}
+
+public sealed class EventEmitInput
+{
+    [Description("Event type ID (see list_event_types).")]
+    public required string Event { get; set; }
+
+    [Description("Payload field key to expression over record and prior, e.g. {\"priority\": \"record.priority\", \"from\": \"prior.status\"}.")]
+    public Dictionary<string, string> Payload { get; set; } = [];
+
+    [Description("Optional severity expression, e.g. record.priority == 'p1' ? 'critical' : 'high'. Defaults to the event type's severity.")]
+    public string? Severity { get; set; }
 }
 
 public sealed class CatalogVariableInput
@@ -243,7 +261,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("remove_node", AgentScopes.ConfigEdit, node, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveNode { View = view, Node = node }], expected_version));
 
-    [McpServerTool(Name = "add_rule"), Description("Add a rule. Conditional: when <expression> then actions (require, show, hide, read_only, set_value, restrict_options, message). Validation: assert <expression> with a message. Expressions use record.<field_key>, e.g. record.category == 'access'. Data-scope rules apply on every form and the API.")]
+    [McpServerTool(Name = "add_rule"), Description("Add a rule. Conditional: when <expression> then actions (require, show, hide, read_only, set_value, restrict_options, message, emit_event; emit_event publishes once each time the condition becomes true). Validation: assert <expression> with a message. Expressions use record.<field_key>, e.g. record.category == 'access'. Data-scope rules apply on every form and the API.")]
     public Task<CallToolResult> AddRule(
         string entity,
         [Description("Plain-English summary, e.g. \"Access requests need a justification\".")] string description,
@@ -266,7 +284,15 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
                 Assert = assert,
                 Message = message,
                 Field = field,
-                Actions = (actions ?? []).Select(a => new RuleActionSpec { Type = a.Type, Field = a.Field, Value = a.Value, Options = a.Options, Message = a.Message }).ToList(),
+                Actions = (actions ?? []).Select(a => new RuleActionSpec
+                {
+                    Type = a.Type,
+                    Field = a.Field,
+                    Value = a.Value,
+                    Options = a.Options,
+                    Message = a.Message,
+                    Emit = a.Event is null ? null : new EventEmitSpec { Type = a.Event, Payload = a.Payload ?? [] },
+                }).ToList(),
             };
             return await ApplyAllAsync(ctx, [new AddRule { Rule = rule }], expected_version);
         });
@@ -353,6 +379,29 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("update_catalog_item", AgentScopes.ConfigEdit, item, async ctx =>
             await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active, ApprovalPolicy = approval_policy } }], expected_version));
 
+    [McpServerTool(Name = "add_event_type"), Description("Declare an event the workspace publishes, e.g. \"Vendor contract expiring\". Publish it from a rule (add_rule with an emit_event action) or a transition (update_transition with publish_events). Subscribers react to it by ID.")]
+    public Task<CallToolResult> AddEventType(
+        [Description("Event name in the past tense, e.g. \"Hardware ticket escalated\".")] string label,
+        [Description("Payload field keys and types (string, number, boolean, list), e.g. {\"priority\": \"string\"}.")] Dictionary<string, string> fields,
+        int expected_version,
+        [Description("Entity the event is about, e.g. core.tickets.ticket.")] string? subject_entity = null,
+        [Description("info, low, medium, high or critical.")] string severity = "info",
+        string? description = null) =>
+        runner.RunAsync("add_event_type", AgentScopes.ConfigEdit, label, async ctx =>
+        {
+            var slug = Slug(label);
+            var type = new EventTypeSpec
+            {
+                Id = Namespaces.TenantPrefix + slug[..Math.Min(60, slug.Length)],
+                Label = label,
+                Description = description,
+                SubjectEntity = subject_entity,
+                Severity = severity,
+                Fields = fields.ToDictionary(f => f.Key, f => new EventFieldSpec { Type = f.Value }),
+            };
+            return await ApplyAllAsync(ctx, [new AddEventType { EventType = type }], expected_version);
+        });
+
     [McpServerTool(Name = "add_approval_policy"), Description("Add an approval policy: stages that run in order, each with approvers (roles, groups, or fields naming a person) who decide in parallel. Point a catalog item at it with update_catalog_item (approval_policy). The requester never approves their own request, and AI agents never approve.")]
     public Task<CallToolResult> AddApprovalPolicy(
         [Description("Policy name, e.g. \"Finance approval\".")] string label,
@@ -421,7 +470,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("add_transition", AgentScopes.ConfigEdit, workflow, async ctx =>
             await ApplyAllAsync(ctx, [new AddTransition { Workflow = workflow, Transition = new WorkflowTransition { Id = Namespaces.TenantPrefix + Slug(label), Label = label, From = [.. from], To = to, Roles = [.. roles ?? []], RequiredFields = [.. required_fields ?? []], Guard = guard, GuardMessage = guard_message, Tone = tone } }], expected_version));
 
-    [McpServerTool(Name = "update_transition"), Description("Change a transition. Default-module transitions accept only label, guard_message, tone, and enabled (disable instead of delete); your own transitions accept everything.")]
+    [McpServerTool(Name = "update_transition"), Description("Change a transition. Default-module transitions accept only label, guard_message, tone, enabled (disable instead of delete) and extra events to publish; your own transitions accept everything.")]
     public Task<CallToolResult> UpdateTransition(
         string workflow,
         string transition,
@@ -432,9 +481,20 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         string? tone = null,
         string[]? from = null,
         string? to = null,
-        string? guard = null) =>
+        string? guard = null,
+        [Description("Events to publish when the transition fires, added to the ones it already publishes.")] EventEmitInput[]? publish_events = null) =>
         runner.RunAsync("update_transition", AgentScopes.ConfigEdit, $"{workflow}/{transition}", async ctx =>
-            await ApplyAllAsync(ctx, [new UpdateTransition { Workflow = workflow, Transition = transition, Set = new TransitionPatch { Label = label, Enabled = enabled, GuardMessage = guard_message, Tone = tone, From = from?.ToList(), To = to, Guard = guard } }], expected_version));
+        {
+            List<EventEmitSpec>? emits = null;
+            if (publish_events is { Length: > 0 })
+            {
+                var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+                var current = config.Workflows.Find(w => w.Id == workflow)?.FindTransition(transition)?.Emits ?? [];
+                emits = [.. current, .. publish_events.Select(e => new EventEmitSpec { Type = e.Event, Payload = e.Payload, Severity = e.Severity })];
+            }
+
+            return await ApplyAllAsync(ctx, [new UpdateTransition { Workflow = workflow, Transition = transition, Set = new TransitionPatch { Label = label, Enabled = enabled, GuardMessage = guard_message, Tone = tone, From = from?.ToList(), To = to, Guard = guard, Emits = emits } }], expected_version);
+        });
 
     [McpServerTool(Name = "set_workflow_policy"), Description("Decide what happens to records already in a workflow when this draft changes it: pin (default; they finish on the version they started with), migrate (move them through state_map, old state → new state), or cancel (move active ones to cancel_state). The publish review shows how many records each choice affects.")]
     public Task<CallToolResult> SetWorkflowPolicy(
