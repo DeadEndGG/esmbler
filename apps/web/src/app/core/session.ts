@@ -16,6 +16,9 @@ export class Session {
   readonly isAdmin = computed(() => this.app()?.actions.includes('permissions.admin') ?? false);
   /** Approval steps waiting for the signed-in person (navigation badge, ADR 0016). */
   readonly pendingApprovals = signal(0);
+  /** Unread notifications of the signed-in person (navigation badge, ADR 0021). */
+  readonly unreadNotifications = signal(0);
+  readonly canManageNotifications = computed(() => this.app()?.actions.some((a) => a === 'notifications.manage' || a === 'permissions.admin') ?? false);
 
   async load(): Promise<AppBootstrap> {
     const app = await this.api.get<AppBootstrap>('/api/app');
@@ -25,6 +28,7 @@ export class Session {
     }
     this.app.set(app);
     this.refreshApprovals();
+    this.refreshNotifications();
     return app;
   }
 
@@ -35,6 +39,11 @@ export class Session {
       return;
     }
     this.api.get<{ pending: number }>('/api/approvals/count').then((c) => this.pendingApprovals.set(c.pending), () => undefined);
+  }
+
+  /** Re-reads the unread notifications badge; failures leave the last value. */
+  refreshNotifications(): void {
+    this.api.get<{ unread: number }>('/api/me/notifications/unread-count').then((c) => this.unreadNotifications.set(c.unread), () => undefined);
   }
 
   /** Call after a publish/rollback/upgrade: drop cached specs and reload the bootstrap. */

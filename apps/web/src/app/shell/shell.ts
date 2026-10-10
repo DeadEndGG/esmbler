@@ -48,6 +48,10 @@ import { Icon, IconName } from '../ui/icon';
             @if (session.pendingApprovals()) { <span class="nav-count" [attr.aria-label]="session.pendingApprovals() + ' waiting for you'">{{ session.pendingApprovals() }}</span> }
           </a>
         }
+        <a class="nav-item" routerLink="/notifications" routerLinkActive="active">
+          <esm-icon name="bell" /><span class="flex-1">Notifications</span>
+          @if (session.unreadNotifications()) { <span class="nav-count" [attr.aria-label]="session.unreadNotifications() + ' unread'">{{ session.unreadNotifications() }}</span> }
+        </a>
         @for (n of session.app()?.navigation ?? []; track n.entity) {
           <a class="nav-item" [routerLink]="['/records', n.entity]" routerLinkActive="active">
             <esm-icon [name]="navIcon(n.entity, n.requests)" />
@@ -67,6 +71,9 @@ import { Icon, IconName } from '../ui/icon';
           @if (session.isAdmin()) {
             <a class="nav-item" routerLink="/admin/people" routerLinkActive="active"><esm-icon name="users" /><span class="flex-1">People and roles</span></a>
             <a class="nav-item" routerLink="/admin/operations" routerLinkActive="active"><esm-icon name="activity" /><span class="flex-1">Operations</span></a>
+          }
+          @if (session.canManageNotifications()) {
+            <a class="nav-item" routerLink="/admin/notifications" routerLinkActive="active"><esm-icon name="send" /><span class="flex-1">Notification channels</span></a>
           }
         }
         <div class="flex-1"></div>
@@ -124,7 +131,12 @@ export class Shell {
       shortcuts.register({ keys: 'g t', description: 'Go to Tickets', group: 'Global', run: () => this.router.navigate(['/records', 'core.tickets.ticket']) }),
       shortcuts.register({ keys: 'g h', description: 'Go home', group: 'Global', run: () => this.router.navigate(['/']) }),
     ];
-    inject(DestroyRef).onDestroy(() => off.forEach((f) => f()));
+    // Keep the notifications badge current while the app is visible (no push channel yet).
+    const poll = setInterval(() => document.visibilityState === 'visible' && this.session.refreshNotifications(), 60_000);
+    inject(DestroyRef).onDestroy(() => {
+      off.forEach((f) => f());
+      clearInterval(poll);
+    });
   }
 
   protected navIcon(entity: string, requests?: boolean): IconName {

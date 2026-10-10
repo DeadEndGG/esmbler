@@ -36,6 +36,10 @@ export class Api {
     return this.run(this.http.post<T>(url, body ?? {}, { headers: new HttpHeaders(headers ?? {}) }));
   }
 
+  put<T>(url: string, body: unknown): Promise<T> {
+    return this.run(this.http.put<T>(url, body));
+  }
+
   patch<T>(url: string, body: unknown): Promise<T> {
     return this.run(this.http.patch<T>(url, body));
   }

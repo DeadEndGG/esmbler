@@ -85,6 +85,7 @@ export class CommandPalette {
   private readonly commands = computed<Command[]>(() => {
     const app = this.session.app();
     const list: Command[] = [];
+    list.push({ id: 'go:notifications', label: 'Go to Notifications', section: 'Navigate', run: () => this.router.navigate(['/notifications']) });
     for (const d of app?.dashboards ?? []) {
       list.push({ id: 'dash:' + d.view, label: `Go to ${d.label}`, section: 'Navigate', run: () => this.router.navigate(['/dashboards', d.view]) });
     }

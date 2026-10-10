@@ -54,6 +54,8 @@ export const routes: Routes = [
       { path: 'catalog', loadComponent: () => import('./pages/catalog.page').then((m) => m.CatalogPage) },
       { path: 'catalog/:item', loadComponent: () => import('./pages/request-form.page').then((m) => m.RequestFormPage) },
       { path: 'approvals', loadComponent: () => import('./pages/approvals.page').then((m) => m.ApprovalsPage) },
+      { path: 'notifications', loadComponent: () => import('./pages/notifications.page').then((m) => m.NotificationsPage) },
+      { path: 'admin/notifications', loadComponent: () => import('./admin/notifications.page').then((m) => m.NotificationsAdminPage) },
       { path: 'admin/people', loadComponent: () => import('./admin/people.page').then((m) => m.PeoplePage) },
       { path: 'admin/operations', loadComponent: () => import('./admin/operations.page').then((m) => m.OperationsPage) },
       { path: 'admin/configuration', loadComponent: () => import('./admin/configuration.page').then((m) => m.ConfigurationPage) },
