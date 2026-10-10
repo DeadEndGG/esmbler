@@ -143,7 +143,7 @@ Font stack: `"Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, san
 | Elevation | `shadow.xs` (buttons, inputs, chips), `shadow.card` (cards, tables), `shadow.raised` (cards in drag), `shadow.overlay` (popovers, menus, dialogs, toasts), plus `scrim` behind modals. Dark mode relies on lighter surfaces and keeps shadows subtle |
 | Motion | `motion.instant` 0 ms, `motion.fast` 120 ms, `motion.base` 200 ms, `motion.slow` 320 ms (draft band, chat panel). Easing `motion.ease-out` = `cubic-bezier(0.2, 0, 0, 1)` |
 
-The Gate 1 registry already uses these tokens: `surface.base`, `surface.raised`, `text.title-lg`, `text.title-sm`, `text.body`, `text.body-sm`, `text.muted`, `border.subtle`, `border.input`, `accent.{gray,blue,green,amber,red}`, `state.{hover,focus,selected}`, `space.{1,2,3,4,6}`, `radius.{sm,md}`, `elevation.overlay` and `motion.fast`. The registry's `elevation.overlay` predates the `shadow.*` names above and has no CSS custom property; the registry needs to move to `shadow.overlay` before the registry token test (`DL-007`) is switched on.
+The Gate 1 registry already uses these tokens: `surface.base`, `surface.raised`, `text.title-lg`, `text.title-sm`, `text.body`, `text.body-sm`, `text.muted`, `border.subtle`, `border.input`, `accent.{gray,blue,green,amber,red}`, `state.{hover,focus,selected}`, `space.{1,2,3,4,6}`, `radius.{sm,md}`, `elevation.overlay` and `motion.fast`. The registry's `elevation.overlay` predates the `shadow.*` names above; `tokens.css` defines it as an alias of `shadow.overlay` (`--esm-elevation-overlay`), so the registry token test (`DL-007`) accepts it.
 
 ### Tenant theming (Gate 2)
 
@@ -205,6 +205,6 @@ Gate 3 extends these rules to marketplace UI packages through the design-system 
 ## Known gaps (open at the Gate 1 close)
 
 - **Primary tone token.** `action.button`, `action.transition_buttons` and `feedback.loading` list `accent.blue` for the primary tone. Switch them to `accent.brand`, or document that the primary tone resolves to `accent.brand`.
-- **Missing tokens in the registry.** The Tickets choice lists use `accent.purple`, and no registry element lists it yet. `DL-007` must validate it against the token set above.
+- **Missing tokens in the registry.** The Tickets choice lists use `accent.purple`, and no registry element lists it yet. `DL-007` (`Configuration.DesignTokenTests`) validates choice tones against `tokens.css`, where `accent.purple` is defined.
 - **Design-lint tooling.** See the status note under [Design-lint rules](#design-lint-rules).
 - **Generated token reference.** The token file (`apps/web` design tokens, exposed as MCP resource `esmbler://design-system/tokens`) becomes the source of truth. A generated reference will replace the tables on this page.

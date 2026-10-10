@@ -54,7 +54,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 ## Architecture
 
 - [Architecture overview](architecture/overview.md): one-page summary, C4 levels 1–3, module graph, transaction boundaries, service extraction.
-- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade.
+- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, and 1.2.0 service requests (catalog, fulfillment tasks).
 
 ## Architecture decision records
 

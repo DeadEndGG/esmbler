@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial) and `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario) and `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -25,6 +25,9 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 | Record view / list view / quick create | `core.tickets.record`, `core.tickets.list`, `core.tickets.quick_create` |
 | Workflow | `core.tickets.lifecycle` |
 | Roles | `core.tickets.agent`, `core.tickets.requester`, `core.tickets.admin` |
+| Request entity / task entity / request workflow (1.2.0) | `core.tickets.request`, `core.tickets.request_task`, `core.tickets.request_lifecycle` |
+
+The other IDs added in 1.2.0 (task workflow, views, catalog items) are listed in [Release 1.2.0](#release-120-service-requests).
 
 ## Entity: Ticket
 

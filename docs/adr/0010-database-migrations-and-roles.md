@@ -3,7 +3,7 @@ title: "ADR 0010: Database migrations and roles"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003]
 ---
 
 # ADR 0010: Database migrations and roles
@@ -112,6 +112,8 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0002_refresh_tokens.sql` | `kernel.refresh_tokens` (hashed, owner-only RLS) and `refresh_lookup` |
 | `0003_authz_revision.sql` | `kernel.tenants.authz_revision` and the `bump_authz_revision` triggers |
 | `0004_refresh_session_cap.sql` | `refresh_tokens.session_started_at` for the absolute session lifetime |
+| `0005_durable_jobs.sql` | Durable jobs and timers: `jobs.dedup_key` (one live job per key), `causation_id` and `depth` for automation limits, and a tenant-interleaving `claim_outbox` ([ADR 0005](0005-job-and-workflow-execution.md)) |
+| `0006_workflow_versions.sql` | `kernel.workflow_definitions` (FORCE RLS, `esmbler_app` gets `SELECT`/`INSERT` only) and `records.workflow_version` with its index ([ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md)) |
 
 ### Consequences
 

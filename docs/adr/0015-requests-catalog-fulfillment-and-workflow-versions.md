@@ -37,19 +37,19 @@ How are catalog items, variables, tasks and workflow versions modeled, and which
 - `CatalogItemSpec` joins the spec catalog (`SpecCatalog.CatalogItems`): ID, label, description, category, icon, the request entity it creates, `variables`, `tasks`, `active`, `order`.
 - A variable (`VariableSpec`) has a key, label, help, required flag and a type from a subset of field types: `short_text`, `long_text`, `integer`, `decimal`, `date`, `date_time`, `single_select`, `multi_select`, `toggle`, `email`, `user`, `group`. Choice variables use a choice list. Values are normalized exactly like fields of the same type (`FieldNormalizer`).
 - Two field types carry a request: `catalog_item` (the item ID, validated against the active configuration) and `variables` (a JSON object keyed by variable key). The variables field is never filterable, sortable or searchable.
-- `RequestHook` (platform write hook, order 150) validates and normalizes variables against the request's catalog item on create and update: unknown keys, wrong types, missing required values and inactive items are field errors on `variables.<key>`. The catalog item cannot change after create.
+- `RequestHook` (platform write hook, order 150) validates and normalizes variables against the request's catalog item on create and update: unknown keys, wrong types and missing required values are field errors on `variables.<key>`; an unknown item, an item for another entity, or an inactive item (on create) is an error on the catalog item field. User and group answers must exist in the workspace. The catalog item cannot change after create, and the request title defaults to the item's label.
 - Catalog items are configuration because they are authored and reviewed like forms (draft, publish, upgrade) and the master catalog lists "Catalog item" as an experience element. Option 2 would put form definitions outside drafts, publish approval and upgrades.
 
 ### Request binding and fulfillment
 
 - An entity that receives requests declares `request` (`RequestBindingSpec`): its catalog item and variables fields, the task entity and the task's request, key and title fields, the request states that start fulfillment, the system transition fired when fulfillment completes, the outcome field, and the task release and cancel transitions.
-- A task template (`FulfillmentTaskSpec`) has an ID unique within its item, a title, an optional description and assignment group key, `dependsOn` (other task IDs; acyclic), and an optional `when` condition over `variables` and `record`. Tasks whose condition is false are not created; dependencies on them count as satisfied.
+- A task template (`FulfillmentTaskSpec`) has an ID unique within its item, a title, an optional description and assignment group key, `dependsOn` (other task IDs; acyclic), and an optional `when` condition over `variables` and `record`. Tasks whose condition is false are not created; dependencies on them count as satisfied. A condition that fails to evaluate is logged and the task is created, so no work is lost.
 - `FulfillmentConsumer` (an outbox event consumer, so it inherits inbox deduplication and per-record ordering) reacts to request and task events:
   - **Start:** when a request enters a start state, create one task per applicable template, keyed by `(request, task key)`. Existing keys are skipped, so a replayed or duplicated event never creates a second task. Tasks start `blocked`; templates with no unmet dependencies are released at once.
   - **Progress:** when a task reaches a `resolved`, `closed` or `cancelled` category state, release blocked siblings whose dependencies are all finished. A skipped (cancelled) dependency counts as finished, so the remaining work can go on (ASM-041).
   - **Completion:** when every task is finished, fire the request's completion transition and set the outcome to `complete`, or `partial` when any task was cancelled (skipped). If every task was skipped, the outcome is `partial` too; the request owner decides what happens next.
   - **Rejection and cancellation:** when a request enters a `cancelled` category state, cancel its open and blocked tasks.
-- System writes use the record engine with a system actor (`WriteOperations.System` for field sets, a system transition for state changes) and expected revisions; a stale revision makes the consumer retry. A transition that is no longer valid (for example a second "complete" after the first won the race) is a no-op, so concurrent completions converge.
+- The consumer reconciles against the request's current state, never the event payload, and locks the request row first (`SELECT … FOR UPDATE`), so concurrent reconciliations of one request serialize. System writes use the record engine (`RecordService.SystemWriteAsync`) with a system actor (`WriteOperations.System` for field sets, a system transition for state changes) and take the record's row lock instead of an expected revision. A transition that is no longer valid (for example a second "complete" after the first won the race) returns false and is treated as done, so concurrent completions converge.
 - Request versus task SLAs are owned in G2-M4: the request carries the requester-facing SLA, tasks carry team SLAs.
 - Option 3 would couple the requester's write latency to task fan-out and would not get retries, backoff and dead letters for free.
 
@@ -75,11 +75,11 @@ New typed operations, each with a description, targets, composer support, valida
 | `catalog_item.update` | Patches label, description, category, icon, active, order; replaces variables and tasks of tenant items only; `expected` values detect conflicts |
 | `catalog_item.remove` | Removes a tenant item; base items are deactivated instead |
 | `workflow.add_state` | Adds a tenant state and its option in the state field's choice list |
-| `workflow.add_transition` | Adds a tenant transition |
-| `workflow.update_transition` | Patches label, from, to, guard, roles, required fields, set values, tone or enabled; base transitions accept only label, guard message and enabled |
+| `workflow.add_transition` | Adds a tenant transition (`tenant__` ID); tenants cannot add system transitions |
+| `workflow.update_transition` | Patches label, from, to, guard, roles, required fields, set values, tone or enabled; base transitions accept only label, guard message, tone and enabled; system transitions cannot be disabled |
 | `workflow.set_active_instances` | Sets the active-instance policy |
 
-The MCP server exposes them as `add_catalog_item`, `update_catalog_item`, `add_workflow_state`, `add_transition`, `update_transition` and `set_workflow_policy`.
+The MCP server exposes them as `add_catalog_item`, `update_catalog_item`, `add_workflow_state`, `add_transition`, `update_transition` and `set_workflow_policy`, plus the read-only `list_catalog_items` ([ADR 0007](0007-mcp-server-design.md)). `catalog_item.remove` has no MCP tool; the AI deactivates items with `update_catalog_item`. People browse the active items whose request entity they may create with `GET /api/catalog` and submit requests with `POST /api/records/{entity}`.
 
 ### Consequences
 

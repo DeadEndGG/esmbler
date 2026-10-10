@@ -70,6 +70,20 @@ No tool takes a tenant or environment argument. Each call resolves the `RequestC
 | | `discard_draft` | none | confirmation | config:edit |
 | Explain | `explain_access` | `entity`, `record?`, `principal?`, `field?` | decision with reasons | access:explain (+ `permissions.admin` or `audit.read` to ask about someone else) |
 
+### Tools added in Gate 2
+
+Service catalog and workflow tools (G2-M2, [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md)). Build tools append the matching typed overlay op.
+
+| Family | Tool | Input (summary) | Overlay op | Scope |
+|---|---|---|---|---|
+| Discovery | `list_catalog_items` | none | none; catalog items in the open draft with variables, tasks, dependencies, conditions and `customized` | config:read |
+| Build | `add_catalog_item` | `label`, `variables`, `tasks`, `description?`, `category?`, `request_entity?`, `expected_version` | `catalog_item.add` (plus `choice_list.add` for choice questions) | config:edit |
+| | `update_catalog_item` | `item`, `label?`, `description?`, `category?`, `active?`, `expected_version` | `catalog_item.update` | config:edit |
+| | `add_workflow_state` | `workflow`, `label`, `category`, `expected_version` | `workflow.add_state` | config:edit |
+| | `add_transition` | `workflow`, `label`, `from`, `to`, `roles?`, `required_fields?`, `guard?`, `guard_message?`, `tone?`, `expected_version` | `workflow.add_transition` | config:edit |
+| | `update_transition` | `workflow`, `transition`, `label?`, `enabled?`, `guard_message?`, `tone?`, `from?`, `to?`, `guard?`, `expected_version` | `workflow.update_transition` | config:edit |
+| | `set_workflow_policy` | `workflow`, `policy` (pin, migrate, cancel), `state_map?`, `cancel_state?`, `expected_version` | `workflow.set_active_instances` | config:edit |
+
 Most build tools append one draft command; composite tools (`add_field` with placement, `add_card` with fields) append one per op and report each step ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 
 Resources: `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph` (the workspace's modules, entities with the fields the user can see, relationships and views, as currently drafted). The graph resource runs through `ToolRunner` like a tool (scope `config:read`, budget, audit) and omits hidden fields.

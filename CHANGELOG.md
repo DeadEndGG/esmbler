@@ -18,7 +18,7 @@ Gate 2: private pilot (in progress).
 ### Fixed
 
 - Module upgrades that skip a release now run that release's data migrations too.
-
+- The sign-in page shows the demo account only where demo data is seeded (`GET /api/auth/sign-in-options`, KI-011).
 - The production web build no longer depends on an inline `onload` script to load its stylesheet; the CSP blocked it, so deployed pages rendered without most styles. The CSP no longer allows Google Fonts hosts; Inter is served from the app's own origin.
 
 ## [0.2.0] - 2026-10-10 (`gate-1-complete`)

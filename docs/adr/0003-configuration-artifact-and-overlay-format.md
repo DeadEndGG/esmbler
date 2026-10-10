@@ -29,7 +29,7 @@ Tenants customize first-party modules through overlays, by hand or through the A
 
 ### Overlay operations
 
-An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (16 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`).
+An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (23 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`, and since G2-M2 `catalog_item.*` and `workflow.*` for service catalog items and workflows, see [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md)).
 
 ```json
 [
@@ -147,7 +147,7 @@ Publishes and rollbacks activate in one transaction (`ConfigActivator.ActivateAs
 Module upgrades with data migrations (Tickets 1.0.0 → 1.1.0, `convert_effort` text → decimal) run as an `upgrade.run` job (`UpgradeService`):
 
 1. **Plan:** `POST /api/modules/{module}/upgrade-plan` composes the candidate base under the tenant overlay and reports compatible, redundant and conflicting changes with their impact; conflicts block the upgrade.
-2. **Migrate:** `MigrationExecutor` converts records in checkpointed batches; each batch commits its record updates, audit entries, events and checkpoint together. Values that do not parse stay in the old field and go to the migration report; they are never dropped. The active pointer is untouched, so users see no change.
+2. **Migrate:** the upgrade runs the migrations of every release after the installed one up to the target, in release order (`ModuleCatalog.MigrationsBetween`), so skipping a release never skips its migrations. `MigrationExecutor` converts records in checkpointed batches; each batch commits its record updates, audit entries, events and checkpoint together. Values that do not parse stay in the old field and go to the migration report; they are never dropped. The active pointer is untouched, so users see no change.
 3. **Failure:** a failed batch marks the run and the upgrade `failed`; work committed so far is invisible to the old revision (expand phase).
 4. **Resume:** `POST /api/upgrades/{id}/resume` continues from the last checkpoint; conversion is idempotent.
 5. **Switch:** after every migration completes, the activator moves the pointer (with the health check above) and records the new module version.

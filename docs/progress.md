@@ -16,7 +16,7 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 | --- | --- |
 | Current gate | Gate 2: Private pilot |
 | Current milestone | G2-M3 approvals |
-| Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md) |
+| Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md). Gate 2: G2-M1 durable jobs, G2-M2 full request workflow |
 | Next | G2-M3 approvals: approval policy and panel, sequential and parallel stages, delegation, expiry, separation of duties, inserted between request submission and fulfillment; then SLA (G2-M4) |
 | Interjected | Web UI visual refresh on Tailwind CSS v4 ([ADR 0014](adr/0014-tailwind-css-for-the-web-ui.md)), including a fix for the production stylesheet that the CSP blocked; axe clean in light and dark |
 | Blockers | None. Open human actions: Anthropic API key to score the Claude planner; product-target confirmation ([human actions](human-actions.md)) |
