@@ -55,6 +55,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 ## Architecture
 
 - [Architecture overview](architecture/overview.md): one-page summary, C4 levels 1–3, module graph, transaction boundaries, service extraction.
+- [Events, audit, alerts and notifications](architecture/events-audit-alerts-notifications.md): inventory, envelope v2, subscriptions, alerts, channels, profiles, routing, delivery, preview, end-to-end example and phases (ADR 0017).
 - [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, 1.2.0 service requests (catalog, fulfillment tasks) and 1.3.0 approvals.
 
 ## Architecture decision records
@@ -75,6 +76,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0014 Tailwind CSS for the web UI](adr/0014-tailwind-css-for-the-web-ui.md): Tailwind v4 mapped onto the design tokens, Lucide icons, CSP-safe stylesheet loading.
 - [0015 Requests, catalog items, fulfillment tasks and workflow versions](adr/0015-requests-catalog-fulfillment-and-workflow-versions.md): catalog items as spec objects, request bindings, fulfillment consumer, pinned workflow versions.
 - [0016 Approvals](adr/0016-approvals.md): approval policies as spec objects, kernel approval tables, the approval consumer and decision service, separation of duties and delegation.
+- [0017 Event, audit, alert and notification services](adr/0017-event-audit-alert-notification-services.md): event registry and subscriptions on the outbox, synchronous audit, alerts and notifications as separate services, job-based delivery.
 
 ## Decisions
 

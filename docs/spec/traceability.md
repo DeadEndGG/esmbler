@@ -67,6 +67,8 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-EVT-005 | Durable jobs and timers with leases, backoff, max attempts, dead letters, replay | MS Transactions | 2 | packages/Esmbler.Kernel.Infrastructure/Events/Jobs.cs, JobRunner.cs, OperationsService.cs | IntegrationTests/Events/DurableJobsTests | done |
 | REQ-EVT-006 | Automation cycle detection, execution budgets, fan-out limits | MS Transactions | 2 | packages/Esmbler.Kernel.Infrastructure/Events/Jobs.cs (JobScheduler governors) | IntegrationTests/Events/DurableJobsTests.Automation_depth_and_fan_out_are_bounded_and_audited | done |
 | REQ-EVT-007 | External side effects idempotent or reconciled | MS Transactions | 2 | | | planned |
+| REQ-EVT-008 | Versioned event envelope v2 and event type registry with payload schemas; modules publish domain events declaratively | Product owner request 2026-10-10 ([ADR 0017](../adr/0017-event-audit-alert-notification-services.md)) | 2 | | G2-M17 | planned |
+| REQ-EVT-009 | Configurable subscriptions with isolated subscribers (per-consumer delivery state); publishers never reference subscribers | Product owner request 2026-10-10 (ADR 0017) | 2 | | G2-M17 | planned |
 
 ## Identity and authorization
 
@@ -167,6 +169,22 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-OPS-006 | Containerized: one `docker compose up` starts the system with seed data | EB 2 | 0 | deploy/docker-compose.yml, deploy/docker/* | docs/testing/gate-0-test-guide.md scenario 1 | done |
 | REQ-MKT-001 | Publisher onboarding, review pipeline, listings | MS Marketplace | 5 | | | planned |
 | REQ-MKT-002 | Licenses, billing, payouts, revocation | MS Marketplace | 5 | | | planned |
+
+## Audit, alerts and notifications
+
+Source: product owner request (2026-10-10), [ADR 0017](../adr/0017-event-audit-alert-notification-services.md), [design](../architecture/events-audit-alerts-notifications.md).
+
+| ID | Requirement | Source | Gate | Code | Tests / evidence | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| REQ-AUD-001 | Audit retention and legal hold, export, tamper evidence; capture independent of notifications | ADR 0017 | 2 | Audit in the business transaction exists (`AuditWriter`, append-only `kernel.audit_log`) | G2-M19 | in-progress |
+| REQ-ALR-001 | Alerts with dedup, acknowledgment, escalation, resolution and suppression, separate from notifications | ADR 0017 | 2 | | G2-M19 | planned |
+| REQ-NOT-001 | Pluggable channel types; per-environment channel instances with vault-referenced credentials, limits and capture mode | ADR 0017 | 2 | | G2-M18 | planned |
+| REQ-NOT-002 | Per-channel templates rendered per recipient with permissions and external redaction | ADR 0017 | 2 | Per-recipient rendering for in-app templates exists (`NotificationConsumer`) | G2-M18 | in-progress |
+| REQ-NOT-003 | Notification profiles: multiple channels and recipients, severity filters, schedules, quiet hours, all or fallback delivery | ADR 0017 | 2 | | G2-M18 | planned |
+| REQ-NOT-004 | Routing rules across module, tenant, team and user layers with explicit precedence, mandatory routes and deduplication | ADR 0017 | 2 | | G2-M18 | planned |
+| REQ-NOT-005 | Reliable per-recipient, per-channel delivery: states, retries, rate limits, idempotency, ambiguity, inspection, replay | ADR 0017 | 2 | Durable jobs with leases, backoff, dead letters and replay exist (REQ-EVT-005) | G2-M18 | planned |
+| REQ-NOT-006 | Preview and test mode without live sends; sandbox capture by default | ADR 0017; MS environment safety | 2 | | G2-M18 | planned |
+| REQ-NOT-007 | Admin Center and MCP management through versioned configuration and publish | ADR 0017 | 2 | | G2-M18 | planned |
 
 ## Connected workspace and guided creation
 

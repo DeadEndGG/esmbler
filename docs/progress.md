@@ -15,10 +15,10 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 | Field | Value |
 | --- | --- |
 | Current gate | Gate 2: Private pilot |
-| Current milestone | G2-M4 SLA and business hours |
+| Current milestone | G2-M17 event platform v2 |
 | Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md). Gate 2: G2-M1 durable jobs, G2-M2 full request workflow, G2-M3 approvals |
-| Next | G2-M4 SLA and business hours: SLA policy and timer, calendars, pause and resume, time zones, DST, holidays, versioning; requester SLA on requests and team SLAs on tasks; SLA part of REQ-ACC-05. Then, ahead of email and portal, G2-M9 (metrics, dashboards and the connected explorer) and G2-M9b (guided workspace creation) from the [connected workspace addendum](spec/connected-workspace.md) |
-| Interjected | Product owner review (2026-10-10): connected workspace and guided creation recorded as REQ-WS-001 to 006 and REQ-ACC-15, scheduled right after SLAs. Web UI visual refresh on Tailwind CSS v4 ([ADR 0014](adr/0014-tailwind-css-for-the-web-ui.md)), including a fix for the production stylesheet that the CSP blocked; axe clean in light and dark |
+| Next | G2-M17 event platform v2 (small; lets SLA, approvals and dashboards publish proper events), then G2-M4 SLA and business hours, then G2-M9 and G2-M9b ([connected workspace](spec/connected-workspace.md)), then G2-M18 notifications and G2-M19 alerts and audit policy ([ADR 0017](adr/0017-event-audit-alert-notification-services.md)), then G2-M5 email intake (reuses the email channel) |
+| Interjected | Product owner request (2026-10-10): events, audit, alerts and notifications as a configurable shared service (ADR 0017, G2-M17 to G2-M19). Product owner review (2026-10-10): connected workspace and guided creation recorded as REQ-WS-001 to 006 and REQ-ACC-15, scheduled right after SLAs. Web UI visual refresh on Tailwind CSS v4 ([ADR 0014](adr/0014-tailwind-css-for-the-web-ui.md)), including a fix for the production stylesheet that the CSP blocked; axe clean in light and dark |
 | Blockers | None. Open human actions: Anthropic API key to score the Claude planner; product-target confirmation ([human actions](human-actions.md)) |
 
 ## How to read the backlog
@@ -79,6 +79,9 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 - [ ] **G2-M13 Observability and governors.** Scoped logs, metrics, traces; platform limits with clear errors. REQ-OPS-001, REQ-OPS-003
 - [ ] **G2-M14 Backup and isolated tenant restore.** Backup jobs, restore-and-extract procedure, reconciliation, drill. REQ-OPS-002, REQ-ACC-12
 - [ ] **G2-M15 Governance and theming.** Access reviews, JIT elevation, break-glass; bounded tenant theming with contrast checks. REQ-AUTHZ-011, REQ-DS-004
+- [ ] **G2-M17 Event platform v2.** Envelope v2 (source, subject, payload schema, trace context, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and an `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention ([ADR 0017](adr/0017-event-audit-alert-notification-services.md)). REQ-EVT-008, REQ-EVT-009
+- [ ] **G2-M18 Notification service.** Channel abstraction; in-app inbox (API, bell, read state); email and SMS adapters (fake plus one provider each); channel instances in the Admin Center with vault references and capture mode; templates per channel; profiles; routes with module, tenant, team and user layers; resolution and dedup; per-recipient, per-channel delivery jobs with states, rate limits, idempotency, ambiguous outcomes, inspection and replay; preview and test send; MCP tools; existing templates and approval notifications moved onto routes. REQ-NOT-001 to REQ-NOT-007
+- [ ] **G2-M19 Alerts and audit policy.** Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, suppression, alerts page, SLA breach alerts; audit retention and legal hold, export, hash-chain verifier; the critical-escalation example as an acceptance test. REQ-ALR-001, REQ-AUD-001
 - [ ] **G2-M16 Pilot acceptance, workload report, runbooks, Gate 2 test guide.** REQ-ACC-05, REQ-ACC-06, REQ-ACC-11, REQ-ACC-12, REQ-ACC-13
 
 ## Gate 3: partner beta
