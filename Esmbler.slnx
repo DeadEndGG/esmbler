@@ -10,6 +10,7 @@
     <Project Path="modules/tickets/Esmbler.Modules.Tickets/Esmbler.Modules.Tickets.csproj" />
   </Folder>
   <Folder Name="/packages/">
+    <Project Path="packages/Esmbler.Assistant/Esmbler.Assistant.csproj" />
     <Project Path="packages/Esmbler.Expressions/Esmbler.Expressions.csproj" />
     <Project Path="packages/Esmbler.Hosting/Esmbler.Hosting.csproj" />
     <Project Path="packages/Esmbler.Kernel.Infrastructure/Esmbler.Kernel.Infrastructure.csproj" />

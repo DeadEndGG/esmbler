@@ -1,11 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Esmbler.Hosting\Esmbler.Hosting.csproj" />
+    <ProjectReference Include="..\..\packages\Esmbler.Assistant\Esmbler.Assistant.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="ModelContextProtocol" />
-    <PackageReference Include="Anthropic" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Esmbler.IntegrationTests" />

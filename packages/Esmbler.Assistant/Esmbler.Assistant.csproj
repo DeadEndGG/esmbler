@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- AI builder assistant: planners that customize a workspace only through the platform's MCP tools (no kernel access). -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Anthropic" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Esmbler.UnitTests" />
+    <InternalsVisibleTo Include="Esmbler.IntegrationTests" />
+  </ItemGroup>
+</Project>

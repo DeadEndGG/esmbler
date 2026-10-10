@@ -34,6 +34,7 @@ const EXAMPLES = [
       <header class="head">
         <div>
           <strong>AI builder</strong>
+          @if (planner() === 'scripted') { <span class="badge tone-gray" title="No AI model is configured; a built-in assistant handles common requests.">Built-in</span> }
           <span class="muted status">
             @if (busy()) { Working… } @else if (builder.draft(); as d) { Draft · {{ activeSteps().length }} change{{ activeSteps().length === 1 ? '' : 's' }} } @else { Changes go to a private draft }
           </span>
@@ -209,6 +210,7 @@ export class ChatPanel {
   protected readonly busy = signal(false);
   protected readonly review = signal(false);
   protected readonly publishing = signal(false);
+  protected readonly planner = signal<string | null>(null);
   private conversationId: string | null = null;
   private nextId = 1;
 
@@ -228,6 +230,7 @@ export class ChatPanel {
       });
     });
     setTimeout(() => this.boxRef()?.nativeElement.focus());
+    this.api.get<{ planner: string }>('/api/assistant/status').then((s) => this.planner.set(s.planner)).catch(() => undefined);
   }
 
   protected onKey(e: KeyboardEvent): void {

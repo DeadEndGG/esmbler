@@ -51,6 +51,16 @@ public class BoundaryTests
     }
 
     [Fact]
+    public void Assistant_changes_workspaces_only_through_mcp()
+    {
+        // REQ-AISAFE-*, REQ-AUTHZ-007: the assistant has no path to the kernel; it holds only an agent token.
+        var result = Types.InAssembly(typeof(Esmbler.Assistant.IPlanner).Assembly)
+            .ShouldNot().HaveDependencyOnAny([.. Internal, "Esmbler.Modules", "Esmbler.Sdk", "Npgsql", "Microsoft.EntityFrameworkCore", "OpenFga"])
+            .GetResult();
+        Assert.True(result.IsSuccessful, string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    [Fact]
     public void Platform_does_not_depend_on_modules_or_infrastructure()
     {
         var result = Types.InAssembly(Assembly.Load("Esmbler.Platform"))

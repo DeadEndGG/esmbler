@@ -70,7 +70,9 @@ services:
       Esmbler__Database__Migrator: Host=postgres;Database=esmbler;Username=esmbler_migrator;Password=${ESMBLER_MIGRATOR_PASSWORD:-dev-only-migrator};Gss Encryption Mode=Disable
       Esmbler__MigrateOnStartup: "true"
       Esmbler__SeedDemoData: "true"
-      Esmbler__Mcp__Url: http://mcp:8080/mcp
+      Esmbler__Assistant__McpUrl: http://mcp:8080/mcp
+      # Leave empty to use the scripted assistant; set to use Claude (human action: provide the key).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

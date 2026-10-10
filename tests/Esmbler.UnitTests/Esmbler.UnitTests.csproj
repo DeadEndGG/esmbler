@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Esmbler.Hosting\Esmbler.Hosting.csproj" />
+    <ProjectReference Include="..\..\packages\Esmbler.Assistant\Esmbler.Assistant.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\packages\Esmbler.Expressions\conformance\*.json" Link="conformance\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

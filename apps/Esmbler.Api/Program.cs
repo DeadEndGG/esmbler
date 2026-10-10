@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Esmbler.Api.Assistant;
 using Esmbler.Api.Endpoints;
 using Esmbler.Hosting;
 using Esmbler.Hosting.Auth;
@@ -19,6 +20,11 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<DraftNotificationListener>();
+var assistantOptions = builder.Configuration.GetSection("Esmbler:Assistant").Get<AssistantOptions>() ?? new AssistantOptions();
+builder.Services.AddSingleton(assistantOptions);
+builder.Services.AddHttpClient("mcp");
+builder.Services.AddSingleton<IAssistantGatewayFactory, HttpAssistantGatewayFactory>();
+builder.Services.AddSingleton<AssistantService>();
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -69,6 +75,7 @@ app.MapAuth();
 app.MapAppAndConfig();
 app.MapRecords();
 app.MapBuilder();
+app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");
 
 await app.RunAsync();
