@@ -72,6 +72,17 @@ public class BoundaryTests
     }
 
     [Fact]
+    public void Only_infrastructure_talks_to_mail_servers()
+    {
+        // ADR 0021: channel adapters live in Esmbler.Kernel.Infrastructure behind the SDK's INotificationChannel.
+        foreach (var assembly in new[] { "Esmbler.Sdk", "Esmbler.Kernel", "Esmbler.Platform", "Esmbler.Hosting", "Esmbler.Mcp", "Esmbler.Assistant", "Esmbler.Modules.Tickets" })
+        {
+            var result = Types.InAssembly(Assembly.Load(assembly)).ShouldNot().HaveDependencyOnAny("MailKit", "MimeKit").GetResult();
+            Assert.True(result.IsSuccessful, $"{assembly}: {string.Join(", ", result.FailingTypeNames ?? [])}");
+        }
+    }
+
+    [Fact]
     public void Platform_does_not_depend_on_modules_or_infrastructure()
     {
         var result = Types.InAssembly(Assembly.Load("Esmbler.Platform"))

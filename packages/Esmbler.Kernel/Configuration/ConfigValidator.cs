@@ -783,6 +783,40 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
             ? layer.Contains('@', StringComparison.Ordinal) ? layer[..layer.IndexOf('@', StringComparison.Ordinal)] : layer
             : null;
 
+    /// <summary>
+    /// Module notification elements live in the module's namespace, and a module's routes use only its own subscriptions,
+    /// templates and profiles or the platform's (ADR 0012 data boundaries, ADR 0021).
+    /// </summary>
+    private static void ValidateNotificationOwnership(SpecCatalog config, List<Diagnostic> d)
+    {
+        bool Foreign(string id, out string module) =>
+            (module = LayerModule(config, id)!) is not null && module != Composer.TenantLayer && module != PlatformModule.ModuleId && !id.StartsWith(module + ".", StringComparison.Ordinal);
+
+        foreach (var id in config.Subscriptions.Select(x => x.Id).Concat(config.NotificationTemplates.Select(x => x.Id)).Concat(config.NotificationProfiles.Select(x => x.Id)).Concat(config.NotificationRoutes.Select(x => x.Id)))
+        {
+            if (Foreign(id, out var module))
+            {
+                d.Add(Diagnostic.Error("config.foreign_notification_element", $"'{id}' is declared by {module} outside its namespace.", id, $"Name it {module}.<name>."));
+            }
+        }
+
+        foreach (var route in config.NotificationRoutes)
+        {
+            if (LayerModule(config, route.Id) is not { } owner || owner == Composer.TenantLayer || owner == PlatformModule.ModuleId)
+            {
+                continue;
+            }
+
+            foreach (var used in new[] { route.Subscription, route.Template, route.Profile })
+            {
+                if (LayerModule(config, used) is { } usedOwner && usedOwner != owner && usedOwner != PlatformModule.ModuleId && usedOwner != Composer.TenantLayer)
+                {
+                    d.Add(Diagnostic.Error("config.foreign_notification_element", $"Route '{route.Id}' of {owner} uses '{used}', which belongs to {usedOwner}.", route.Id, $"Use {owner}'s own or the platform's subscriptions, templates and profiles."));
+                }
+            }
+        }
+    }
+
     private static void ValidateEventType(SpecCatalog config, EventTypeSpec type, List<Diagnostic> d)
     {
         var module = LayerModule(config, type.Id);
@@ -1865,6 +1899,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
     {
         const int MaxBody = 4000;
         const int MaxRecipients = 50;
+        ValidateNotificationOwnership(config, d);
         foreach (var nt in config.NotificationTemplates)
         {
             var entity = nt.Entity is null ? null : config.FindEntity(nt.Entity);

@@ -117,6 +117,34 @@ public class NotificationSpecTests
     }
 
     [Fact]
+    public void Modules_keep_notification_elements_in_their_namespace_and_route_only_through_their_own()
+    {
+        var billing = new ModuleSpec
+        {
+            Id = "core.billing",
+            Version = "1.0.0",
+            Name = "Billing",
+            Subscriptions = [new SubscriptionSpec { Id = "core.tickets.sub.borrowed", Label = "Borrowed", Event = "core.tickets.ticket.resolved" }],
+            NotificationRoutes =
+            [
+                new NotificationRouteSpec
+                {
+                    Id = "core.billing.route.escalations",
+                    Label = "Escalations to billing",
+                    Subscription = "core.tickets.sub.escalated",
+                    Template = "core.tickets.template.escalated",
+                    Profile = PlatformModule.InAppProfile,
+                    Recipients = [new RecipientSpec { Kind = RecipientKinds.Role, Ref = "core.tickets.agent" }],
+                },
+            ],
+        };
+        var result = Compiler.Compile([PlatformSpec, Tickets("1.7.0"), billing], []);
+        Assert.Contains(result.Errors, e => e.Code == "config.foreign_notification_element" && e.Target == "core.tickets.sub.borrowed");
+        Assert.Equal(2, result.Errors.Count(e => e.Code == "config.foreign_notification_element" && e.Target == "core.billing.route.escalations"));
+        Assert.DoesNotContain(Compile("1.7.0", Setup()).Errors, e => e.Code == "config.foreign_notification_element");
+    }
+
+    [Fact]
     public void Tickets_routes_escalations_and_makes_the_p1_alert_mandatory()
     {
         var config = Compile("1.7.0").Config;
