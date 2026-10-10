@@ -1,0 +1,64 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.catalog_item",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 2,
+  "label": "Catalog item reference",
+  "description": "The catalog item a request was raised from (for example \"New laptop\"). Stores the item's stable ID; the item's variables and fulfillment tasks come from it. Used only on entities with a request binding.",
+  "usage": [
+    "One per request entity, named catalog_item and referenced by the entity's request binding.",
+    "Show it as a label in the request header so agents see what was asked for."
+  ],
+  "constraints": [
+    "The value must be the ID of an active catalog item whose requestEntity is this entity.",
+    "It cannot change after the request is created.",
+    "Not searchable; filter on it with ==."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "valueSchema": {
+    "type": "string"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "field",
+    "description": "Rendered by a field placement node bound to a field of this type."
+  },
+  "events": [
+    "change"
+  ],
+  "ruleHooks": [
+    "required",
+    "visible",
+    "read_only",
+    "message"
+  ],
+  "tokens": [
+    "text.body",
+    "text.muted"
+  ],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Read-only text.",
+    "notes": "Rendered as the item's label, not its ID."
+  },
+  "responsive": "Wraps like text.",
+  "examples": [
+    {
+      "description": "Request's catalog item",
+      "spec": {
+        "key": "catalog_item",
+        "type": "catalog_item",
+        "label": "Catalog item",
+        "required": true,
+        "readOnly": true
+      }
+    }
+  ]
+}

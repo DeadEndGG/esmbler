@@ -51,6 +51,16 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
 
         ValidateRules(config, d);
+        foreach (var entity in config.Entities.Where(e => e.Request is not null))
+        {
+            ValidateRequestBinding(config, entity, entity.Request!, d);
+        }
+
+        foreach (var item in config.CatalogItems)
+        {
+            ValidateCatalogItem(config, item, d);
+        }
+
         foreach (var wf in config.Workflows)
         {
             ValidateWorkflow(config, wf, d);
@@ -113,6 +123,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Check(config.Roles.Select(r => r.Id), "role");
         Check(config.PermissionSets.Select(p => p.Id), "permission set");
         Check(config.Relationships.Select(r => r.Id), "relationship");
+        Check(config.CatalogItems.Select(c => c.Id), "catalog item");
     }
 
     private void ValidateEntity(SpecCatalog config, EntitySpec entity, List<Diagnostic> d)
@@ -492,6 +503,233 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         {
             d.Add(Diagnostic.Error("config.duplicate_id", $"Workflow '{wf.Id}' has two transitions '{dup.Key}'.", wf.Id));
         }
+
+        foreach (var s in wf.States.Where(s => !StateCategoryNames.Contains(s.Category)))
+        {
+            d.Add(Diagnostic.Error("config.bad_state_category", $"State '{s.Id}' of '{wf.Id}' has unknown category '{s.Category}'.", wf.Id, string.Join(", ", StateCategoryNames)));
+        }
+
+        var policy = wf.ActiveInstances;
+        if (!ActiveInstancePolicies.All.Contains(policy.Policy))
+        {
+            d.Add(Diagnostic.Error("config.bad_policy", $"Workflow '{wf.Id}' active-instance policy '{policy.Policy}' is unknown.", wf.Id, "Use pin, migrate, or cancel."));
+        }
+
+        foreach (var (from, to) in policy.StateMap.Where(m => !states.Contains(m.Value)))
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Workflow '{wf.Id}' maps '{from}' to unknown state '{to}'.", wf.Id, Expression.Suggest(to, states)));
+        }
+
+        if (policy.Policy == ActiveInstancePolicies.Cancel && wf.FindState(policy.CancelState ?? string.Empty) is not { Category: StateCategories.Cancelled })
+        {
+            d.Add(Diagnostic.Error("config.bad_policy", $"Workflow '{wf.Id}' cancels running instances but cancelState '{policy.CancelState}' is not a cancelled-category state.", wf.Id, string.Join(", ", wf.States.Where(s => s.Category == StateCategories.Cancelled).Select(s => s.Id))));
+        }
+    }
+
+    private static readonly string[] StateCategoryNames =
+        [StateCategories.New, StateCategories.Active, StateCategories.Pending, StateCategories.Resolved, StateCategories.Closed, StateCategories.Cancelled];
+
+    private static void ValidateRequestBinding(SpecCatalog config, EntitySpec entity, RequestBindingSpec binding, List<Diagnostic> d)
+    {
+        void Need(EntitySpec e, string? key, Func<string, bool> typeOk, string expected)
+        {
+            if (key is null)
+            {
+                return;
+            }
+
+            if (e.FindField(key) is not { } f || !typeOk(f.Type))
+            {
+                d.Add(Diagnostic.Error("config.bad_request_binding", $"The request binding of {entity.Label} needs {e.Label} field '{key}' of type {expected}.", entity.Id));
+            }
+        }
+
+        Need(entity, binding.CatalogItemField, t => t == FieldTypes.CatalogItem, FieldTypes.CatalogItem);
+        Need(entity, binding.VariablesField, t => t == FieldTypes.Variables, FieldTypes.Variables);
+        Need(entity, binding.OutcomeField, t => t == FieldTypes.SingleSelect, FieldTypes.SingleSelect);
+        var task = config.FindEntity(binding.TaskEntity);
+        if (task is null)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"The request binding of {entity.Label} names unknown task entity '{binding.TaskEntity}'.", entity.Id));
+            return;
+        }
+
+        if (task.FindField(binding.TaskRequestField) is not { Type: FieldTypes.Lookup } link || link.Target != entity.Id)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_binding", $"{task.Label} field '{binding.TaskRequestField}' must be a lookup to {entity.Label}.", entity.Id));
+        }
+
+        Need(task, binding.TaskKeyField, FieldTypes.IsText, "short_text");
+        Need(task, binding.TaskTitleField, FieldTypes.IsText, "short_text");
+        Need(task, binding.TaskDescriptionField, FieldTypes.IsText, "text");
+        Need(task, binding.TaskGroupField, t => t == FieldTypes.Group, FieldTypes.Group);
+
+        var requestFlow = config.WorkflowFor(entity.Id);
+        var taskFlow = config.WorkflowFor(task.Id);
+        if (requestFlow is null || taskFlow is null)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_binding", $"{entity.Label} and {task.Label} both need a workflow for fulfillment.", entity.Id));
+            return;
+        }
+
+        foreach (var state in binding.StartStates.Where(s => requestFlow.FindState(s) is null))
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Fulfillment start state '{state}' is not a state of {requestFlow.Id}.", entity.Id));
+        }
+
+        if (binding.StartStates.Count == 0)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_binding", $"The request binding of {entity.Label} needs at least one start state.", entity.Id));
+        }
+
+        void NeedTransition(WorkflowSpec wf, string id, string role)
+        {
+            if (wf.FindTransition(id) is not { } t)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"The {role} transition '{id}' is not in {wf.Id}.", entity.Id));
+            }
+            else if (!t.System)
+            {
+                d.Add(Diagnostic.Warning("config.not_system", $"The {role} transition '{id}' should be a system transition so people cannot fire it by hand.", entity.Id));
+            }
+        }
+
+        NeedTransition(requestFlow, binding.CompleteTransition, "completion");
+        NeedTransition(taskFlow, binding.TaskReleaseTransition, "task release");
+        if (taskFlow.FindTransition(binding.TaskCancelTransition) is null)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"The task cancel transition '{binding.TaskCancelTransition}' is not in {taskFlow.Id}.", entity.Id));
+        }
+    }
+
+    private static void ValidateCatalogItem(SpecCatalog config, CatalogItemSpec item, List<Diagnostic> d)
+    {
+        if (!Namespaces.IsValidId(item.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{item.Id}' is not a valid catalog item ID.", item.Id));
+        }
+
+        if (string.IsNullOrWhiteSpace(item.Label) || item.Label.Length > 80)
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"Catalog item '{item.Id}' needs a label of 1–80 characters.", item.Id));
+        }
+
+        var requestEntity = config.FindEntity(item.RequestEntity);
+        if (requestEntity?.Request is null)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_entity", $"Catalog item '{item.Label}' targets '{item.RequestEntity}', which does not receive requests.", item.Id, string.Join(", ", config.Entities.Where(e => e.Request is not null).Select(e => e.Id))));
+            return;
+        }
+
+        foreach (var dup in item.Variables.GroupBy(v => v.Key).Where(g => g.Count() > 1))
+        {
+            d.Add(Diagnostic.Error("config.duplicate_variable", $"Catalog item '{item.Label}' has two variables '{dup.Key}'.", item.Id));
+        }
+
+        foreach (var v in item.Variables)
+        {
+            var target = $"{item.Id}/{v.Key}";
+            if (!Namespaces.IsValidFieldKey(v.Key))
+            {
+                d.Add(Diagnostic.Error("config.invalid_key", $"'{v.Key}' is not a valid variable key (lowercase letters, digits, underscores).", target));
+            }
+
+            if (!VariableTypes.All.Contains(v.Type))
+            {
+                d.Add(Diagnostic.Error("config.bad_variable_type", $"Variable '{v.Label}' has type '{v.Type}', which catalog items do not support.", target, Expression.Suggest(v.Type, VariableTypes.All)));
+            }
+
+            if (FieldTypes.UsesChoiceList(v.Type) && (v.ChoiceList is null || config.FindChoiceList(v.ChoiceList) is null))
+            {
+                d.Add(Diagnostic.Error("config.missing_choice_list", $"Variable '{v.Label}' needs an existing choice list.", target, v.ChoiceList is null ? "Create one with add_choice_list." : Expression.Suggest(v.ChoiceList, config.ChoiceLists.Select(c => c.Id))));
+            }
+
+            if (string.IsNullOrWhiteSpace(v.Label) || v.Label.Length > 120)
+            {
+                d.Add(Diagnostic.Error("config.bad_label", $"Variable '{v.Key}' needs a label of 1–120 characters.", target));
+            }
+        }
+
+        foreach (var dup in item.Tasks.GroupBy(t => t.Id).Where(g => g.Count() > 1))
+        {
+            d.Add(Diagnostic.Error("config.duplicate_task", $"Catalog item '{item.Label}' has two tasks '{dup.Key}'.", item.Id));
+        }
+
+        var taskIds = item.Tasks.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
+        var schema = EntitySchema.ForRequest(requestEntity, item);
+        foreach (var t in item.Tasks)
+        {
+            var target = $"{item.Id}/{t.Id}";
+            if (!Namespaces.IsValidFieldKey(t.Id))
+            {
+                d.Add(Diagnostic.Error("config.invalid_key", $"'{t.Id}' is not a valid task ID (lowercase letters, digits, underscores).", target));
+            }
+
+            if (string.IsNullOrWhiteSpace(t.Title) || t.Title.Length > 200)
+            {
+                d.Add(Diagnostic.Error("config.bad_label", $"Task '{t.Id}' needs a title of 1–200 characters.", target));
+            }
+
+            foreach (var dep in t.DependsOn.Where(x => !taskIds.Contains(x) || x == t.Id))
+            {
+                d.Add(Diagnostic.Error("config.bad_dependency", $"Task '{t.Id}' depends on '{dep}', which is not another task of '{item.Label}'.", target, Expression.Suggest(dep, taskIds)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(t.When))
+            {
+                try
+                {
+                    Expression.Compile(t.When, schema);
+                }
+                catch (ExpressionException ex)
+                {
+                    d.Add(Diagnostic.Error(ex.Code, $"The condition of task '{t.Id}' is invalid: {ex.Message}", target, ex.Suggestion));
+                }
+            }
+        }
+
+        if (FindTaskCycle(item) is { } cycle)
+        {
+            d.Add(Diagnostic.Error("config.task_cycle", $"Tasks of '{item.Label}' depend on each other in a cycle: {cycle}.", item.Id, "Remove one dependency so the tasks can start."));
+        }
+
+        if (item.Tasks.Count == 0)
+        {
+            d.Add(Diagnostic.Warning("config.no_tasks", $"Catalog item '{item.Label}' has no fulfillment tasks; its requests complete as soon as fulfillment starts.", item.Id));
+        }
+    }
+
+    private static string? FindTaskCycle(CatalogItemSpec item)
+    {
+        var deps = item.Tasks.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().DependsOn, StringComparer.Ordinal);
+        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        var path = new List<string>();
+        bool Visit(string id)
+        {
+            if (state.GetValueOrDefault(id) == 1)
+            {
+                path.Add(id);
+                return true;
+            }
+
+            if (state.GetValueOrDefault(id) == 2 || !deps.TryGetValue(id, out var next))
+            {
+                return false;
+            }
+
+            state[id] = 1;
+            path.Add(id);
+            if (next.Any(Visit))
+            {
+                return true;
+            }
+
+            path.RemoveAt(path.Count - 1);
+            state[id] = 2;
+            return false;
+        }
+
+        return deps.Keys.Any(Visit) ? string.Join(" → ", path) : null;
     }
 
     private void ValidateView(SpecCatalog config, ViewSpec view, List<Diagnostic> d)

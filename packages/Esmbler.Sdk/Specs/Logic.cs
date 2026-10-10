@@ -108,6 +108,38 @@ public sealed class WorkflowSpec
     public List<WorkflowState> States { get; set; } = [];
 
     public List<WorkflowTransition> Transitions { get; set; } = [];
+
+    /// <summary>What happens to running instances when a published change creates a new definition version (REQ-MIG-003).</summary>
+    public ActiveInstancePolicy ActiveInstances { get; set; } = new();
+
+    public WorkflowState? FindState(string id) => States.Find(s => s.Id == id);
+
+    public WorkflowTransition? FindTransition(string id) => Transitions.Find(t => t.Id == id);
+}
+
+public static class ActiveInstancePolicies
+{
+    /// <summary>Instances finish on the definition version they started with.</summary>
+    public const string Pin = "pin";
+
+    /// <summary>Instances move to the new version through <see cref="ActiveInstancePolicy.StateMap"/>.</summary>
+    public const string Migrate = "migrate";
+
+    /// <summary>Active instances move to <see cref="ActiveInstancePolicy.CancelState"/>; publishing approves it.</summary>
+    public const string Cancel = "cancel";
+
+    public static IReadOnlyList<string> All { get; } = [Pin, Migrate, Cancel];
+}
+
+public sealed class ActiveInstancePolicy
+{
+    public string Policy { get; set; } = ActiveInstancePolicies.Pin;
+
+    /// <summary>migrate: old state ID → new state ID. States missing here keep their ID if it still exists.</summary>
+    public Dictionary<string, string> StateMap { get; set; } = [];
+
+    /// <summary>cancel: a state in the cancelled category.</summary>
+    public string? CancelState { get; set; }
 }
 
 public sealed class WorkflowState
@@ -141,6 +173,12 @@ public sealed class WorkflowTransition
 
     /// <summary>button tone token: primary, neutral, danger.</summary>
     public string? Tone { get; set; }
+
+    /// <summary>Disabled transitions are not offered or accepted (tenants disable base transitions instead of removing them).</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Fired only by the platform (fulfillment, migrations); never offered as a button or accepted from people.</summary>
+    public bool System { get; set; }
 }
 
 public sealed class AssignmentRuleSpec

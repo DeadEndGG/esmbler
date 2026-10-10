@@ -23,10 +23,16 @@ public static class FieldTypes
     public const string Group = "group";
     public const string AutoNumber = "auto_number";
 
+    /// <summary>ID of a catalog item (requests). Validated against the active configuration.</summary>
+    public const string CatalogItem = "catalog_item";
+
+    /// <summary>Typed answers to a catalog item's variables, as an object keyed by variable key (requests).</summary>
+    public const string Variables = "variables";
+
     public static IReadOnlyList<string> All { get; } =
     [
         ShortText, LongText, RichText, Integer, Decimal, Date, DateTime, SingleSelect, MultiSelect, Toggle, Status, Priority,
-        Email, Lookup, User, Group, AutoNumber,
+        Email, Lookup, User, Group, AutoNumber, CatalogItem, Variables,
     ];
 
     public static bool UsesChoiceList(string type) => type is SingleSelect or MultiSelect or Status or Priority;
@@ -53,6 +59,9 @@ public sealed class EntitySpec
 
     /// <summary>User/group fields that make a viewer "related" to a record (record-level access, ReBAC).</summary>
     public List<AccessFieldSpec> AccessFields { get; set; } = [];
+
+    /// <summary>Set when the entity receives catalog requests (ADR 0015).</summary>
+    public RequestBindingSpec? Request { get; set; }
 
     public FieldSpec? FindField(string key) => Fields.Find(f => f.Key == key);
 }

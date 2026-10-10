@@ -15,6 +15,13 @@ public static class EntitySchema
         _ => ExprType.String,
     };
 
+    /// <summary>Schema for a fulfillment task condition: the request's fields as <c>record</c> and its answers as <c>variables</c>.</summary>
+    public static ExpressionSchema ForRequest(EntitySpec requestEntity, CatalogItemSpec item)
+    {
+        var variables = item.Variables.ToDictionary(v => v.Key, v => ExpressionType(v.Type), StringComparer.Ordinal);
+        return For(requestEntity).WithVariable("variables", VariableSchema.Record(variables));
+    }
+
     public static ExpressionSchema For(EntitySpec entity)
     {
         var fields = entity.Fields.ToDictionary(f => f.Key, f => ExpressionType(f.Type), StringComparer.Ordinal);

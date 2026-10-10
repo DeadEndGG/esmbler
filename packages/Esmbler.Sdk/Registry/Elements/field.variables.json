@@ -1,0 +1,65 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.variables",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 2,
+  "label": "Request variables",
+  "description": "The typed answers a requester gave to a catalog item's questions (variables), stored as one object keyed by variable key. Each answer is normalized like a field of the variable's type: dates as YYYY-MM-DD, numbers rounded to scale, choices as option IDs, people as user IDs.",
+  "usage": [
+    "Place it once in the request record view, usually in a \"Details\" card; it renders the item's questions with their answers.",
+    "Change the questions on the catalog item, not on the request entity."
+  ],
+  "constraints": [
+    "Keys must be variables of the request's catalog item; unknown keys, wrong types and missing required answers are errors on variables.<key>.",
+    "Not filterable, sortable or searchable as a whole.",
+    "Field access applies to all answers together."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "valueSchema": {
+    "type": "object"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "field",
+    "description": "Rendered by a field placement node bound to a field of this type."
+  },
+  "events": [
+    "change"
+  ],
+  "ruleHooks": [
+    "visible",
+    "read_only",
+    "message"
+  ],
+  "tokens": [
+    "text.body",
+    "text.body-sm",
+    "text.muted",
+    "border.input",
+    "space.2",
+    "space.3"
+  ],
+  "accessibility": {
+    "role": "group",
+    "keyboard": "Each answer is an ordinary form control with its own label.",
+    "notes": "Answers are listed as label and value pairs in view mode."
+  },
+  "responsive": "Two columns on wide cards, one column below 720 px.",
+  "examples": [
+    {
+      "description": "Request answers",
+      "spec": {
+        "key": "variables",
+        "type": "variables",
+        "label": "Request details"
+      }
+    }
+  ]
+}

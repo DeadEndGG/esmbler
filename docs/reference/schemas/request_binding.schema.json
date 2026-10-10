@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/request_binding.schema.json",
+  "title": "RequestBindingSpec",
+  "type": "object",
+  "properties": {
+    "catalogItemField": {
+      "type": "string"
+    },
+    "variablesField": {
+      "type": "string"
+    },
+    "taskEntity": {
+      "type": "string"
+    },
+    "taskRequestField": {
+      "type": "string"
+    },
+    "taskKeyField": {
+      "type": "string"
+    },
+    "taskTitleField": {
+      "type": "string"
+    },
+    "taskDescriptionField": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "taskGroupField": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "startStates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "completeTransition": {
+      "type": "string"
+    },
+    "outcomeField": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "taskReleaseTransition": {
+      "type": "string"
+    },
+    "taskCancelTransition": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskEntity",
+    "completeTransition",
+    "taskReleaseTransition",
+    "taskCancelTransition"
+  ]
+}

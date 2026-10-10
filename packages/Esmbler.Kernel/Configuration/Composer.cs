@@ -99,6 +99,7 @@ public static class Composer
             config.AssignmentRules.AddRange(copy.AssignmentRules);
             config.NotificationTemplates.AddRange(copy.NotificationTemplates);
             config.ExtensionPoints.AddRange(copy.ExtensionPoints);
+            config.CatalogItems.AddRange(copy.CatalogItems);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -145,6 +146,20 @@ public static class Composer
         foreach (var w in catalog.Workflows)
         {
             yield return w.Id;
+            foreach (var st in w.States)
+            {
+                yield return $"{w.Id}/state.{st.Id}";
+            }
+
+            foreach (var t in w.Transitions)
+            {
+                yield return $"{w.Id}/{t.Id}";
+            }
+        }
+
+        foreach (var c in catalog.CatalogItems)
+        {
+            yield return c.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -245,6 +260,44 @@ public static class Composer
                 break;
             case SetFieldAccess sfa:
                 ApplySetFieldAccess(ctx, sfa);
+                break;
+            case AddCatalogItem aci:
+                RequireTenantId(aci.Item.Id, "catalog item");
+                if (ctx.Config.FindCatalogItem(aci.Item.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"Catalog item '{aci.Item.Id}' already exists.", aci.Item.Id, "Use update_catalog_item to change it, or choose a new ID.");
+                }
+
+                RequireEntity(ctx.Config, aci.Item.RequestEntity);
+                ctx.Config.CatalogItems.Add(SpecJson.Clone(aci.Item));
+                ctx.Mark(aci.Item.Id);
+                break;
+            case UpdateCatalogItem uci:
+                ApplyUpdateCatalogItem(ctx, uci);
+                break;
+            case RemoveCatalogItem rci:
+                var item = ctx.Config.FindCatalogItem(rci.Item) ?? throw Missing("catalog item", rci.Item, Expression.Suggest(rci.Item, ctx.Config.CatalogItems.Select(c => c.Id)));
+                if (!IsTenant(ctx, item.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Catalog item '{rci.Item}' comes from {ctx.Layer(item.Id)} and cannot be removed.", rci.Item, "Deactivate it with update_catalog_item (active: false) instead.");
+                }
+
+                ctx.Config.CatalogItems.Remove(item);
+                ctx.Config.Provenance.Remove(item.Id);
+                break;
+            case AddWorkflowState aws:
+                ApplyAddWorkflowState(ctx, aws);
+                break;
+            case AddTransition at:
+                ApplyAddTransition(ctx, at);
+                break;
+            case UpdateTransition ut:
+                ApplyUpdateTransition(ctx, ut);
+                break;
+            case SetActiveInstancePolicy sap:
+                var flow = RequireWorkflow(ctx.Config, sap.Workflow);
+                flow.ActiveInstances = SpecJson.Clone(sap.Policy);
+                ctx.Mark($"{flow.Id}/active_instances");
                 break;
             default:
                 throw new OverlayException("overlay.unsupported", $"Operation {op.GetType().Name} is not supported.");
@@ -574,6 +627,125 @@ public static class Composer
 
         ctx.Mark(op.PermissionSet, keepLayer: !IsTenant(ctx, op.PermissionSet));
     }
+
+    private static void ApplyUpdateCatalogItem(OpContext ctx, UpdateCatalogItem op)
+    {
+        var item = ctx.Config.FindCatalogItem(op.Item) ?? throw Missing("catalog item", op.Item, Expression.Suggest(op.Item, ctx.Config.CatalogItems.Select(c => c.Id)));
+        var tenant = IsTenant(ctx, item.Id);
+        if (!tenant && (op.Set.Variables is not null || op.Set.Tasks is not null))
+        {
+            throw new OverlayException(
+                "overlay.base_immutable",
+                $"The questions and tasks of '{item.Label}' come from {ctx.Layer(item.Id)} and cannot be replaced.",
+                op.Item,
+                "Deactivate it and add your own catalog item with add_catalog_item.");
+        }
+
+        var patch = SpecJson.ToNode(op.Set)!.AsObject();
+        patch.Remove("variables");
+        patch.Remove("tasks");
+        CheckExpected(ctx, op.Item, SpecJson.ToNode(item)!.AsObject(), op.Expected, patch);
+        item.Label = op.Set.Label ?? item.Label;
+        item.Description = op.Set.Description ?? item.Description;
+        item.Category = op.Set.Category ?? item.Category;
+        item.Icon = op.Set.Icon ?? item.Icon;
+        item.Active = op.Set.Active ?? item.Active;
+        item.Order = op.Set.Order ?? item.Order;
+        if (op.Set.Variables is not null)
+        {
+            item.Variables = op.Set.Variables.Select(SpecJson.Clone).ToList();
+        }
+
+        if (op.Set.Tasks is not null)
+        {
+            item.Tasks = op.Set.Tasks.Select(SpecJson.Clone).ToList();
+        }
+
+        ctx.Mark(item.Id, keepLayer: !tenant);
+    }
+
+    private static void ApplyAddWorkflowState(OpContext ctx, AddWorkflowState op)
+    {
+        var wf = RequireWorkflow(ctx.Config, op.Workflow);
+        RequireTenantId(op.State.Id, "state");
+        if (wf.FindState(op.State.Id) is not null)
+        {
+            throw new OverlayException("overlay.duplicate", $"Workflow '{wf.Id}' already has a state '{op.State.Id}'.", $"{wf.Id}/state.{op.State.Id}");
+        }
+
+        var entity = RequireEntity(ctx.Config, wf.Entity);
+        var list = entity.FindField(wf.StateField)?.ChoiceList is { } listId ? ctx.Config.FindChoiceList(listId) : null;
+        if (list is null)
+        {
+            throw new OverlayException("overlay.not_found", $"Workflow '{wf.Id}' has no status choice list to add the state to.", wf.Id);
+        }
+
+        wf.States.Add(SpecJson.Clone(op.State));
+        if (list.Find(op.State.Id) is null)
+        {
+            var siblings = list.Options.Select(o => o.Id).ToList();
+            list.Options.Insert(ResolveAnchor(ctx, siblings, op.Anchor, op.State.Id), new ChoiceOption { Id = op.State.Id, Label = op.Label, Tone = op.Tone });
+            ctx.Mark($"{list.Id}/{op.State.Id}");
+        }
+
+        ctx.Mark($"{wf.Id}/state.{op.State.Id}");
+    }
+
+    private static void ApplyAddTransition(OpContext ctx, AddTransition op)
+    {
+        var wf = RequireWorkflow(ctx.Config, op.Workflow);
+        RequireTenantId(op.Transition.Id, "transition");
+        if (wf.FindTransition(op.Transition.Id) is not null)
+        {
+            throw new OverlayException("overlay.duplicate", $"Workflow '{wf.Id}' already has a transition '{op.Transition.Id}'.", $"{wf.Id}/{op.Transition.Id}", "Use update_transition to change it.");
+        }
+
+        if (op.Transition.System)
+        {
+            throw new OverlayException("overlay.system_transition", "Only modules define system transitions.", $"{wf.Id}/{op.Transition.Id}");
+        }
+
+        wf.Transitions.Add(SpecJson.Clone(op.Transition));
+        ctx.Mark($"{wf.Id}/{op.Transition.Id}");
+    }
+
+    private static void ApplyUpdateTransition(OpContext ctx, UpdateTransition op)
+    {
+        var wf = RequireWorkflow(ctx.Config, op.Workflow);
+        var target = $"{wf.Id}/{op.Transition}";
+        var t = wf.FindTransition(op.Transition) ?? throw Missing("transition", target, Expression.Suggest(op.Transition, wf.Transitions.Select(x => x.Id)));
+        var tenant = IsTenant(ctx, target);
+        var p = op.Set;
+        if (!tenant && (p.From is not null || p.To is not null || p.Guard is not null || p.RequiredFields is not null || p.Roles is not null || p.Set is not null))
+        {
+            throw new OverlayException(
+                "overlay.base_immutable",
+                $"Transition '{t.Label}' comes from {ctx.Layer(target)}; tenants can change only its label, guard message, tone and whether it is enabled.",
+                target,
+                "Disable it and add your own transition with add_transition.");
+        }
+
+        if (t.System && p.Enabled == false)
+        {
+            throw new OverlayException("overlay.system_transition", $"'{t.Label}' is used by the platform and cannot be disabled.", target);
+        }
+
+        CheckExpected(ctx, target, SpecJson.ToNode(t)!.AsObject(), op.Expected, SpecJson.ToNode(p)!.AsObject());
+        t.Label = p.Label ?? t.Label;
+        t.From = p.From ?? t.From;
+        t.To = p.To ?? t.To;
+        t.Guard = p.Guard ?? t.Guard;
+        t.GuardMessage = p.GuardMessage ?? t.GuardMessage;
+        t.RequiredFields = p.RequiredFields ?? t.RequiredFields;
+        t.Roles = p.Roles ?? t.Roles;
+        t.Set = p.Set ?? t.Set;
+        t.Tone = p.Tone ?? t.Tone;
+        t.Enabled = p.Enabled ?? t.Enabled;
+        ctx.Mark(target, keepLayer: !tenant);
+    }
+
+    private static WorkflowSpec RequireWorkflow(EffectiveConfig config, string id) =>
+        config.Workflows.Find(w => w.Id == id) ?? throw Missing("workflow", id, Expression.Suggest(id, config.Workflows.Select(w => w.Id)));
 
     private static void CheckExpected(OpContext ctx, string target, JsonObject current, JsonObject? expected, JsonObject patch)
     {

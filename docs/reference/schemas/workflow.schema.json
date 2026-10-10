@@ -92,6 +92,12 @@
               "string",
               "null"
             ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "system": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -99,6 +105,26 @@
           "label",
           "to"
         ]
+      }
+    },
+    "activeInstances": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string"
+        },
+        "stateMap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cancelState": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     }
   },

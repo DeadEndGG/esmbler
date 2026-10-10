@@ -26,6 +26,13 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(RemoveNode), "node.remove")]
 [JsonDerivedType(typeof(SetFieldAccess), "permission.field_access")]
 [JsonDerivedType(typeof(ResetElement), "element.reset")]
+[JsonDerivedType(typeof(AddCatalogItem), "catalog_item.add")]
+[JsonDerivedType(typeof(UpdateCatalogItem), "catalog_item.update")]
+[JsonDerivedType(typeof(RemoveCatalogItem), "catalog_item.remove")]
+[JsonDerivedType(typeof(AddWorkflowState), "workflow.add_state")]
+[JsonDerivedType(typeof(AddTransition), "workflow.add_transition")]
+[JsonDerivedType(typeof(UpdateTransition), "workflow.update_transition")]
+[JsonDerivedType(typeof(SetActiveInstancePolicy), "workflow.set_active_instances")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -312,4 +319,160 @@ public sealed class ResetElement : OverlayOp
     /// <summary>Whether <paramref name="op"/> is undone by this reset.</summary>
     public bool Covers(OverlayOp op) =>
         op is not ResetElement && op.Targets().Any(t => t == Target || t.StartsWith(Target + "/", StringComparison.Ordinal));
+}
+
+/// <summary>Adds a tenant catalog item with its variables and fulfillment tasks (ADR 0015).</summary>
+public sealed class AddCatalogItem : OverlayOp
+{
+    public required CatalogItemSpec Item { get; set; }
+
+    public override string Describe() =>
+        $"Add catalog item \"{Item.Label}\" with {Item.Variables.Count} question{(Item.Variables.Count == 1 ? string.Empty : "s")} and {Item.Tasks.Count} task{(Item.Tasks.Count == 1 ? string.Empty : "s")}";
+
+    public override IEnumerable<string> Targets() => [Item.Id];
+}
+
+/// <summary>Patch of catalog item properties. Variables and tasks can be replaced on tenant items only.</summary>
+public sealed class CatalogItemPatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Category { get; set; }
+
+    public string? Icon { get; set; }
+
+    public bool? Active { get; set; }
+
+    public int? Order { get; set; }
+
+    public List<VariableSpec>? Variables { get; set; }
+
+    public List<FulfillmentTaskSpec>? Tasks { get; set; }
+}
+
+public sealed class UpdateCatalogItem : OverlayOp
+{
+    public required string Item { get; set; }
+
+    public required CatalogItemPatch Set { get; set; }
+
+    /// <summary>Values of the patched scalar properties when the change was authored.</summary>
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe()
+    {
+        var parts = SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key switch
+        {
+            "variables" => $"questions ({p.Value!.AsArray().Count})",
+            "tasks" => $"tasks ({p.Value!.AsArray().Count})",
+            _ => $"{p.Key} = {p.Value?.ToJsonString()}",
+        });
+        return $"Change catalog item {Item}: {string.Join(", ", parts)}";
+    }
+
+    public override IEnumerable<string> Targets() => [Item];
+}
+
+/// <summary>Removes a tenant catalog item. Base items are deactivated instead (requests keep their item).</summary>
+public sealed class RemoveCatalogItem : OverlayOp
+{
+    public required string Item { get; set; }
+
+    public override string Describe() => $"Remove catalog item {Item}";
+
+    public override IEnumerable<string> Targets() => [Item];
+}
+
+/// <summary>Adds a tenant state to a workflow and the matching option to its status choice list.</summary>
+public sealed class AddWorkflowState : OverlayOp
+{
+    public required string Workflow { get; set; }
+
+    public required WorkflowState State { get; set; }
+
+    public required string Label { get; set; }
+
+    /// <summary>Badge tone token for the status option, e.g. accent.blue.</summary>
+    public string? Tone { get; set; }
+
+    public Anchor? Anchor { get; set; }
+
+    public override string Describe() => $"Add state \"{Label}\" ({State.Category}) to workflow {Workflow}";
+
+    public override IEnumerable<string> Targets() => [$"{Workflow}/state.{State.Id}"];
+}
+
+public sealed class AddTransition : OverlayOp
+{
+    public required string Workflow { get; set; }
+
+    public required WorkflowTransition Transition { get; set; }
+
+    public override string Describe() =>
+        $"Add transition \"{Transition.Label}\" from {string.Join(", ", Transition.From)} to {Transition.To} in {Workflow}";
+
+    public override IEnumerable<string> Targets() => [$"{Workflow}/{Transition.Id}"];
+}
+
+/// <summary>Patch of transition properties. Null members are left unchanged.</summary>
+public sealed class TransitionPatch
+{
+    public string? Label { get; set; }
+
+    public List<string>? From { get; set; }
+
+    public string? To { get; set; }
+
+    public string? Guard { get; set; }
+
+    public string? GuardMessage { get; set; }
+
+    public List<string>? RequiredFields { get; set; }
+
+    public List<string>? Roles { get; set; }
+
+    public Dictionary<string, string>? Set { get; set; }
+
+    public string? Tone { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Changes a transition. Base transitions accept only label, guardMessage, tone and enabled.</summary>
+public sealed class UpdateTransition : OverlayOp
+{
+    public required string Workflow { get; set; }
+
+    public required string Transition { get; set; }
+
+    public required TransitionPatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe()
+    {
+        var parts = SpecJson.ToNode(Set)!.AsObject().Select(p => $"{p.Key} = {p.Value?.ToJsonString()}");
+        return $"Change transition {Workflow}/{Transition}: {string.Join(", ", parts)}";
+    }
+
+    public override IEnumerable<string> Targets() => [$"{Workflow}/{Transition}"];
+}
+
+/// <summary>Sets what happens to running instances when this change publishes a new workflow version (REQ-MIG-003).</summary>
+public sealed class SetActiveInstancePolicy : OverlayOp
+{
+    public required string Workflow { get; set; }
+
+    public required ActiveInstancePolicy Policy { get; set; }
+
+    public override string Describe() => Policy.Policy switch
+    {
+        ActiveInstancePolicies.Migrate => $"Migrate running {Workflow} instances to the new version ({string.Join(", ", Policy.StateMap.Select(m => $"{m.Key} → {m.Value}"))})",
+        ActiveInstancePolicies.Cancel => $"Cancel running {Workflow} instances into '{Policy.CancelState}' when the new version publishes",
+        _ => $"Keep running {Workflow} instances on the version they started with",
+    };
+
+    public override IEnumerable<string> Targets() => [$"{Workflow}/active_instances"];
 }

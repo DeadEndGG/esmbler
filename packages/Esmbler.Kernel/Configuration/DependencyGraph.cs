@@ -122,6 +122,29 @@ public sealed partial class DependencyGraph
             }
         }
 
+        foreach (var entity in config.Entities.Where(e => e.Request is not null))
+        {
+            var b = entity.Request!;
+            g.Add(entity.Id, $"{entity.Id}/{b.CatalogItemField}", "request_catalog_item_field");
+            g.Add(entity.Id, $"{entity.Id}/{b.VariablesField}", "request_variables_field");
+            g.Add(entity.Id, b.TaskEntity, "request_task_entity");
+            g.Add(entity.Id, $"{b.TaskEntity}/{b.TaskRequestField}", "request_task_link");
+        }
+
+        foreach (var item in config.CatalogItems)
+        {
+            g.Add(item.Id, item.RequestEntity, "catalog_request_entity");
+            foreach (var v in item.Variables.Where(v => v.ChoiceList is not null))
+            {
+                g.Add(item.Id, v.ChoiceList!, "variable_choice_list");
+            }
+
+            foreach (var t in item.Tasks.Where(t => !string.IsNullOrWhiteSpace(t.When)))
+            {
+                g.AddExpression(item.Id, item.RequestEntity, t.When, "task_condition");
+            }
+        }
+
         foreach (var view in config.Views)
         {
             foreach (var node in view.Layout.Descendants())

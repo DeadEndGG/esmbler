@@ -1,0 +1,75 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.catalog_item",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "Catalog item",
+  "description": "A requestable service offering, such as \"New laptop\" or \"Software access\". It defines typed questions (variables) the requester answers and the fulfillment tasks, with dependencies, that run once the request starts fulfillment. Requests are records of the item's requestEntity; tasks are records of that entity's task entity.",
+  "usage": [
+    "Ask only what fulfillment needs; mark a variable required only if a task cannot start without it.",
+    "Model work that can happen in parallel as tasks without dependencies, and hand-offs as dependsOn.",
+    "Use when on a task for optional work, e.g. \"variables.needs_laptop == true\"."
+  ],
+  "constraints": [
+    "id is unique; tenant items start with tenant__.",
+    "requestEntity must declare a request binding.",
+    "Variable keys are snake_case and unique; types are short_text, long_text, integer, decimal, date, date_time, single_select, multi_select, toggle, email, user or group; choice variables name a choice list.",
+    "Task IDs are unique within the item; dependsOn names tasks of the same item and has no cycles; when is a CEL-subset boolean over variables and record.",
+    "Deactivate items that requests still use instead of removing them."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/catalog_item.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly; the catalog shows items as cards and the request form renders their variables."
+  },
+  "examples": [
+    {
+      "description": "New laptop",
+      "spec": {
+        "id": "core.tickets.catalog.new_laptop",
+        "label": "New laptop",
+        "category": "Hardware",
+        "icon": "laptop",
+        "requestEntity": "core.tickets.request",
+        "variables": [
+          {
+            "key": "model",
+            "label": "Model",
+            "type": "single_select",
+            "choiceList": "core.tickets.laptop_model",
+            "required": true
+          },
+          {
+            "key": "needed_by",
+            "label": "Needed by",
+            "type": "date"
+          }
+        ],
+        "tasks": [
+          {
+            "id": "order",
+            "title": "Order the laptop",
+            "assignmentGroup": "service_desk"
+          },
+          {
+            "id": "deliver",
+            "title": "Deliver and set up",
+            "dependsOn": [
+              "order"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

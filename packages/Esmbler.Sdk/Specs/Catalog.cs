@@ -30,6 +30,8 @@ public class SpecCatalog
 
     public List<ExtensionPointSpec> ExtensionPoints { get; set; } = [];
 
+    public List<CatalogItemSpec> CatalogItems { get; set; } = [];
+
     public EntitySpec? FindEntity(string id) => Entities.Find(e => e.Id == id);
 
     public ChoiceListSpec? FindChoiceList(string id) => ChoiceLists.Find(c => c.Id == id);
@@ -39,6 +41,11 @@ public class SpecCatalog
     public RuleSpec? FindRule(string id) => Rules.Find(r => r.Id == id);
 
     public WorkflowSpec? WorkflowFor(string entityId) => Workflows.Find(w => w.Entity == entityId);
+
+    public CatalogItemSpec? FindCatalogItem(string id) => CatalogItems.Find(c => c.Id == id);
+
+    /// <summary>The entity whose request binding names <paramref name="taskEntityId"/> as its task entity.</summary>
+    public EntitySpec? RequestEntityForTask(string taskEntityId) => Entities.Find(e => e.Request?.TaskEntity == taskEntityId);
 }
 
 /// <summary>A first-party or publisher module release: header plus catalog. Immutable once shipped.</summary>

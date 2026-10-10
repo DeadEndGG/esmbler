@@ -17,7 +17,7 @@ var specTypes = new (string Name, Type Type)[]
     ("relationship", typeof(RelationshipSpec)), ("rule", typeof(RuleSpec)), ("workflow", typeof(WorkflowSpec)), ("view", typeof(ViewSpec)),
     ("node", typeof(NodeSpec)), ("role", typeof(RoleSpec)), ("permission_set", typeof(PermissionSetSpec)), ("assignment_rule", typeof(AssignmentRuleSpec)),
     ("notification_template", typeof(NotificationTemplateSpec)), ("extension_point", typeof(ExtensionPointSpec)), ("migration", typeof(MigrationSpec)),
-    ("overlay_op", typeof(OverlayOp)),
+    ("catalog_item", typeof(CatalogItemSpec)), ("request_binding", typeof(RequestBindingSpec)), ("overlay_op", typeof(OverlayOp)),
 };
 var exporterOptions = new JsonSchemaExporterOptions
 {

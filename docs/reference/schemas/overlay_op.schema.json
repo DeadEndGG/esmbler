@@ -879,6 +879,536 @@
       "required": [
         "target"
       ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "catalog_item.add"
+        },
+        "item": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "category": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "icon": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestEntity": {
+              "type": "string"
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "order": {
+              "type": "integer"
+            },
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "help": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "choiceList": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "maxLength": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "min": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "max": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "scale": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "default": true
+                },
+                "required": [
+                  "key",
+                  "label",
+                  "type"
+                ]
+              }
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "assignmentGroup": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "dependsOn": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "when": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "title"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "requestEntity"
+          ]
+        }
+      },
+      "required": [
+        "item"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "catalog_item.update"
+        },
+        "item": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "category": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "icon": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "active": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "order": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "variables": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/16/properties/item/properties/variables/items"
+              }
+            },
+            "tasks": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/16/properties/item/properties/tasks/items"
+              }
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "item",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "catalog_item.remove"
+        },
+        "item": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "workflow.add_state"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "state": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "category"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "tone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "anchor": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "before": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "position": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "workflow",
+        "state",
+        "label"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "workflow.add_transition"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "transition": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "from": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            },
+            "guard": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "guardMessage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requiredFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "roles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "set": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "tone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "system": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "to"
+          ]
+        }
+      },
+      "required": [
+        "workflow",
+        "transition"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "workflow.update_transition"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "transition": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "guard": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "guardMessage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requiredFields": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "roles": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "set": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "tone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "workflow",
+        "transition",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "workflow.set_active_instances"
+        },
+        "workflow": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "string"
+            },
+            "stateMap": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "cancelState": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "workflow",
+        "policy"
+      ]
     }
   ]
 }

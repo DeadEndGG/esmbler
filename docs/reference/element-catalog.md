@@ -191,6 +191,7 @@ Accessibility: role `group`; Tab moves between fields; type-specific keys apply 
 | Element | Gate | Placeable | Description |
 | --- | --- | --- | --- |
 | `field.auto_number` | 1 | no | A human-friendly, system-assigned record number such as TCK-000123, made of a prefix and a zero-padded sequence. |
+| `field.catalog_item` | 2 | no | The catalog item a request was raised from (for example "New laptop"). |
 | `field.date` | 1 | no | A calendar date without a time of day or time zone, such as a due date, a contract end date, or a birthday. |
 | `field.date_time` | 1 | no | An exact instant in time, stored in UTC and displayed in the viewer's own time zone, such as when a ticket was resolved or an outage started. |
 | `field.decimal` | 1 | no | A number with a fixed number of digits after the decimal point, such as a cost, hours spent, or a percentage. |
@@ -207,6 +208,7 @@ Accessibility: role `group`; Tab moves between fields; type-specific keys apply 
 | `field.status` | 1 | no | The workflow state of a record, such as New, In progress, or Resolved. |
 | `field.toggle` | 1 | no | A yes/no value, such as "Confirmed by requester", "VIP", or "Major incident". |
 | `field.user` | 1 | no | A reference to one member of the tenant, such as the requester, the assignee, or an approver. |
+| `field.variables` | 2 | no | The typed answers a requester gave to a catalog item's questions (variables), stored as one object keyed by variable key. |
 
 ### Auto number (`field.auto_number`)
 
@@ -224,6 +226,18 @@ Constraints:
 - Always system and read-only: it cannot be set by the record API, imports, rules, or AI. Changing prefix affects new records only.
 
 Accessibility: role `none`; Not editable. In lists and headers the number is part of the record link.
+
+### Catalog item reference (`field.catalog_item`)
+
+The catalog item a request was raised from (for example "New laptop"). Stores the item's stable ID; the item's variables and fulfillment tasks come from it. Used only on entities with a request binding.
+
+Constraints:
+
+- The value must be the ID of an active catalog item whose requestEntity is this entity.
+- It cannot change after the request is created.
+- Not searchable; filter on it with ==.
+
+Accessibility: role `none`; Read-only text.
 
 ### Date (`field.date`)
 
@@ -495,6 +509,18 @@ Constraints:
 - No type-specific constraint props.
 
 Accessibility: role `combobox`; Typing searches members by name and email; Up/Down move; Enter selects; Esc closes.
+
+### Request variables (`field.variables`)
+
+The typed answers a requester gave to a catalog item's questions (variables), stored as one object keyed by variable key. Each answer is normalized like a field of the variable's type: dates as YYYY-MM-DD, numbers rounded to scale, choices as option IDs, people as user IDs.
+
+Constraints:
+
+- Keys must be variables of the request's catalog item; unknown keys, wrong types and missing required answers are errors on variables.<key>.
+- Not filterable, sortable or searchable as a whole.
+- Field access applies to all answers together.
+
+Accessibility: role `group`; Each answer is an ordinary form control with its own label.
 
 ## Display
 
@@ -951,6 +977,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | Element | Gate | Placeable | Description |
 | --- | --- | --- | --- |
 | `spec_object.assignment_rule` | 1 | no | Routes records to a group when a condition holds, such as sending network tickets to the Network queue. |
+| `spec_object.catalog_item` | 2 | no | A requestable service offering, such as "New laptop" or "Software access". |
 | `spec_object.choice_list` | 1 | no | A reusable, ordered list of options for single_select, multi_select, status, and priority fields. |
 | `spec_object.conditional_rule` | 1 | no | A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, or show a message. |
 | `spec_object.entity` | 1 | no | A record type, such as Ticket or Vendor: its labels, the field that names a record (titleField), its fields, and the user/group fields that relate people to records for record-level access (accessFields). |
@@ -976,6 +1003,20 @@ Constraints:
 - Runs on create and when a field used in when changes, and only while the assignment group is empty or was set by an assignment rule — manual assignments are never overwritten.
 
 Accessibility: role `none`; Not rendered directly.
+
+### Catalog item (`spec_object.catalog_item`)
+
+A requestable service offering, such as "New laptop" or "Software access". It defines typed questions (variables) the requester answers and the fulfillment tasks, with dependencies, that run once the request starts fulfillment. Requests are records of the item's requestEntity; tasks are records of that entity's task entity.
+
+Constraints:
+
+- id is unique; tenant items start with tenant__.
+- requestEntity must declare a request binding.
+- Variable keys are snake_case and unique; types are short_text, long_text, integer, decimal, date, date_time, single_select, multi_select, toggle, email, user or group; choice variables name a choice list.
+- Task IDs are unique within the item; dependsOn names tasks of the same item and has no cycles; when is a CEL-subset boolean over variables and record.
+- Deactivate items that requests still use instead of removing them.
+
+Accessibility: role `none`; Not rendered directly; the catalog shows items as cards and the request form renders their variables.
 
 ### Choice list (`spec_object.choice_list`)
 
@@ -1139,6 +1180,6 @@ Constraints:
 - stateField must be the entity's status field; its choice list option IDs must equal the state IDs.
 - initialState and every from/to must be states of the workflow; every state must be reachable from initialState.
 - guard is a CEL-subset expression; requiredFields and set keys must be fields of the entity and set may not target the status or system fields.
-- Changing states or transitions increments definitionVersion; active records keep their pinned version until migrated.
+- Each published change to the state field, initial state, states or transitions registers a new definition version; activeInstances decides whether running records stay pinned, migrate through stateMap, or move to cancelState (ADR 0015).
 
 Accessibility: role `none`; Not rendered directly.

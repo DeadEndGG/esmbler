@@ -285,6 +285,71 @@
                 "relation"
               ]
             }
+          },
+          "request": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "catalogItemField": {
+                "type": "string"
+              },
+              "variablesField": {
+                "type": "string"
+              },
+              "taskEntity": {
+                "type": "string"
+              },
+              "taskRequestField": {
+                "type": "string"
+              },
+              "taskKeyField": {
+                "type": "string"
+              },
+              "taskTitleField": {
+                "type": "string"
+              },
+              "taskDescriptionField": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "taskGroupField": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "startStates": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "completeTransition": {
+                "type": "string"
+              },
+              "outcomeField": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "taskReleaseTransition": {
+                "type": "string"
+              },
+              "taskCancelTransition": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskEntity",
+              "completeTransition",
+              "taskReleaseTransition",
+              "taskCancelTransition"
+            ]
           }
         },
         "required": [
@@ -587,6 +652,12 @@
                     "string",
                     "null"
                   ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "system": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -594,6 +665,26 @@
                 "label",
                 "to"
               ]
+            }
+          },
+          "activeInstances": {
+            "type": "object",
+            "properties": {
+              "policy": {
+                "type": "string"
+              },
+              "stateMap": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "cancelState": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         },
@@ -902,6 +993,156 @@
           "kind",
           "version",
           "cardinality"
+        ]
+      }
+    },
+    "catalogItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestEntity": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "help": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "choiceList": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "maxLength": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "min": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "max": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "scale": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "default": true
+              },
+              "required": [
+                "key",
+                "label",
+                "type"
+              ]
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assignmentGroup": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "when": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "requestEntity"
         ]
       }
     }

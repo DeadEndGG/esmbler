@@ -9,13 +9,14 @@
   "usage": [
     "Keep 4–7 states and name transitions as verbs (\"Resolve\", \"Reopen\").",
     "Use requiredFields to collect information at the moment it matters (resolution notes on Resolve).",
-    "Use set to maintain timestamps and counters (resolved_at, reopen_count)."
+    "Use set to maintain timestamps and counters (resolved_at, reopen_count).",
+    "Set activeInstances to migrate with a stateMap when running records must follow a reshaped workflow; pin is the safe default."
   ],
   "constraints": [
     "stateField must be the entity's status field; its choice list option IDs must equal the state IDs.",
     "initialState and every from/to must be states of the workflow; every state must be reachable from initialState.",
     "guard is a CEL-subset expression; requiredFields and set keys must be fields of the entity and set may not target the status or system fields.",
-    "Changing states or transitions increments definitionVersion; active records keep their pinned version until migrated."
+    "Each published change to the state field, initial state, states or transitions registers a new definition version; activeInstances decides whether running records stay pinned, migrate through stateMap, or move to cancelState (ADR 0015)."
   ],
   "placeable": false,
   "propsSchema": {
@@ -23,7 +24,10 @@
   },
   "allowedParents": [],
   "allowedChildren": [],
-  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
   "accessibility": {
     "role": "none",
     "keyboard": "Not rendered directly."
@@ -36,42 +40,88 @@
         "entity": "core.tickets.ticket",
         "stateField": "status",
         "initialState": "new",
-        "definitionVersion": 3,
         "states": [
-          { "id": "new", "category": "new" },
-          { "id": "in_progress", "category": "active" },
-          { "id": "on_hold", "category": "pending" },
-          { "id": "resolved", "category": "resolved" },
-          { "id": "closed", "category": "closed" },
-          { "id": "cancelled", "category": "cancelled" }
+          {
+            "id": "new",
+            "category": "new"
+          },
+          {
+            "id": "in_progress",
+            "category": "active"
+          },
+          {
+            "id": "on_hold",
+            "category": "pending"
+          },
+          {
+            "id": "resolved",
+            "category": "resolved"
+          },
+          {
+            "id": "closed",
+            "category": "closed"
+          },
+          {
+            "id": "cancelled",
+            "category": "cancelled"
+          }
         ],
         "transitions": [
-          { "id": "start", "label": "Start work", "from": ["new", "on_hold"], "to": "in_progress", "requiredFields": ["assignee"], "tone": "primary" },
+          {
+            "id": "start",
+            "label": "Start work",
+            "from": [
+              "new",
+              "on_hold"
+            ],
+            "to": "in_progress",
+            "requiredFields": [
+              "assignee"
+            ],
+            "tone": "primary"
+          },
           {
             "id": "resolve",
             "label": "Resolve",
-            "from": ["in_progress"],
+            "from": [
+              "in_progress"
+            ],
             "to": "resolved",
             "guard": "record.assignee != null",
             "guardMessage": "Assign the ticket before resolving it.",
-            "requiredFields": ["resolution_notes"],
-            "set": { "resolved_at": "now()" },
+            "requiredFields": [
+              "resolution_notes"
+            ],
+            "set": {
+              "resolved_at": "now()"
+            },
             "tone": "primary"
           },
           {
             "id": "reopen",
             "label": "Reopen",
-            "from": ["resolved"],
+            "from": [
+              "resolved"
+            ],
             "to": "in_progress",
-            "set": { "reopen_count": "record.reopen_count + 1", "resolved_at": "null" },
+            "set": {
+              "reopen_count": "record.reopen_count + 1",
+              "resolved_at": "null"
+            },
             "tone": "neutral"
           },
           {
             "id": "cancel",
             "label": "Cancel ticket",
-            "from": ["new", "in_progress", "on_hold"],
+            "from": [
+              "new",
+              "in_progress",
+              "on_hold"
+            ],
             "to": "cancelled",
-            "roles": ["core.tickets.agent"],
+            "roles": [
+              "core.tickets.agent"
+            ],
             "tone": "danger"
           }
         ]
