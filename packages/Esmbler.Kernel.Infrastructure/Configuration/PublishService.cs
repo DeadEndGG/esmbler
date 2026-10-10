@@ -94,7 +94,7 @@ public sealed class PublishService(Database database, ConfigStore configs, Confi
             }
 
             var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-            var perms = await access.ForAsync(db, ctx, published.Config, ct);
+            var perms = await access.ForAsync(db, ctx, published.Config, ct, fresh: true);
             if (!perms.Can(PlatformActions.ConfigPublish))
             {
                 throw KernelException.Forbidden("Publishing requires the config.publish right.", suggestion: "Request a publish; an administrator approves it.");
@@ -163,7 +163,7 @@ public sealed class PublishService(Database database, ConfigStore configs, Confi
             }
 
             var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-            var perms = await access.ForAsync(db, ctx, published.Config, ct);
+            var perms = await access.ForAsync(db, ctx, published.Config, ct, fresh: true);
             if (!perms.Can(PlatformActions.ConfigPublish))
             {
                 throw KernelException.Forbidden("Rolling back requires the config.publish right.");

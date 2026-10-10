@@ -128,6 +128,15 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
             }).ToList();
         }, ct);
 
+    /// <summary>Marks an upgrade failed without running it (its job was denied on re-authorization). Nothing was changed.</summary>
+    public Task AbandonAsync(Guid tenantId, Guid environmentId, Guid upgradeId, string reason, CancellationToken ct) =>
+        database.InTenantAsync(tenantId, environmentId, null, async db =>
+        {
+            await db.Upgrades.Where(u => u.Id == upgradeId && u.Status != "activated").ExecuteUpdateAsync(s => s.SetProperty(u => u.Status, "failed").SetProperty(u => u.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            await db.MigrationRuns.Where(r => r.UpgradeId == upgradeId && r.Status != "completed").ExecuteUpdateAsync(s => s.SetProperty(r => r.LastError, reason), ct);
+            return 0;
+        }, ct);
+
     /// <summary>Executes an upgrade's migrations then activates the new version. Called by the job runner (and tests).</summary>
     public async Task RunAsync(Guid tenantId, Guid environmentId, Guid upgradeId, CancellationToken ct)
     {
@@ -217,7 +226,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
     private async Task<ActiveArtifact> RequireManageAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
     {
         var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-        var perms = await access.ForAsync(db, ctx, published.Config, ct);
+        var perms = await access.ForAsync(db, ctx, published.Config, ct, fresh: true);
         if (!perms.Can(PlatformActions.ModulesManage))
         {
             throw KernelException.Forbidden("Managing module versions requires the modules.manage right (tenant administrators).");

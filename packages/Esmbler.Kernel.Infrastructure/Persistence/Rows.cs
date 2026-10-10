@@ -16,6 +16,9 @@ public sealed class TenantRow
 
     public string? AuthzModelId { get; set; }
 
+    /// <summary>Bumped by triggers on every membership, group or role change (permission cache key).</summary>
+    public long AuthzRevision { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 

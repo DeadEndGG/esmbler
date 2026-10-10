@@ -108,7 +108,7 @@ interface UpgradeView {
 
         @if (upgrade(); as u) {
           <div class="panel" aria-live="polite">
-            <h3>Upgrade {{ u.module }} to {{ u.toVersion }}: <span [class]="u.status === 'completed' ? 'ok' : u.status === 'failed' ? 'err' : ''">{{ u.status }}</span></h3>
+            <h3>Upgrade {{ u.module }} to {{ u.toVersion }}: <span [class]="u.status === 'activated' ? 'ok' : u.status === 'failed' ? 'err' : ''">{{ u.status }}</span></h3>
             @for (run of u.runs; track run.migrationId) {
               <p>{{ run.migrationId }}: {{ run.status }} · {{ run.processed }} processed, {{ run.converted }} converted@if (run.invalid) { , <span class="warn">{{ run.invalid }} need review</span> }</p>
               @if (run.lastError) { <p class="err small">{{ run.lastError }}</p> }
@@ -116,7 +116,7 @@ interface UpgradeView {
                 <ul class="small">@for (i of run.issues.slice(0, 10); track $index) { <li>{{ i.number }}: "{{ i.value }}" {{ i.reason }}</li> }</ul>
               }
             }
-            @if (u.status === 'failed' || u.status === 'paused') {
+            @if (u.status === 'failed') {
               <button class="btn btn-primary" (click)="resume(u)" [disabled]="busy()">Resume</button>
             }
             @if (u.activatedRevision) { <p class="ok">Activated as revision {{ u.activatedRevision }}.</p> }
@@ -238,14 +238,14 @@ export class ConfigurationPage {
       try {
         const u = await this.api.get<UpgradeView>(`/api/upgrades/${id}`);
         this.upgrade.set(u);
-        if (u.status === 'completed') {
+        if (u.status === 'activated') {
           await this.session.configChanged();
           this.builder.revision.update((x) => x + 1);
           this.toasts.show(`${u.module} upgraded to ${u.toVersion}.`, 'success');
           await this.load();
           return;
         }
-        if (u.status === 'failed' || u.status === 'paused') return;
+        if (u.status === 'failed' || u.status === 'blocked') return;
       } catch {
         // transient: keep polling
       }

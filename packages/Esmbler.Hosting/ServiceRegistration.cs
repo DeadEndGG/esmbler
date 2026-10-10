@@ -16,6 +16,7 @@ using Esmbler.Sdk.Modules;
 using Esmbler.Sdk.Registry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -86,6 +87,8 @@ public static class ServiceRegistration
                 sp.GetRequiredService<ILogger<OpenFgaRelationshipGraph>>());
         });
         services.AddSingleton<AccessService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<AuthzFactsCache>();
         return services;
     }
 }

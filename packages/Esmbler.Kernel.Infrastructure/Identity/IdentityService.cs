@@ -208,7 +208,7 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
     private async Task RequireActionAsync(KernelDbContext db, RequestContext ctx, string action, CancellationToken ct)
     {
         var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-        var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+        var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
         if (!perms.Can(action))
         {
             throw KernelException.Forbidden("Changing people, groups, and roles requires the permission administration right.", suggestion: "Ask a tenant administrator.");

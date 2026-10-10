@@ -11,9 +11,11 @@ namespace Esmbler.Kernel.Infrastructure.Identity;
 /// role provenance from the identity tables (explanations only), evaluated against the pinned configuration.
 /// Agents must be enabled and act for the calling user (REQ-AUTHZ-007).
 /// </summary>
-public sealed class AccessService(IRelationshipGraph graph)
+public sealed class AccessService(IRelationshipGraph graph, AuthzFactsCache cache)
 {
-    public async Task<EffectivePermissions> ForAsync(KernelDbContext db, RequestContext ctx, EffectiveConfig config, CancellationToken cancellationToken)
+    /// <param name="fresh">Bypass the facts cache. Sensitive actions (publish, rollback, permission and module
+    /// administration) always read the graph so a revocation applies to them immediately (REQ-AUTHZ-006).</param>
+    public async Task<EffectivePermissions> ForAsync(KernelDbContext db, RequestContext ctx, EffectiveConfig config, CancellationToken cancellationToken, bool fresh = false)
     {
         if (ctx.AgentId is { } agentId)
         {
@@ -30,7 +32,10 @@ public sealed class AccessService(IRelationshipGraph graph)
             throw KernelException.Forbidden("You are not a member of this tenant.");
         }
 
-        var (roles, groups) = await graph.GetFactsAsync(ctx.TenantId, ctx.PrincipalId, cancellationToken);
+        var revision = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.AuthzRevision).FirstAsync(cancellationToken);
+        var (roles, groups) = fresh
+            ? await graph.GetFactsAsync(ctx.TenantId, ctx.PrincipalId, cancellationToken)
+            : await cache.GetOrAddAsync(ctx.TenantId, ctx.PrincipalId, revision, () => graph.GetFactsAsync(ctx.TenantId, ctx.PrincipalId, cancellationToken));
         var provenance = await RoleProvenanceAsync(db, ctx.PrincipalId, groups, cancellationToken);
         var facts = new AuthorizationFacts
         {
@@ -51,4 +56,39 @@ public sealed class AccessService(IRelationshipGraph graph)
             g => (IReadOnlyList<string>)g.Select(a => a.PrincipalId is not null ? "direct" : $"group:{groupKeys.GetValueOrDefault(a.GroupId!.Value, "?")}").Distinct().ToList(),
             StringComparer.Ordinal);
     }
+}
+
+/// <summary>
+/// Relationship facts per (tenant, principal, authz_revision) for a few seconds. A revision bump (any membership,
+/// group or role change) makes older entries unreachable; the short lifetime bounds staleness when the graph
+/// and the identity tables are written in two steps (REQ-ACC-07: non-sensitive access within 10 seconds).
+/// </summary>
+public sealed class AuthzFactsCache(TimeProvider clock)
+{
+    public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(5);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid Tenant, Guid Principal), Entry> entries = new();
+
+    public async Task<(IReadOnlySet<string> Roles, IReadOnlySet<Guid> Groups)> GetOrAddAsync(Guid tenant, Guid principal, long revision, Func<Task<(IReadOnlySet<string> Roles, IReadOnlySet<Guid> Groups)>> load)
+    {
+        var now = clock.GetUtcNow();
+        if (entries.TryGetValue((tenant, principal), out var e) && e.Revision == revision && now - e.At < Lifetime)
+        {
+            return e.Facts;
+        }
+
+        var facts = await load();
+        entries[(tenant, principal)] = new Entry(revision, now, facts);
+        if (entries.Count > 50_000)
+        {
+            foreach (var key in entries.Where(x => now - x.Value.At >= Lifetime).Select(x => x.Key).ToList())
+            {
+                entries.TryRemove(key, out _);
+            }
+        }
+
+        return facts;
+    }
+
+    private sealed record Entry(long Revision, DateTimeOffset At, (IReadOnlySet<string> Roles, IReadOnlySet<Guid> Groups) Facts);
 }
