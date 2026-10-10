@@ -29,7 +29,7 @@ interface Delivery {
   status: string;
   reason?: string | null;
   attempts: number;
-  subject: string;
+  subject?: string | null;
   body?: string | null;
   createdAt: string;
   sentAt?: string | null;
@@ -173,7 +173,7 @@ const STATUS_TONES: Record<string, string> = { sent: 'tone-green', captured: 'to
                   <tr>
                     <td class="whitespace-nowrap">{{ d.createdAt | date: 'MMM d, HH:mm' }}</td>
                     <td>
-                      <details><summary>{{ d.subject }}</summary><p class="mt-1 text-body-sm whitespace-pre-line text-muted">{{ d.body ?? 'Only people who manage notifications see the text.' }}</p>
+                      <details><summary>{{ d.subject ?? 'Text hidden' }}</summary><p class="mt-1 text-body-sm whitespace-pre-line text-muted">{{ d.body ?? 'Only people who manage notifications see the text.' }}</p>
                       <p class="text-caption text-muted">{{ d.eventType }} · {{ d.route }}{{ d.replayOf ? ' · replay' : '' }}</p></details>
                     </td>
                     <td>{{ d.recipient ?? '—' }} @if (d.external) { <span class="badge tone-amber">external</span> }</td>
@@ -354,7 +354,7 @@ export class NotificationsAdminPage {
   }
 
   protected async replay(d: Delivery, force: boolean): Promise<void> {
-    if (force && !confirm(`Send "${d.subject}" again? The recipient gets it twice.`)) return;
+    if (force && !confirm(`Send "${d.subject ?? 'this notification'}" again? The recipient gets it twice.`)) return;
     const r = await this.run(() => this.api.post<{ delivery: string }>(`/api/admin/notifications/deliveries/${d.id}/replay${force ? '?force=true' : ''}`), 'Could not replay it.');
     if (r) {
       this.toasts.show(force ? 'Sent again.' : 'Queued for another try.', 'success');

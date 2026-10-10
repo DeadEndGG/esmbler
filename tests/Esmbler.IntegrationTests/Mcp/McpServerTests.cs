@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals", "list_metrics", "describe_metric_fields", "add_metric", "update_metric", "remove_metric", "add_dashboard_tile", "evaluate_metric" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals", "list_metrics", "describe_metric_fields", "add_metric", "update_metric", "remove_metric", "add_dashboard_tile", "evaluate_metric", "list_notification_setup", "preview_notification", "list_notification_deliveries", "notify_when", "add_subscription", "add_notification_template", "update_notification_template", "add_notification_profile", "add_notification_route", "update_notification_route" })
         {
             Assert.Contains(expected, tools);
         }
@@ -360,6 +360,75 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         await using var readClient = await Mcp.ConnectAsync(reader);
         var open = await Call(readClient, "evaluate_metric", new { metric = "core.tickets.metric.open" });
         Assert.NotNull(open["untrusted_data"]);
+    }
+
+    [Fact]
+    public async Task Agent_sets_up_a_notification_but_external_recipients_stay_with_people()
+    {
+        // REQ-NOT-001/002/006, REQ-AUTHZ-008 (ADR 0021): notifications are draft configuration; access decisions are not.
+        var tenant = await platform.NewTenantAsync("mnot", "1.6.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var added = await Call(client, "notify_when", new
+        {
+            label = "Escalations to the assignee",
+            @event = "core.tickets.ticket.escalated",
+            recipients = new[] { new { kind = "field", @ref = "assignee" }, new { kind = "group", @ref = "service_desk" } },
+            subject = "Escalated: {{record.title}}",
+            body = "{{record.number}} was escalated: {{event.reason}}. {{link}}",
+            when = "event.priority == 'p1'",
+            profile = "core.platform.profile.in_app_email",
+            expected_version = version,
+        });
+        Assert.Equal(3, added["steps"]!.AsArray().Count);
+        version = added["version"]!.GetValue<int>();
+
+        var setup = await Call(client, "list_notification_setup");
+        var route = setup["routes"]!.AsArray().Single(r => r!["id"]!.GetValue<string>() == "tenant__escalations_to_the_assignee")!;
+        Assert.Equal(("workspace", "tenant__escalations_to_the_assignee_sub"), (route["layer"]!.GetValue<string>(), route["subscription"]!.GetValue<string>()));
+        Assert.Contains(route["recipients"]!.AsArray(), r => r!.GetValue<string>() == "field:assignee");
+        Assert.NotNull(setup["channels"]);
+        Assert.Contains(setup["profiles"]!.AsArray(), p => p!["id"]!.GetValue<string>() == "core.platform.profile.urgent");
+
+        // Previews resolve and render without sending; with no record, record fields render empty.
+        var previewed = await Call(client, "preview_notification", new { route = "tenant__escalations_to_the_assignee" });
+        Assert.Contains("No record chosen", previewed["untrusted_data"]!["note"]!.GetValue<string>());
+
+        version = (await Call(client, "update_notification_template", new
+        {
+            template = "tenant__escalations_to_the_assignee_text",
+            variants = new[] { new { channel = "sms", body = "Escalated {{record.number}}" } },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+
+        // Text is plain and placeholders must exist; mistakes come back with a fix.
+        var badText = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_notification_template", new { label = "Odd", entity = "core.tickets.ticket", subject = "Hi", body = "{{record.nope}}", expected_version = version }));
+        Assert.Contains("bad_placeholder", badText.Body);
+
+        // Telling someone outside the workspace is an access decision: agents are refused.
+        var external = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_notification_route", new
+        {
+            label = "Vendor escalations",
+            subscription = "tenant__escalations_to_the_assignee_sub",
+            profile = "core.platform.profile.in_app_email",
+            template = "tenant__escalations_to_the_assignee_text",
+            recipients = new[] { new { kind = "address", @ref = "ops@vendor.example" } },
+            expected_version = version,
+        }));
+        Assert.Contains("forbidden", external.Body);
+        var widen = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_notification_route", new
+        {
+            route = "tenant__escalations_to_the_assignee",
+            recipients = new[] { new { kind = "address", @ref = "ops@vendor.example" } },
+            expected_version = version,
+        }));
+        Assert.Contains("forbidden", widen.Body);
+
+        // Delivery status is visible; message text never is.
+        var deliveries = await Call(client, "list_notification_deliveries");
+        Assert.All(deliveries.AsArray(), d => Assert.Null(d!["subject"]));
     }
 
     [Fact]

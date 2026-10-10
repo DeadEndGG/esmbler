@@ -20,9 +20,12 @@ public sealed record PreferenceView(string Route, string Label, string Subscript
 
 public sealed record ChannelView(string Key, string Type, string Label, string Mode, JsonObject Settings, IReadOnlyDictionary<string, bool> Secrets, int RatePerMinute, bool HostAllowed, DateTimeOffset UpdatedAt);
 
+/// <summary>Which channel types an environment can deliver on, without settings or secrets (for builders and agents).</summary>
+public sealed record ChannelSummary(string Type, string Mode, bool HostAllowed, bool SecretsConfigured);
+
 public sealed record SaveChannelRequest(string Key, string Type, string Label, string Mode, JsonObject? Settings, IReadOnlyList<string>? SecretRefs, int? RatePerMinute);
 
-public sealed record DeliveryView(Guid Id, Guid EventId, string EventType, string Route, string Channel, string? Recipient, bool External, bool Mandatory, string Status, string? Reason, int Attempts, string Subject, string? Body, DateTimeOffset CreatedAt, DateTimeOffset? SentAt, Guid? ReplayOf);
+public sealed record DeliveryView(Guid Id, Guid EventId, string EventType, string Route, string Channel, string? Recipient, bool External, bool Mandatory, string Status, string? Reason, int Attempts, string? Subject, string? Body, DateTimeOffset CreatedAt, DateTimeOffset? SentAt, Guid? ReplayOf);
 
 public sealed record PreviewRecipient(string Recipient, bool External, IReadOnlyList<string> Channels, string? Suppressed, string Subject, string Body);
 
@@ -140,6 +143,26 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
         }, ct);
 
     /// <summary>
+    /// The channel instances of the environment as type, mode and readiness only (no settings, hosts or secret names), for
+    /// people who build configuration and for AI agents planning routes.
+    /// </summary>
+    public Task<IReadOnlyList<ChannelSummary>> ChannelSummaryAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync<IReadOnlyList<ChannelSummary>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            if (!perms.Can(PlatformActions.ConfigEdit) && !CanManage(perms))
+            {
+                throw KernelException.Forbidden("Listing notification channels needs configuration or notification management rights.");
+            }
+
+            var slug = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.Slug).FirstAsync(ct);
+            var accessor = secrets.For(slug);
+            var rows = await db.NotificationChannels.AsNoTracking().OrderBy(c => c.Key).ToListAsync(ct);
+            return [.. rows.Select(r => View(r, accessor)).Select(v => new ChannelSummary(v.Type, v.Mode, v.HostAllowed, v.Secrets.Values.All(x => x)))];
+        }, ct);
+
+    /// <summary>
     /// Creates or changes a channel instance. Settings hold no secrets (secret references only); live mode needs an
     /// allow-listed host, and in a sandbox it needs permission administration (sandboxes capture by default).
     /// </summary>
@@ -233,10 +256,11 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
 
             var rows = await q.OrderByDescending(d => d.CreatedAt).Take(100).ToListAsync(ct);
             var names = await db.Principals.AsNoTracking().Where(p => rows.Select(r => r.RecipientPrincipal).Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
-            // Bodies only for people who manage notifications (captured messages); addresses are masked for everyone.
+            // Text (rendered for the recipient, who may see more than the caller) only for people who manage notifications;
+            // addresses are masked for everyone.
             return [.. rows.Select(d => new DeliveryView(d.Id, d.EventId, d.EventType, d.RouteId, d.ChannelType,
                 d.RecipientPrincipal is { } p ? names.GetValueOrDefault(p, "a person") : Mask(d.RecipientAddress),
-                d.External, d.Mandatory, d.Status, d.StatusReason, d.Attempts, d.Subject, manage ? d.Body : null, d.CreatedAt, d.SentAt, d.ReplayOf))];
+                d.External, d.Mandatory, d.Status, d.StatusReason, d.Attempts, manage ? d.Subject : null, manage ? d.Body : null, d.CreatedAt, d.SentAt, d.ReplayOf))];
         }, ct);
 
     /// <summary>
