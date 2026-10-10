@@ -1,0 +1,69 @@
+/// Esmbler server-side extension contract (Gate 0 spike).
+///
+/// Record data crosses the boundary as a JSON string so the contract stays
+/// stable while entity schemas evolve per tenant. The guest gets NO WASI
+/// filesystem, network or environment capabilities; the only side channel to
+/// the platform is the `host` interface below, and every call on it is
+/// capability-checked against the package manifest.
+package esmbler:extension@0.1.0;
+
+interface types {
+    /// Who/what triggered the hook. Supplied by the platform, never by the guest.
+    record hook-context {
+        tenant-id: string,
+        environment: string,
+        package-id: string,
+        hook: string,
+        correlation-id: string,
+        actor-id: option<string>,
+    }
+
+    /// A record serialized as a UTF-8 JSON object.
+    type record-json = string;
+
+    record violation {
+        /// JSON pointer-ish field path, e.g. "impact"; none for record-level.
+        field: option<string>,
+        /// Stable machine-readable code, e.g. "ticket.impact.required".
+        code: string,
+        /// Human-readable message (the platform localizes / sanitizes).
+        message: string,
+    }
+
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+}
+
+/// Host-provided imports. Mediated by the platform; capability-gated.
+interface host {
+    use types.{log-level};
+
+    /// Structured log line attributed to tenant/environment/package/correlation.
+    /// Requires capability `log`. Rate- and size-limited by the host.
+    log: func(level: log-level, msg: string);
+
+    /// Read a tenant/environment-scoped setting. Returns none if the key is not
+    /// set OR the package has no `settings:read` grant matching the key.
+    get-setting: func(key: string) -> option<string>;
+}
+
+/// Synchronous record validator hook (before-save).
+/// Note: `record` is a WIT keyword, so the parameter name is escaped as `%record`.
+interface validator {
+    use types.{hook-context, record-json, violation};
+
+    /// ok(empty list)  => record accepted
+    /// ok(violations)  => record rejected with these violations
+    /// err(message)    => extension failure (platform applies the hook's fail policy)
+    validate: func(ctx: hook-context, %record: record-json) -> result<list<violation>, string>;
+}
+
+world record-validator {
+    import host;
+    export validator;
+}

@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "agent",
+      "relations": {
+        "acts_for": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "acts_for": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "group",
+      "relations": {
+        "member": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              },
+              {
+                "type": "group",
+                "relation": "member"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "role",
+      "relations": {
+        "assignee": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "assignee": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              },
+              {
+                "type": "group",
+                "relation": "member"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "record",
+      "relations": {
+        "requester": {
+          "this": {}
+        },
+        "assignee": {
+          "this": {}
+        },
+        "owner_group": {
+          "this": {}
+        },
+        "related": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "requester"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "assignee"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "owner_group"
+                  },
+                  "computedUserset": {
+                    "relation": "member"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "requester": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "assignee": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "owner_group": {
+            "directly_related_user_types": [
+              {
+                "type": "group"
+              }
+            ]
+          },
+          "related": {
+            "directly_related_user_types": []
+          }
+        }
+      }
+    }
+  ]
+}

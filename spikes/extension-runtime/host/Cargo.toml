@@ -1,0 +1,21 @@
+[package]
+name = "esmbler-ext-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Pinned exactly: Wasmtime 48 is an LTS line (supported ~24 months). Bump deliberately.
+wasmtime = { version = "=48.0.5", default-features = false, features = [
+    "runtime", "cranelift", "component-model", "pooling-allocator", "parallel-compilation", "std", "anyhow", "cache"
+] }
+wasmtime-wasi = { version = "=48.0.5", default-features = false, features = ["p2"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
+
+[profile.release]
+opt-level = 3
+debug = false

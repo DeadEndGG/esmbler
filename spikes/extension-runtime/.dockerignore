@@ -1,0 +1,7 @@
+**/target/
+**/bin/
+**/obj/
+dotnet-client/
+dotnet-probe/
+packages/**/*.wasm
+*.md

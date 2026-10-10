@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "ccr-*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  backend:
+    name: Backend (build, unit, architecture, integration)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore Esmbler.slnx
+      - name: Build (analyzers as errors)
+        run: dotnet build Esmbler.slnx --no-restore -c Release
+      - name: Format check
+        run: dotnet format Esmbler.slnx --verify-no-changes --no-restore --severity warn
+      - name: Unit tests
+        run: dotnet test tests/Esmbler.UnitTests --no-build -c Release
+      - name: Architecture (boundary) tests
+        run: dotnet test tests/Esmbler.ArchitectureTests --no-build -c Release
+      - name: Integration tests (Testcontainers)
+        run: dotnet test tests/Esmbler.IntegrationTests --no-build -c Release
+      - name: Generated references are current
+        run: |
+          dotnet run --project tools/Esmbler.DocGen -c Release --no-build -- --check
+        if: hashFiles('tools/Esmbler.DocGen/Esmbler.DocGen.csproj') != ''
+
+  frontend:
+    name: Frontend (typecheck, lint, unit)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Typecheck and build
+        run: npx ng build --configuration production
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Unit tests (incl. expression conformance)
+        run: npx ng test --watch=false
+
+  docs:
+    name: Docs (markdown lint, links)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Markdown lint
+        run: npx --yes markdownlint-cli2@0.18.1 "**/*.md" "#**/node_modules" "#apps/web/README.md" "#docs/spec/master-spec.md" "#docs/spec/execution-brief.md"
+      - name: Link check (relative links)
+        run: node tools/check-links.mjs
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  acceptance:
+    name: Acceptance (docker compose + Playwright)
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the system
+        run: docker compose -f deploy/docker-compose.yml up -d --build --wait
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Playwright acceptance suite
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+        if: hashFiles('tests/e2e/package.json') != ''
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs --no-color | tail -500

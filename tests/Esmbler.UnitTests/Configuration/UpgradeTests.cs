@@ -38,7 +38,7 @@ public class UpgradeTests
         var v2 = Tickets("1.1.0");
         v2 = SpecJson.Clone(v2);
         v2.Entities[0].FindField("category")!.Label = "Service category";
-        var upgraded = Compiler.Compile([Platform, v2], [relabel]);
+        var upgraded = Compiler.Compile([PlatformSpec, v2], [relabel]);
         var conflict = Assert.Single(upgraded.Composition.Outcomes, o => o.Status == OpStatus.Conflict);
         Assert.Contains("'label' was \"Category\"", conflict.Diagnostics[0].Message);
         Assert.False(upgraded.Succeeded);
@@ -50,7 +50,7 @@ public class UpgradeTests
         var relabel = new UpdateField { Entity = Ticket, Field = "category", Set = new FieldPatch { Label = "Request type" }, Expected = new JsonObject { ["label"] = "Category" } };
         var v2 = SpecJson.Clone(Tickets("1.1.0"));
         v2.Entities[0].FindField("category")!.Label = "Request type";
-        var upgraded = Compiler.Compile([Platform, v2], [relabel]);
+        var upgraded = Compiler.Compile([PlatformSpec, v2], [relabel]);
         Assert.True(upgraded.Succeeded);
         Assert.Equal(OpStatus.Redundant, upgraded.Composition.Outcomes[0].Status);
     }
@@ -71,7 +71,7 @@ public class UpgradeTests
 
         v2.PermissionSets.ForEach(p => p.Fields.RemoveAll(f => f.Field == "estimated_effort"));
         v2.Migrations.Clear();
-        var upgraded = Compiler.Compile([Platform, v2], [rule]);
+        var upgraded = Compiler.Compile([PlatformSpec, v2], [rule]);
         Assert.Contains(upgraded.Errors, e => e.Code == "expr.unknown_field" && e.Target == "tenant__r");
     }
 
@@ -88,7 +88,7 @@ public class UpgradeTests
         var v2 = SpecJson.Clone(Tickets("1.1.0"));
         var side = v2.Views[0].Layout.Find("core.tickets.record.c_side")!;
         side.Children.RemoveAll(c => c.Id == "core.tickets.record.card_properties");
-        var upgraded = Compiler.Compile([Platform, v2], [insert]);
+        var upgraded = Compiler.Compile([PlatformSpec, v2], [insert]);
         Assert.True(upgraded.Succeeded);
         Assert.Contains(upgraded.Diagnostics, d => d.Code == "overlay.anchor_missing");
         Assert.Equal("tenant__n_c", upgraded.Config.FindView("core.tickets.record")!.Layout.Find("core.tickets.record.c_side")!.Children[^1].Id);

@@ -1,0 +1,17 @@
+config:
+  default: true
+  MD013: false        # line length: prose wraps naturally
+  MD033: false        # inline HTML allowed sparingly (e.g. <br>)
+  MD041: false        # front matter precedes the H1
+  MD024:
+    siblings_only: true
+  MD060: false
+  MD025:
+    front_matter_title: ""
+ignores:
+  # Requirements sources are never edited by agents (execution brief section 9).
+  - "docs/spec/master-spec.md"
+  - "docs/spec/execution-brief.md"
+  - "**/node_modules/**"
+  - "apps/web/README.md"
+  - "spikes/**/target/**"

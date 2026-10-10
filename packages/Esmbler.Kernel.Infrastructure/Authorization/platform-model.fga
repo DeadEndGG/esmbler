@@ -1,0 +1,27 @@
+# Esmbler platform authorization model (ADR 0004). Fixed for all tenants: tenant-customizable policy lives in
+# versioned permission-set specs evaluated by the kernel PDP. This store holds relationship facts only and is a
+# derived index of kernel.group_members / kernel.role_assignments (rebuildable). Record attribute relations are
+# sent as contextual tuples, never stored. JSON form: platform-model.fga.json (keep both in sync).
+model
+  schema 1.1
+
+type user
+
+type agent
+  relations
+    define acts_for: [user]
+
+type group
+  relations
+    define member: [user, group#member]
+
+type role
+  relations
+    define assignee: [user, group#member]
+
+type record
+  relations
+    define requester: [user]
+    define assignee: [user]
+    define owner_group: [group]
+    define related: requester or assignee or member from owner_group

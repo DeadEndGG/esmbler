@@ -1,0 +1,230 @@
+---
+title: Tickets module architecture
+status: accepted
+owner: tickets-module
+last_reviewed: 2026-10-10
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-ACC-03, REQ-ACC-04]
+---
+
+# Tickets module architecture
+
+## Overview
+
+`core.tickets` is the default Tickets and Service Requests module and the reference implementation for module authors ([REQ-MOD-001](../../spec/traceability.md)).
+
+- **Code:** `modules/tickets/Esmbler.Modules.Tickets` (releases) and `Esmbler.Modules.Tickets.Contracts` (public IDs in `TicketsIds`).
+- **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
+- **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
+- **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
+- **Releases:** `1.0.0` (initial) and `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario).
+
+| Public ID (`TicketsIds`) | Value |
+| --- | --- |
+| Module | `core.tickets` |
+| Entity | `core.tickets.ticket` |
+| Record view / list view / quick create | `core.tickets.record`, `core.tickets.list`, `core.tickets.quick_create` |
+| Workflow | `core.tickets.lifecycle` |
+| Roles | `core.tickets.agent`, `core.tickets.requester`, `core.tickets.admin` |
+
+## Entity: Ticket
+
+`core.tickets.ticket`. The title field is `title`. All fields are stored in `kernel.records.data` keyed by field key ([ADR 0002](../../adr/0002-storage-and-query-model.md)).
+
+| Key | Type | Label | Constraints and notes |
+| --- | --- | --- | --- |
+| `number` | auto_number | Number | Prefix `TCK`; system, read-only |
+| `title` | short_text | Title | Required, max 200 |
+| `description` | rich_text | Description | Sanitized HTML, max 20,000 |
+| `status` | status | Status | Choice list `core.tickets.status`, default `new`; read-only (changes only through transitions) |
+| `priority` | priority | Priority | Required, default `p3` |
+| `category` | single_select | Category | Choice list `core.tickets.category` |
+| `labels` | multi_select | Labels | Choice list `core.tickets.labels` |
+| `requester` | user | Requester | Required; `defaultExpression: user.id` |
+| `contact_email` | email | Contact email | Max 254 |
+| `assignment_group` | group | Assignment group | |
+| `assignee` | user | Assignee | |
+| `parent` | lookup | Parent ticket | Target `core.tickets.ticket` |
+| `estimated_effort` | short_text | Estimated effort | Max 40. Deprecated and hidden in 1.1.0 |
+| `resolution_notes` | long_text | Resolution notes | Max 4,000 |
+| `resolved_at` | date_time | Resolved at | Read-only; set by the `resolve` transition |
+| `confirmed` | toggle | Requester confirmed | Read-only, default false |
+| `reopen_count` | integer | Times reopened | Read-only, default 0, min 0 |
+| `created_at`, `updated_at` | date_time | Created, Updated | System, read-only |
+
+**Access fields** (record-level ReBAC, see the [authorization model](../../explanation/authorization-model.md)): `requester` → relation `requester`, `assignee` → `assignee`, `assignment_group` → `owner_group`. All three grant edit.
+
+### Choice lists
+
+Option IDs are stable strings stored in records ([REQ-REC-005](../../spec/traceability.md)). Tones are design tokens.
+
+| Choice list | Options (`id`: label, tone) |
+| --- | --- |
+| `core.tickets.status` | `new`: New (gray), `assigned`: Assigned (blue), `in_progress`: In progress (purple), `on_hold`: On hold (amber), `resolved`: Resolved (green), `closed`: Closed (gray), `cancelled`: Cancelled (gray) |
+| `core.tickets.priority` | `p1`: Critical (red), `p2`: High (amber), `p3`: Medium (blue), `p4`: Low (gray) |
+| `core.tickets.category` | `hardware`, `software`, `network`, `access` (Access request), `other` |
+| `core.tickets.labels` | `vip` (purple), `outage` (red), `security` (amber), `onboarding` (green) |
+
+### Relationship
+
+`core.tickets.parent_child`: a lookup from `parent` to another ticket. Labels are "Parent ticket" and "Child tickets". `onTargetDelete: restrict`, so a parent with children cannot be deleted ([REQ-REC-006](../../spec/traceability.md)).
+
+## States and transitions
+
+The workflow is `core.tickets.lifecycle`, state field `status`, initial state `new`, `definitionVersion: 1`. It is executed in-transaction by the platform workflow service ([ADR 0005](../../adr/0005-job-and-workflow-execution.md)).
+
+```mermaid
+stateDiagram-v2
+    [*] --> new
+    new --> assigned: assign
+    new --> in_progress: start
+    assigned --> in_progress: start
+    assigned --> on_hold: hold
+    in_progress --> on_hold: hold
+    on_hold --> in_progress: resume
+    assigned --> resolved: resolve
+    in_progress --> resolved: resolve
+    on_hold --> resolved: resolve
+    resolved --> closed: confirm
+    resolved --> in_progress: reopen
+    new --> cancelled: cancel
+    assigned --> cancelled: cancel
+    in_progress --> cancelled: cancel
+    on_hold --> cancelled: cancel
+    closed --> [*]
+    cancelled --> [*]
+```
+
+| Transition | From → to | Roles | Required fields | Sets |
+| --- | --- | --- | --- | --- |
+| `assign` (Assign) | new → assigned | agent, admin | `assignment_group` | |
+| `start` (Start work) | new, assigned → in_progress | agent, admin | | `assignee = has(record.assignee) ? record.assignee : user.id` |
+| `hold` (Put on hold) | assigned, in_progress → on_hold | agent, admin | | |
+| `resume` (Resume) | on_hold → in_progress | agent, admin | | |
+| `resolve` (Resolve) | assigned, in_progress, on_hold → resolved | agent, admin | `resolution_notes` | `resolved_at = now` |
+| `confirm` (Confirm resolution) | resolved → closed | requester, agent, admin | | `confirmed = true` |
+| `reopen` (Reopen) | resolved → in_progress | requester, agent, admin | | `reopen_count + 1`, `resolved_at = null`, `confirmed = false` |
+| `cancel` (Cancel, danger tone) | new, assigned, in_progress, on_hold → cancelled | requester, agent, admin | | |
+
+State categories (`new`, `active`, `pending`, `resolved`, `closed`, `cancelled`) drive saved views and, from Gate 2, SLA pause rules.
+
+## Rules
+
+All base rules are data-scoped, so they are enforced on every write path ([REQ-RULE-004](../../spec/traceability.md)). Tenants may disable a base rule (`rule.update` with `enabled: false`) but cannot rewrite or remove it.
+
+| ID | Kind | Condition | Effect | Order |
+| --- | --- | --- | --- | --- |
+| `core.tickets.rules.title_length` | validation | always | Assert `!has(record.title) \|\| record.title.size() >= 5` on `title` (absence is handled by `required`) | 10 |
+| `core.tickets.rules.resolution_notes` | conditional | `record.status in ['resolved', 'closed']` | Require `resolution_notes` | 20 |
+| `core.tickets.rules.closed_read_only` | conditional | `record.status in ['closed', 'cancelled']` | Read-only `title`, `description`, `priority`, `category` | 30 |
+| `core.tickets.rules.p1_impact` (1.1.0) | conditional | `record.priority == 'p1'` | Require `impact` | 40 |
+
+**Assignment rules** (first match wins, through the `core.tickets.strategy.assignment` extension point):
+
+1. `core.tickets.assign.network`: when `record.category == 'network'`, assign group `network` (order 10).
+2. `core.tickets.assign.default`: always, assign group `service_desk` (order 100).
+
+**Notification templates** (Gate 1 delivers to the in-app fake outbox):
+
+- `core.tickets.notify.resolved`: on `record.transitioned:resolved`, notifies `requester`.
+- `core.tickets.notify.assigned`: on `record.updated:assignee`, notifies `assignee`.
+
+## Roles and permission sets
+
+| Permission set | Roles | Ticket access | Fields | Actions |
+| --- | --- | --- | --- | --- |
+| `core.tickets.ps_agent` | agent | create; read all; update all; no delete | all writable | none |
+| `core.tickets.ps_requester` | requester | create; read related; update related; no delete | read-only `priority`, `requester`, `assignment_group`, `assignee`, `parent`, `resolution_notes`; hidden `estimated_effort`, `labels`; other non-system fields (`title`, `description`, `contact_email`, `category`, …) writable on related tickets | none |
+| `core.tickets.ps_admin` | admin | create; read all; update all; delete | all writable | `config.edit`, `config.publish`, `audit.read`, `records.export` |
+| `core.platform.ps_tenant_admin` (platform) | `core.platform.tenant_admin` | all entities, full | all | every platform action, including `permissions.admin` and `modules.manage` |
+
+The Tickets admin can publish configuration but cannot change permissions. That needs `permissions.admin`, which only the tenant admin holds ([REQ-AUTHZ-008](../../spec/traceability.md)).
+
+## Pages
+
+All views are layout trees on the 12-column grid with stable node IDs ([REQ-LAY-001](../../spec/traceability.md)).
+
+### Record page (`core.tickets.record`)
+
+```mermaid
+flowchart TB
+    subgraph s_header[Section s_header]
+        subgraph r_header[Row r_header: 12]
+            h[c_header 12: heading title, status and priority badges,<br/>P1 callout visibleWhen priority == p1, transition buttons max 3]
+        end
+        subgraph r_overview[Row r_overview: 4 / 4 / 4]
+            o1[c_overview_1: card Requester<br/>requester, contact_email]
+            o2[c_overview_2: card Assignment<br/>assignment_group, assignee]
+            o3[c_overview_3: card Classification<br/>category, labels]
+        end
+    end
+    subgraph s_main[Section s_main]
+        subgraph r_main[Row r_main: 8 / 4]
+            m[c_main 8: card Details: description, estimated_effort, parent<br/>tab group: Activity feed, Child tickets, History]
+            sd[c_side 4: card Properties: status, priority, number, created_at<br/>card Resolution: resolution_notes, resolved_at, confirmed, reopen_count]
+        end
+    end
+    s_header --> s_main
+```
+
+- **Header row (12 columns):** `display.heading` bound to `title` (level 1), `display.badge` for `status` and `priority`, a critical `display.callout` shown only when `record.priority == 'p1'`, and `action.transition_buttons` (max 3 visible, the rest in overflow).
+- **Overview row (4/4/4):** three cards, Requester, Assignment and Classification.
+- **Main row (8/4):** the main column has the Details card and a tab group:
+  - **Activity:** `activity.feed` with public replies and internal work notes; the composer defaults to internal ([REQ-BIZ-002](../../spec/traceability.md)).
+  - **Child tickets:** `collection.related_list` over `core.tickets.parent_child`.
+  - **History:** `activity.audit_history`, 25 per page.
+
+  The side column has the Properties and Resolution cards. This is the `core.tickets.slots.record_side_panel` UI slot, where the canonical tenant customization adds its Vendor card.
+
+### List page (`core.tickets.list`)
+
+- **Toolbar row (12):** `collection.saved_views` (All open, Assigned to me, Unassigned, My requests, Resolved) and a `collection.filter_bar` (status, priority, category, assignment group, assignee, with search).
+- **Table row (12):** `collection.data_table` (compact density, 50 per page, sorted by `updated_at` descending) with columns number, title, status, priority, assignment group, assignee and updated.
+
+### Quick create form (`core.tickets.quick_create`)
+
+One card, "New ticket", with title, description, category and priority.
+
+## Extension points
+
+| ID | Kind | Cardinality | Contract |
+| --- | --- | --- | --- |
+| `core.tickets.hooks.before_write` | lifecycle_hook | ordered_pipeline | Synchronous, deterministic validators before create or update. No network |
+| `core.tickets.hooks.after_write` | lifecycle_hook | multiple | Asynchronous subscribers after commit, at-least-once |
+| `core.tickets.strategy.assignment` | strategy | single_provider | Chooses the assignment group. Default: ordered assignment rules |
+| `core.tickets.slots.record_side_panel` | ui_slot | multiple | Cards in the record page's right column |
+
+Package contributions to these points arrive in Gate 3. Exclusive conflicts on `single_provider` points are rejected explicitly ([REQ-PKG-002](../../spec/traceability.md)).
+
+## Sample data
+
+Nine synthetic tickets seed new environments and draft previews. They cover each category and most states: `vpn` (network, in progress, with public reply and work note), `laptop`, `payroll_access` (access, new), `email_outage`, `printer` (resolved), `wifi_guest` (on hold), `crm_license` (closed), `monitor` and `vpn_child` (a child of `vpn`). Users and groups are referenced symbolically (`@user:dana`, `@group:network`) and resolved per tenant at seed time.
+
+## Release 1.1.0 upgrade
+
+| Change | Classification ([REQ-MIG-001](../../spec/traceability.md)) | Detail |
+| --- | --- | --- |
+| New choice list `core.tickets.impact` (high, medium, low) and field `impact` (single_select) | Requires backfill | Migration `backfill_impact`: `record.priority == 'p1' ? 'high' : (record.priority == 'p2' ? 'medium' : 'low')`, batch 200 |
+| New choice list `core.tickets.channel` and field `channel` (default `portal`) | Compatible | Default applies to new records |
+| New field `effort_hours` (decimal, scale 2, 0–1000) | Requires explicit conversion | Migration `convert_effort` from `estimated_effort`, batch 200 |
+| `estimated_effort` becomes `deprecated: true, hidden: true` | Contract phase | Values kept read-only for history; no new writes |
+| New rule `core.tickets.rules.p1_impact` | Compatible after backfill | Requires `impact` when priority is P1 |
+| Record page: `f_impact` and `f_channel` added to the Classification card; `f_effort_hours` replaces `f_estimated_effort` in the Details card | Compatible | Node IDs are stable, so tenant anchors survive |
+
+### Upgrade flow
+
+1. **Compose.** The compiler composes 1.1.0 beneath each tenant's overlay and classifies every op as applied, redundant, conflict or failed ([REQ-CFG-009](../../spec/traceability.md)).
+2. **Report.** The artifact manifest lists `core.tickets@1.1.0:backfill_impact` and `core.tickets@1.1.0:convert_effort`.
+3. **Migrate.** Migrations run as resumable worker jobs (expand and backfill) before the pointer switch.
+4. **Convert safely.** `convert_effort` never drops values. A value that is not a number (for example "half a day") stays in `estimated_effort` and is listed in the migration report ([REQ-MIG-002](../../spec/traceability.md)).
+5. **Recover from failure.** Batches checkpoint progress. If a run fails partway, it resumes from the last checkpoint. Rollback to 1.0.0 is offered only if no record has been written under 1.1.0-only fields; otherwise the report offers a forward repair ([REQ-ACC-04](../../spec/traceability.md)).
+
+Unit-level evidence today:
+
+- `tests/Esmbler.UnitTests/Configuration/UpgradeTests.cs`: the canonical customization survives 1.1.0; relabel conflicts; base adopting the tenant value is redundant; removed dependencies block with an impact report; a missing anchor falls back with a warning.
+- `TicketsReleaseTests.cs`: both releases compile; the content hash is deterministic.
+
+## Related documents
+
+- [Layered configuration](../../explanation/layered-configuration.md): worked example on this module
+- [Architecture overview](../overview.md)
+- [Acceptance plan](../../testing/acceptance-plan.md): REQ-ACC-01, 03, 04

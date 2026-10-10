@@ -1,0 +1,16 @@
+{
+  "id": "ticket-validator",
+  "version": "0.1.0",
+  "world": "esmbler:extension/record-validator@0.1.0",
+  "component": "component.wasm",
+  "hooks": ["validate"],
+  "capabilities": {
+    "log": true,
+    "settings_read": ["ticket.*"]
+  },
+  "limits": {
+    "fuel": 200000000,
+    "timeout_ms": 100,
+    "memory_bytes": 16777216
+  }
+}

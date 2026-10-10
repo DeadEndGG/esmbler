@@ -371,7 +371,7 @@
       "scope": "data",
       "entity": "core.tickets.ticket",
       "description": "Titles need at least 5 characters",
-      "assert": "record.title.size() >= 5",
+      "assert": "!has(record.title) || record.title.size() >= 5",
       "field": "title",
       "message": "Write a title of at least 5 characters so agents can triage it.",
       "order": 10
@@ -1348,28 +1348,33 @@
       "fields": [
         {
           "entity": "core.tickets.ticket",
-          "field": "*",
+          "field": "priority",
           "access": "read"
         },
         {
           "entity": "core.tickets.ticket",
-          "field": "title",
-          "access": "write"
+          "field": "requester",
+          "access": "read"
         },
         {
           "entity": "core.tickets.ticket",
-          "field": "description",
-          "access": "write"
+          "field": "assignment_group",
+          "access": "read"
         },
         {
           "entity": "core.tickets.ticket",
-          "field": "contact_email",
-          "access": "write"
+          "field": "assignee",
+          "access": "read"
         },
         {
           "entity": "core.tickets.ticket",
-          "field": "category",
-          "access": "write"
+          "field": "parent",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "resolution_notes",
+          "access": "read"
         },
         {
           "entity": "core.tickets.ticket",

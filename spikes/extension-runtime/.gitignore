@@ -1,0 +1,6 @@
+# Build outputs (keep sources only)
+target/
+bin/
+obj/
+*.wasm
+*.cwasm

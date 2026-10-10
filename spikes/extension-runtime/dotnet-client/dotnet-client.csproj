@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shows the .NET platform -> extension sidecar integration path (HTTP/JSON). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Esmbler.Spikes.ExtensionClient</RootNamespace>
+  </PropertyGroup>
+</Project>
