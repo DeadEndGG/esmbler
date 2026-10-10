@@ -49,6 +49,15 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
         return Hasher.VerifyHashedPassword(HashUser, found.PasswordHash, password) == PasswordVerificationResult.Failed ? null : (found.Id, found.DisplayName);
     }
 
+    /// <summary>Records a workspace switch in the target tenant's audit log (REQ-TEN-003).</summary>
+    public Task AuditSwitchAsync(Guid principalId, Guid tenantId, Guid environmentId, CancellationToken ct) =>
+        database.InTenantAsync(tenantId, environmentId, principalId, async db =>
+        {
+            AuditWriter.Add(db, new RequestContext { TenantId = tenantId, EnvironmentId = environmentId, PrincipalId = principalId, Channel = "api" }, "auth.switch", "environment", environmentId.ToString(), null);
+            await db.SaveChangesAsync(ct);
+            return 0;
+        }, ct);
+
     public Task<bool> IsDisabledAsync(Guid principalId, CancellationToken ct) =>
         database.AsPrincipalAsync(principalId, db => db.Principals.Where(p => p.Id == principalId).Select(p => p.Disabled).FirstOrDefaultAsync(ct), ct);
 

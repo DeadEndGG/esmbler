@@ -4,7 +4,7 @@ Esmbler is an AI-native, composable Enterprise Service Management platform. Ever
 
 The first module is **Tickets and Service Requests**. Later modules: Incidents, Knowledge, Problems, Changes, CRM (support context), Projects and CMDB. A partner SDK and a public marketplace follow.
 
-> **Status:** Gate 0 (decisions and foundation). See [docs/progress.md](docs/progress.md) for the current milestone and the full backlog.
+> **Status:** Gate 1 (architecture proof) is complete; Gate 2 (private pilot) is in progress. See [docs/progress.md](docs/progress.md) for the current milestone and the full backlog, and the [Gate 1 test guide](docs/testing/gate-1-test-guide.md) to try it.
 
 ## What makes it different
 
@@ -36,9 +36,9 @@ This builds and starts PostgreSQL 18, OpenFGA, the API, the MCP server, the work
 | OpenFGA | <http://localhost:8081> |
 | PostgreSQL | `localhost:55432` |
 
-Credentials in the Compose file are development-only defaults; override them with environment variables or a local `.env` file (never commit it). Seed data (tenants `acme` and `globex`, each with `prod` and `sandbox` environments, users and sample tickets) is planned for milestone G1-M2.
+Credentials in the Compose file are development-only defaults; override them with environment variables or a local `.env` file (never commit it). Compose allows the public development signing key (`ESMBLER_ALLOW_DEV_KEY`, default `true`); outside local development set `ESMBLER_SIGNING_KEY` to a secret and `ESMBLER_ALLOW_DEV_KEY=false`. The first start seeds two demo workspaces, `acme` and `globex` (each with `prod` and `sandbox` environments, users and sample tickets); sign in as `alex@acme.example`. The demo users and their password are listed in the [Gate 1 test guide](docs/testing/gate-1-test-guide.md).
 
-The AI assistant (planned for Gate 1) works without an API key, using a deterministic scripted planner. To use Claude, set `ANTHROPIC_API_KEY` in `.env`.
+The AI builder works without an API key, using a deterministic scripted planner. To use Claude, set `ANTHROPIC_API_KEY` in `.env`.
 
 ## Development
 
@@ -49,7 +49,7 @@ Requirements: the .NET 10 SDK (see `global.json`), Node.js 24 with npm, and Dock
 dotnet build Esmbler.slnx                              # analyzers are errors
 dotnet test tests/Esmbler.UnitTests                    # unit
 dotnet test tests/Esmbler.ArchitectureTests            # module boundary checks
-dotnet test tests/Esmbler.IntegrationTests             # real PostgreSQL via Testcontainers (needs Docker)
+dotnet test tests/Esmbler.IntegrationTests             # real PostgreSQL via Testcontainers (needs Docker); includes the AI evaluation cases
 dotnet format Esmbler.slnx --verify-no-changes         # format check
 dotnet run --project apps/Esmbler.Api -- migrate       # apply migrations (needs Esmbler__Database__Migrator)
 
@@ -57,6 +57,9 @@ dotnet run --project apps/Esmbler.Api -- migrate       # apply migrations (needs
 cd apps/web
 npm ci
 npx ng build && npx ng test --watch=false
+
+# Acceptance (Playwright), against the running Compose stack
+cd tests/e2e && npm ci && npx playwright test
 
 # Docs and generated references
 node tools/check-links.mjs
@@ -70,11 +73,12 @@ dotnet run --project tools/Esmbler.DocGen              # regenerates docs/refere
 | `packages/Esmbler.Sdk` | Public SDK: spec model, overlay operations, element registry, module and event contracts |
 | `packages/Esmbler.Expressions` | CEL-subset rule expression language |
 | `packages/Esmbler.Kernel` | Kernel logic: configuration compiler, request context, record write pipeline, policy decision point |
-| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (SQL migrations, RLS unit of work), OpenFGA adapter, query compiler |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (SQL migrations, RLS unit of work), OpenFGA adapter, query compiler, record, draft, publish and upgrade services, outbox and jobs |
 | `packages/Esmbler.Platform`, `packages/Esmbler.Hosting` | Shared platform services (workflow, assignment, rules hooks); composition root |
+| `packages/Esmbler.Assistant` | AI builder planners (Claude and scripted) that act only through the MCP server |
 | `modules/tickets` | Default Tickets module (declarative releases) |
 | `apps/Esmbler.Api`, `apps/Esmbler.Mcp`, `apps/Esmbler.Worker`, `apps/web` | Deployable hosts and the Angular app |
-| `tests/` | Unit, architecture and integration tests; Playwright end-to-end tests (planned) |
+| `tests/` | Unit, architecture and integration tests; Playwright acceptance tests (`tests/e2e`); AI evaluation cases (`tests/ai-evals`) |
 | `deploy/` | Docker Compose, Dockerfiles, PostgreSQL role setup |
 | `tools/` | Reference generator (`Esmbler.DocGen`) and docs link check |
 | `spikes/` | Throwaway Gate 0 spike code with results |

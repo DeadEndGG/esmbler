@@ -30,8 +30,8 @@ Toolchain: .NET SDK 10.0.4xx (`global.json`), Node 24, Docker. Run from the repo
 | Build (analyzers are errors) | `dotnet build Esmbler.slnx` |
 | Unit tests | `dotnet test tests/Esmbler.UnitTests` |
 | Architecture/boundary check | `dotnet test tests/Esmbler.ArchitectureTests` |
-| Integration tests (Docker: Postgres 18, OpenFGA) | `dotnet test tests/Esmbler.IntegrationTests` |
-| Acceptance (Playwright; system must be running) | `cd tests/e2e && npx playwright test` |
+| Integration tests (Docker for Testcontainers Postgres 18; authz graph is in-memory) | `dotnet test tests/Esmbler.IntegrationTests` |
+| Acceptance (Playwright against the Compose stack on :8080, or `ESMBLER_WEB_URL`) | `cd tests/e2e && npm ci && npx playwright test` |
 | Format/lint (.NET) | `dotnet format Esmbler.slnx --verify-no-changes` |
 | Frontend typecheck + build / unit tests | `cd apps/web && npx ng build && npx ng test --watch=false` |
 | Migrate | applied automatically at API startup as `esmbler_migrator`; manual: `dotnet run --project apps/Esmbler.Api -- migrate` |

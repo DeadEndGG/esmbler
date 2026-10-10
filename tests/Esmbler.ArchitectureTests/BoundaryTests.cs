@@ -61,6 +61,17 @@ public class BoundaryTests
     }
 
     [Fact]
+    public void Only_the_assistant_calls_the_model_provider()
+    {
+        // ADR 0013: one adapter owns the Anthropic dependency; everything else reaches the model only through it.
+        foreach (var assembly in new[] { "Esmbler.Kernel", "Esmbler.Kernel.Infrastructure", "Esmbler.Platform", "Esmbler.Hosting", "Esmbler.Mcp", "Esmbler.Sdk" })
+        {
+            var result = Types.InAssembly(Assembly.Load(assembly)).ShouldNot().HaveDependencyOn("Anthropic").GetResult();
+            Assert.True(result.IsSuccessful, $"{assembly}: {string.Join(", ", result.FailingTypeNames ?? [])}");
+        }
+    }
+
+    [Fact]
     public void Platform_does_not_depend_on_modules_or_infrastructure()
     {
         var result = Types.InAssembly(Assembly.Load("Esmbler.Platform"))

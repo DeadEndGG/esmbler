@@ -33,7 +33,7 @@ The schema sets `additionalProperties: false`, so unknown keys are rejected. Req
 | `id` | string matching `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` | yes | Stable element ID, for example `layout.card`, `field.short_text`, `spec_object.entity`. Node specs use it as `type`. Never renamed |
 | `version` | semver `x.y.z` | yes | Element contract version. A breaking props change needs a major bump and a renderer compatibility check |
 | `category` | enum | yes | `spec_object`, `layout`, `field_type`, `field`, `display`, `collection`, `activity`, `action`, `feedback` |
-| `gate` | integer 1–5 | yes | Delivery gate that introduced the element. Planned for Gate 1: the compiler rejects elements from a gate later than the running platform |
+| `gate` | integer 1–5 | yes | Delivery gate that introduced the element. Not enforced yet: the compiler does not reject elements from a gate later than the running platform |
 | `label` | string | yes | Human name shown in the slash menu, palette and builder |
 | `description` | string, at least 20 chars | yes | What the element is and when to use it, **written for an LLM**. The first sentence is the one-line summary |
 | `usage` | string[] | no | Do-guidance for the AI builder ("Give every card a short noun-phrase title") |
@@ -53,7 +53,7 @@ The schema sets `additionalProperties: false`, so unknown keys are rejected. Req
 | `accessibility.keyboard` | string | yes | Keyboard behavior ([REQ-DS-003](../spec/traceability.md)) |
 | `accessibility.notes` | string | no | Accessible name source, live-region behavior, focus management |
 | `responsive` | string | no | Behavior at tablet and mobile widths (stacking, collapse below 720 px) |
-| `examples` | array, at least 1, of `{description, spec}` | yes | Complete, valid specs that the AI can copy. Planned for Gate 1: a unit test compiles every example |
+| `examples` | array, at least 1, of `{description, spec}` | yes | Complete, valid specs that the AI can copy. Not enforced yet: no test compiles every example |
 
 ### Example (abridged)
 
@@ -198,7 +198,7 @@ Every error carries `code`, `message`, `target` and `suggestion` so the AI can s
 
 ## Adding an element
 
-A how-to guide (`docs/how-to/add-an-element.md`, planned for Gate 1) will cover the steps. In summary:
+A how-to guide (`docs/how-to/add-an-element.md`) is planned but not written yet. In summary:
 
 1. Add `Registry/Elements/<id>.json` with the current gate.
 2. Add the Angular component and register it in the renderer map.

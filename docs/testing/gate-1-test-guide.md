@@ -130,8 +130,8 @@ Run from the repository root.
 | Suite | Command | Result at `gate-1-complete` |
 |---|---|---|
 | Unit | `dotnet test tests/Esmbler.UnitTests` | 121 passed |
-| Architecture | `dotnet test tests/Esmbler.ArchitectureTests` | 6 passed (includes "assistant changes workspaces only through MCP") |
-| Integration (Testcontainers, needs Docker) | `dotnet test tests/Esmbler.IntegrationTests` | 111 passed (includes the 43 evaluation cases and the 100k-ticket benchmark) |
+| Architecture | `dotnet test tests/Esmbler.ArchitectureTests` | 7 passed (includes "assistant changes workspaces only through MCP" and "only the assistant calls the model provider") |
+| Integration (Testcontainers, needs Docker) | `dotnet test tests/Esmbler.IntegrationTests` | 112 passed (includes the 43 evaluation cases and the 100k-ticket benchmark) |
 | Frontend | `cd apps/web && npx ng test --watch=false` | 84 passed (expression evaluator conformance) |
 | Browser acceptance (stack running) | `cd tests/e2e && npm ci && npx playwright test` | 9 passed on a clean stack |
 

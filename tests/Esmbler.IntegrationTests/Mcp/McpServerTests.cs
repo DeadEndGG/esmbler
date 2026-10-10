@@ -100,6 +100,19 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     }
 
     [Fact]
+    public async Task No_tool_takes_tenant_environment_or_principal_arguments()
+    {
+        // Context comes only from the validated token (.claude/rules/mcp-tools.md, threat model T-20).
+        var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
+        await using var client = await Mcp.ConnectAsync(token);
+        foreach (var tool in await client.ListToolsAsync())
+        {
+            var properties = tool.JsonSchema.TryGetProperty("properties", out var p) ? p.EnumerateObject().Select(x => x.Name.ToLowerInvariant()).ToList() : [];
+            Assert.DoesNotContain(properties, n => n.Contains("tenant", StringComparison.Ordinal) || n.Contains("environment", StringComparison.Ordinal) || n == "principal_id" || n == "user_id" || n == "actor");
+        }
+    }
+
+    [Fact]
     public async Task Api_tokens_are_rejected_by_the_mcp_server()
     {
         var api = await Api.SignInAsync("alex@acme.example", "acme");

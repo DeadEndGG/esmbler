@@ -138,7 +138,7 @@ It also produces an explanation ("why can X see this?", REQ-AUTHZ-009). Package 
 
 - **Record attributes are never stored as tuples.** The record row is the source of truth.
 - **Lists are compiled into a SQL predicate** (`QueryCompiler.PermissionPredicate`): read scope `all` becomes `true`; scope `related` becomes one clause per entity access field (`data->>'requester' = <principal>`, `data->>'assignment_group' = ANY(<groups>)`). The predicate is part of `WHERE`, so it applies before ordering, paging and counting.
-- **A conformance test** comparing the SQL predicate with `EffectivePermissions` and the in-memory fake (`InMemoryRelationshipGraph`) with OpenFGA is planned (G1-M3).
+- **Not built yet:** a conformance test comparing the SQL predicate with `EffectivePermissions`, and the in-memory fake (`InMemoryRelationshipGraph`) with OpenFGA. Today `Records.RecordServiceTests.Requester_sees_only_related_tickets_and_no_hidden_fields` and `Records.QueryBenchmarkTests.List_queries_meet_the_latency_budget_at_100k_tickets` cover the predicate's behavior and cost.
 
 ### Tenancy and system of record
 
@@ -147,14 +147,19 @@ It also produces an explanation ("why can X see this?", REQ-AUTHZ-009). Package 
 
 ### Writes, consistency and revocation
 
-- **Reads use `HIGHER_CONSISTENCY`** (`ListObjects` for facts, `Check` for record relations), so a revocation applies to the next request. There is no check cache in Gate 1.
-- **Writes** use `TransactionOptions { Disable = true, MaxPerChunk = 100 }` and ignore duplicate writes and missing deletes, so replays are idempotent.
-- Planned (G1-M2, G1-M17): the membership writer (revocations written to the graph before the database change commits; grants after commit, with retry through the outbox), a per-tenant `authz_revision` for cache keys, and a nightly reconciliation job that diffs the kernel tables against the store.
+- **Reads use `HIGHER_CONSISTENCY`** (`ListObjects` for facts, `Check` for record relations).
+- **Facts cache:** `AuthzFactsCache` (`packages/Esmbler.Kernel.Infrastructure/Identity/AccessService.cs`) keeps a principal's roles and groups per (tenant, principal, `authz_revision`) for 5 seconds. Every insert, update or delete on `kernel.memberships`, `kernel.group_members` or `kernel.role_assignments` bumps `kernel.tenants.authz_revision` in the same transaction (trigger `bump_authz_revision`, migration `0003_authz_revision.sql`), so the next request after a revocation never reuses older facts; the 5-second lifetime bounds staleness while the graph and the identity tables are written in two steps.
+- **Fresh reads:** publish, rollback, module upgrades and permission administration (roles, group members, agent disable) bypass the cache (`AccessService.ForAsync(..., fresh: true)`), so a revocation applies to them immediately.
+- **Every request** also re-checks tenant membership and, for agents, that the agent principal is enabled and acts for the calling user.
+- **Jobs are re-authorized** when they run (`JobRunner`), with fresh facts for the user who queued them; a job whose owner lost the right fails closed without retrying.
+- **Writes** use `TransactionOptions { Disable = true, MaxPerChunk = 100 }` and ignore duplicate writes and missing deletes, so replays are idempotent. Revocations (role revoke, group member removal) are written to the graph before the database change commits, so a failed commit loses access rather than keeping it; grants are written after commit.
+- **Not built yet:** retry of failed grant writes through the outbox and a scheduled reconciliation job. `IdentityService.RebuildGraphAsync` rebuilds a tenant's store from the kernel tables but is not yet exposed or scheduled.
+- Verification: `Identity.RevocationTests` (`Removing_group_membership_applies_to_the_next_request_despite_cached_facts`, `Revoked_role_blocks_publish_immediately`, `Queued_job_is_reauthorized_and_fails_closed_when_its_owner_lost_the_right`, `Agent_session_is_cut_off_at_its_next_tool_call`).
 
 ### Failure handling and testing
 
 - **The adapter fails closed.** Each call has a deadline (`OpenFgaOptions.TimeoutMs`, default 2,000 ms) and at most one retry. Any error becomes `AuthorizationUnavailableException` (`authorization_unavailable`, HTTP 503), and callers deny. A tenant without a store is denied the same way.
-- **The port is `IRelationshipGraph`** (`GetFactsAsync`, `IsRelatedAsync`, `WriteAsync`, `EnsureTenantAsync`). Unit tests use `InMemoryRelationshipGraph`; integration tests run OpenFGA in Testcontainers (planned with G1-M2). The OpenFGA adapter is the only code that references `OpenFga.Sdk`, enforced by an architecture test.
+- **The port is `IRelationshipGraph`** (`GetFactsAsync`, `IsRelatedAsync`, `WriteAsync`, `EnsureTenantAsync`). Unit and integration tests use `InMemoryRelationshipGraph` (integration tests run only PostgreSQL in Testcontainers); the OpenFGA adapter runs in the Docker Compose stack, which the Playwright suite exercises. An integration test against a real OpenFGA container is not built yet. The OpenFGA adapter is the only code that references `OpenFga.Sdk`, enforced by an architecture test.
 - **SDK usage is pinned to `OpenFga.Sdk` 0.10.4:** store and model are passed in the per-request options, and the `HttpClient` has an explicit timeout.
 
 ## Revisit triggers

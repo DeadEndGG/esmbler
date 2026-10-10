@@ -33,7 +33,7 @@ flowchart BT
 
 1. **Base.** Clone every module release, ordered by module ID, into one catalog. Record each element's provenance (`core.tickets@1.0.0`) and the lockfile entry `{id, version, specHash}`.
 2. **Packages** (Gate 3). Composed the same way in lockfile order, with the publisher namespace `<publisher>.<module>.*` and `<publisher>__` field keys.
-3. **Overlay.** Apply ops in order. Each op targets stable IDs, never array positions or labels ([REQ-CFG-002](../spec/traceability.md)), and yields an outcome: `applied`, `redundant`, `conflict` or `failed`.
+3. **Overlay.** Apply ops in order. Each op targets stable IDs, never array positions or labels ([REQ-CFG-002](../spec/traceability.md)), and yields an outcome: `applied`, `redundant`, `conflict`, `failed` or `reset` (undone by a later `element.reset`).
 4. **Validate.** `ConfigValidator` checks types, references, registry containment and props, expression types and cost, rule cycles, and contradictions such as required plus hidden without a default ([REQ-CFG-005](../spec/traceability.md)). `DependencyGraph` links fields, rules, nodes, workflows and permission sets ([REQ-CFG-004](../spec/traceability.md)).
 5. **Manifest.** `ConfigCompiler` produces the `ArtifactManifest` ([REQ-CFG-006](../spec/traceability.md)): `contentHash` (SHA-256 over canonical JSON with sorted keys, excluding provenance), lockfile, `overlayHash`, renderer `esmbler-renderer@^1.0`, SDK, warnings, permission impact and required migrations.
 
@@ -51,11 +51,12 @@ Defined in `packages/Esmbler.Sdk/Overlay/OverlayOps.cs`. The JSON is camelCase, 
 | `rule.add`, `rule.update`, `rule.remove` | Tenant rules (`tenant__` ID); `expectedHash` detects base drift | Base rules: enable or disable only |
 | `node.insert`, `node.update`, `node.move`, `node.remove` | Layout edits with `anchor` `{before, after, position}`; `expected` props | Base nodes are hidden, not deleted |
 | `permission.field_access` | Set a field's access in a permission set | Needs `permissions.admin` in addition to `config.publish` |
+| `element.reset` | Reset one element to its default: every earlier op that targets it (or its children) stops applying, with status `reset` | Yes; on a tenant element it removes the element |
 
 ## Provenance and customized markers
 
 - `EffectiveConfig.Provenance` maps every element key (`entity/field`, rule ID, node ID, …) to the layer that produced it: `core.tickets@1.0.0` or `tenant`. A base element changed by an overlay keeps its base provenance, so "reset to default" knows there is a default to return to.
-- `EffectiveConfig.Customized` lists every key the tenant added or changed. The builder shows "Modified" badges from it, and the AI answers "what have we customized in Tickets?" from it (MCP `get_customizations`, planned for G1-M9) ([REQ-CFG-011](../spec/traceability.md)).
+- `EffectiveConfig.Customized` lists every key the tenant added or changed. The builder shows "Modified" badges from it, and the AI answers "what have we customized in Tickets?" from it (MCP `get_customizations`, API `GET /api/config/customizations`) ([REQ-CFG-011](../spec/traceability.md)).
 - Compare with default: compile the same base with an empty overlay and diff the element.
 
 ## Worked example: tenant A customizes Tickets
@@ -245,12 +246,15 @@ flowchart TD
 
 ## Reset to default
 
-A tenant can reset one field, rule, page or the whole module ([REQ-CFG-011](../spec/traceability.md)).
+A tenant can reset one customized element (a field, choice list, rule or page node) to its default ([REQ-CFG-011](../spec/traceability.md)). Resetting a whole page or module at once is not offered yet; reset each listed customization instead.
 
-1. **Select ops.** The builder finds the overlay ops whose targets include the selection. For a page, that is every node under the view; for a module, every op targeting its IDs.
-2. **Preview impact.** The dependency graph shows the impact before anything changes. For example, resetting the Justification field also removes `tenant__access_needs_justification` and `tenant__n_justification_field`, which depend on it.
-3. **Draft the reset.** The reset lands in the draft as Commands that drop or neutralize those ops. It is reviewed and published like any other change.
-4. **Keep the data.** Reset changes configuration only. Values stored under `tenant__justification` stay in `kernel.records` until a separate, authorized data purge.
+1. **List customizations.** `GET /api/config/customizations` (the configuration admin page) and the MCP tool `get_customizations` list every customized key, described in plain words and marked `added` (tenant element) or `changed` (base element with an overlay).
+2. **Draft the reset.** The builder, or the AI through `reset_to_default`, appends one typed op, `element.reset` with the element key as `target`. During composition every earlier op that targets that key or its children gets the status `reset` and stops applying; a reset with nothing to undo is `redundant`.
+3. **Preview impact.** Because the reset is a draft step, validation shows what depended on the customization. For example, resetting the tenant field `tenant__justification` removes it, so `tenant__access_needs_justification` and the page node that shows it appear as validation errors until they are reset or removed too. The step is undoable like any other.
+4. **Publish.** The reset is reviewed and published like any other change.
+5. **Keep the data.** Reset changes configuration only. Values stored under `tenant__justification` stay in `kernel.records` until a separate, authorized data purge.
+
+Covered by unit tests `Configuration.OverlayTests.Reset_restores_the_default_definition_of_a_customized_base_field`, `Resetting_a_tenant_field_shows_its_dependents_as_impact`, `Resetting_an_element_without_customizations_is_redundant`, and integration tests `Configuration.ResetToDefaultTests`.
 
 ## Related documents
 

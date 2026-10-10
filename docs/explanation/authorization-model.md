@@ -57,7 +57,8 @@ sequenceDiagram
     participant F as OpenFGA store<br/>(tenant)
     participant P as EffectivePermissions (PDP)
     S->>A: ForAsync(request context, pinned config)
-    A->>F: ListObjects(user, assignee, role) and<br/>ListObjects(user, member, group), HIGHER_CONSISTENCY
+    A->>A: membership and agent checks; read authz_revision
+    A->>F: ListObjects(user, assignee, role) and<br/>ListObjects(user, member, group), HIGHER_CONSISTENCY<br/>(skipped on an AuthzFactsCache hit for this revision)
     F-->>A: roles and transitive groups (AuthorizationFacts)
     A->>P: facts + permission sets of the pinned config + agent scopes
     S->>P: CanRead / CanUpdate / FieldAccess / Can(action)
@@ -109,60 +110,46 @@ LIMIT 50;
 -- RLS adds tenant_id / environment_id from set_config('app.tenant_id', ..., true)
 ```
 
-The spike's conformance run found 0 mismatches across 10,656 cases between engine `Check` and the compiled SQL predicate. A CI conformance test between `PermissionPredicate` and `EffectivePermissions.CanRead` is planned (G1-M3). Caching compiled list filters by `(store, principal, authz_revision)` is planned (G1-M17).
+The spike's conformance run found 0 mismatches across 10,656 cases between engine `Check` and the compiled SQL predicate. A CI conformance test between `PermissionPredicate` and `EffectivePermissions.CanRead` is not built yet; `Records.RecordServiceTests.Requester_sees_only_related_tickets_and_no_hidden_fields` covers the behavior, and `Records.QueryBenchmarkTests.List_queries_meet_the_latency_budget_at_100k_tickets` the cost with the predicate in SQL. Compiled list filters are not cached; the principal's facts are (below).
 
 ## Revocation and failure
 
 | Surface | Behavior | Bound |
 | --- | --- | --- |
-| Interactive request | Facts are read with `HIGHER_CONSISTENCY` on every request; no check cache in Gate 1 (a cache with TTL ≤ 10 s for non-sensitive checks is a later option) | Next request |
-| Cached list filter (planned, G1-M17) | Keyed by `authz_revision`, which is bumped on every membership or role change; safety TTL 30 s | Next request after the bump |
+| Interactive request | Roles and groups come from `AuthzFactsCache`, keyed by (tenant, principal, `authz_revision`) with a 5 s lifetime. A trigger bumps `authz_revision` on every membership, group-member or role-assignment change, in the same transaction | Next request after the change commits; at most 5 s while the graph write and the database write land in two steps |
+| Sensitive action (publish, rollback, module upgrade, permission administration) | Facts read fresh from the graph (`HIGHER_CONSISTENCY`), bypassing the cache | Immediately |
 | Queued job | Re-authorized as its principal at execution time, never at enqueue time | At execution |
 | AI session | Every tool call re-checks the user and agent; disabling the agent principal or revoking the token stops it | Next tool call |
-| Engine unavailable | Deny, audited `authorization_unavailable`, metric; lists return nothing; never a cached allow for sensitive actions | Fail closed |
+| Engine unavailable | Deny with `authorization_unavailable` (HTTP 503); lists return nothing; sensitive actions never use cached facts | Fail closed |
 
-Planned (G1-M2): membership changes commit in PostgreSQL and reach OpenFGA through an outbox writer; revocations are written to OpenFGA before the database change commits. A nightly job reconciles PostgreSQL with OpenFGA ([REQ-AUTHZ-006](../spec/traceability.md)). Acceptance scenario REQ-ACC-07 tests all four surfaces.
+Revocations (role revoke, group member removal) are written to OpenFGA before the database change commits, so a failure loses access rather than keeping it; grants are written after commit. Retrying failed grant writes through the outbox and a scheduled reconciliation of PostgreSQL with OpenFGA are not built yet; `IdentityService.RebuildGraphAsync` can rebuild a tenant's store from the kernel tables ([REQ-AUTHZ-006](../spec/traceability.md)). Acceptance scenario REQ-ACC-07 is covered by `Identity.RevocationTests` (next request despite cached facts, publish, queued job, agent session).
+
+## People, groups and administration endpoints
+
+- `GET /api/directory/people` and `GET /api/directory/groups` serve the user and group pickers to any member of the workspace. They return only IDs and display names (groups also their key): no emails, roles or memberships.
+- `GET /api/admin/members`, `/api/admin/groups` and `/api/admin/roles` (emails, role assignments, group membership) and every `/api/admin/*` write require `permissions.admin`, checked with fresh facts. Role and group targets must belong to the current tenant.
+- Verification: `Api.SecurityHardeningTests.Member_directory_and_publish_requests_are_scoped`, `Api.SecurityHardeningTests.Role_targets_must_belong_to_the_tenant`.
 
 ## Explain access
 
-`EffectivePermissions.Explain` lists the roles (with how each was obtained), permission sets and relations behind a decision. Planned (G1-M3, G1-M9): `GET /api/access/explain?subject=user:maria&record={id}&action=read` and the MCP tool `explain_access` return the decision trace ([REQ-AUTHZ-009](../spec/traceability.md)). The explanation is itself authorized: it requires `permissions.admin`, or the subject asking about themselves, plus `records:read` scope for agents ([ADR 0007](../adr/0007-mcp-server-design.md)). It never reveals hidden field values.
+`EffectivePermissions.Explain` lists the roles (with how each was obtained), the permission sets that grant access, the record relations and, for agents, the scope limit behind a decision. `GET /api/access/explain?entity=…&record=…&principal=…&field=…` (`AccessExplainer`) and the MCP tool `explain_access` return it ([REQ-AUTHZ-009](../spec/traceability.md)). The explanation is itself authorized: explaining someone else's access requires `permissions.admin` or `audit.read`, and agents need the `access:explain` scope ([ADR 0007](../adr/0007-mcp-server-design.md)). It never returns record values, only the decision and its reasons.
 
 ```json
 {
-  "subject": { "type": "user", "id": "user:maria", "name": "Maria Lopez" },
-  "agent": null,
-  "record": { "entity": "core.tickets.ticket", "id": "6f1c2a9e-3c55-4c1e-9a43-0f1d2b7c8e11", "number": "TCK-000231" },
-  "action": "read",
-  "decision": "allow",
-  "configRevision": 14,
-  "authzRevision": 982,
-  "evaluatedAt": "2026-10-10T09:42:17Z",
-  "summary": "Maria can see TCK-000231 because she is in the Network group, which owns the ticket, and Agents can read all tickets.",
-  "paths": [
-    {
-      "level": "entity",
-      "result": "allow",
-      "grant": { "permissionSet": "core.tickets.ps_agent", "via": "role core.tickets.agent assigned to group network", "read": "all" }
-    },
-    {
-      "level": "record",
-      "result": "allow",
-      "relation": "owner_group",
-      "chain": ["user:maria", "member of group:network_oncall", "member of group:network", "owner_group of ticket"]
-    }
-  ],
-  "fields": {
-    "hidden": [],
-    "readOnly": ["number", "status", "resolved_at", "created_at", "updated_at"],
-    "note": "Read-only by field definition or workflow, not by permission."
-  },
-  "notGranted": [
-    { "action": "delete", "reason": "No permission set grants delete on Ticket to Maria's roles.", "suggestion": "Tickets admins can delete; ask a tenant admin to assign that role." }
+  "principal": "3d0e7c51-…", "principalName": "Maria Lopez",
+  "entity": "core.tickets.ticket", "record": "6f1c2a9e-3c55-4c1e-9a43-0f1d2b7c8e11",
+  "canRead": true, "canUpdate": true, "fieldAccess": null,
+  "reasons": [
+    { "kind": "role", "text": "Has role Agent (via group Network)." },
+    { "kind": "permission_set", "text": "Permission set Agents grants Tickets: create yes, read all, update all, delete no." },
+    { "kind": "relationship", "text": "Is related to this record as Assignment group (member of that group)." },
+    { "kind": "decision", "text": "Can see this record." },
+    { "kind": "decision", "text": "Can edit this record (update scope: all)." }
   ]
 }
 ```
 
-A denial uses the same shape with `"decision": "deny"` and the first failing check. A deny caused by engine unavailability says so explicitly and is never presented as a policy result.
+Other reason kinds are `field` (when a field is asked about), `agent` (the scope limit for an agent caller) and `membership` (not a member of the workspace). A deny caused by engine unavailability is an `authorization_unavailable` error (HTTP 503), never presented as a policy result.
 
 ## Related documents
 

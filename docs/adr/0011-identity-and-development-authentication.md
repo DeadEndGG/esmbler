@@ -27,7 +27,7 @@ Gate 1 needs real authentication so isolation and authorization tests mean somet
 
 ## Decision outcome
 
-**Chosen option 1.** Status: tokens, login, tenant switching and agent tokens are planned for G1-M2. The identity tables below exist in `0001_kernel.sql`; refresh-token storage and the agent's allowed scopes need a later migration.
+**Chosen option 1.** Status: implemented (G1-M2, hardened after the Gate 1 security review). Token issuing is `packages/Esmbler.Hosting/Auth/TokenService.cs`; endpoints are `apps/Esmbler.Api/Endpoints/AuthEndpoints.cs`; identity data lives in `0001_kernel.sql`, refresh tokens in `0002_refresh_tokens.sql` and `0004_refresh_session_cap.sql`.
 
 ### Data model
 
@@ -40,43 +40,51 @@ Groups and role assignments are tenant-wide; configuration and records are per e
 
 ### Tokens
 
-JWT access tokens, 15 minutes, signed with a key from configuration (`Esmbler:Auth:SigningKey`, environment variable `Esmbler__Auth__SigningKey`; Docker Compose supplies a development-only default, the production key is a [human action](../human-actions.md)). Refresh tokens are opaque, stored hashed, rotated on use, 8-hour lifetime.
+JWT access tokens (HMAC-SHA256), 15 minutes (`Esmbler:Auth:AccessTokenMinutes`), signed with `Esmbler:Auth:SigningKey` (environment variable `Esmbler__Auth__SigningKey`, at least 32 bytes). Docker Compose supplies a public development-only key starting with `dev-only`; every host refuses to start with it unless `Esmbler:Auth:AllowDevelopmentKey=true` (Compose sets it for local use). The production key is a [human action](../human-actions.md).
 
-API token after selecting tenant `acme`, environment `sandbox`:
+API token after selecting a workspace:
 
 ```json
 {
   "iss": "esmbler", "aud": "esmbler-api",
-  "sub": "user:6a0f…", "name": "Alex",
-  "tid": "tenant:6f1c…", "eid": "env:a7d2…", "ten": "acme", "env": "sandbox",
-  "authz_rev": 42,
+  "sub": "6a0f…", "name": "Alex",
+  "tid": "6f1c…", "eid": "a7d2…",
   "jti": "0192f2…", "iat": 1791640000, "exp": 1791640900
 }
 ```
 
-Agent token for MCP (minted by the API, see [ADR 0007](0007-mcp-server-design.md)):
+Agent token for MCP (minted by the API for the in-app assistant or through `POST /api/auth/agent-token`, see [ADR 0007](0007-mcp-server-design.md)), 30 minutes (`Esmbler:Auth:AgentTokenMinutes`):
 
 ```json
 {
   "iss": "esmbler", "aud": "esmbler-mcp",
-  "sub": "user:6a0f…", "tid": "tenant:6f1c…", "eid": "env:a7d2…",
-  "act": { "sub": "agent:assistant-alex" },
-  "scp": "config:read config:edit config:publish:request records:read",
+  "sub": "6a0f…", "name": "Alex", "tid": "6f1c…", "eid": "a7d2…",
+  "act": "9b3e…",
+  "scp": "config:read config:edit config:publish:request access:explain",
   "jti": "0192f3…", "iat": 1791640000, "exp": 1791641800
 }
 ```
 
-Permissions are not in tokens; the PDP evaluates them per request, so a role change applies at the next request. `authz_rev` is informational (cache key hint).
+`act` is the agent principal (one per user per tenant, created on first use). Scopes must come from `AgentScopes.All` (`config:read`, `config:edit`, `config:publish:request`, `records:read`, `records:write`, `access:explain`); the default (`AgentScopes.Builder`) has no record access (threat model T-23). The agent's effective rights are the user's permissions intersected with these scopes, evaluated per call. Permissions are not in tokens; the PDP evaluates them per request, so a role change applies at the next request ([ADR 0004](0004-authorization-engine.md)).
+
+### Refresh tokens and sign-in protection
+
+- Refresh tokens are 256-bit random values, stored as hashes in `kernel.refresh_tokens` (RLS: owner only; looked up by hash through `kernel.refresh_lookup`). They travel only in the `esmbler_refresh` cookie: `HttpOnly`, `SameSite=Strict`, `Path=/api/auth`, `Secure` by default (`Esmbler:Auth:SecureCookies`, true unless turned off), 8-hour lifetime.
+- `/api/auth/refresh` and `/api/auth/logout` require the `X-Esmbler-Csrf` header (a custom header cannot be sent cross-site without a CORS preflight, which the API never grants).
+- Rotation claims the old token atomically: of two concurrent redemptions only one gets a successor; the other, like any reuse of a rotated token, revokes all of that principal's refresh tokens. A session ends 24 hours after sign-in whatever the rotations (`session_started_at`). Refresh refuses disabled accounts and workspaces the person no longer belongs to.
+- Sign-in is rate-limited per client address (`Esmbler:Auth:LoginAttemptsPerMinute`, default 30; refresh allows ten times that), and an account is locked for 15 minutes after 8 failed passwords (`Esmbler:Auth:FailedLoginsPerAccount`) from any address.
+- The API honors `X-Forwarded-For`/`X-Forwarded-Proto` only when `Esmbler:Auth:TrustForwardedHeaders` is true (Compose sets it, because browsers reach the API through the web container's nginx).
 
 ### Endpoints
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/auth/login` | email + password → token with no tenant (`tid` absent) and the list of memberships |
-| `POST /api/auth/switch` | `{tenant, environment}` → new token after membership and environment checks; audited |
-| `POST /api/auth/refresh` | rotate refresh token; re-checks membership and disabled flags |
-| `POST /api/auth/agent-token` | `{scopes, ttlMinutes ≤ 30}` → `esmbler-mcp` token; scopes must be a subset of the agent's `allowed_scopes` |
-| `POST /api/agents/{id}/disable` | kill switch: disables the agent principal; MCP rejects its tokens at the next call |
+| `POST /api/auth/login` | email + password → token with no tenant (`tid` absent), the refresh cookie and the list of workspaces |
+| `POST /api/auth/switch` | `{tenant, environment?}` → new token after membership and environment checks (agents refused) |
+| `POST /api/auth/refresh` | rotate the refresh cookie; re-checks disabled flag and membership |
+| `POST /api/auth/logout` | revoke the refresh token and clear the cookie |
+| `POST /api/auth/agent-token` | `{scopes?}` → `esmbler-mcp` token for the caller's agent in the current workspace (agents refused) |
+| `POST /api/admin/agents/{agentId}/disable` | kill switch (the agent's own user, or anyone with `permissions.admin`): disables the agent principal; MCP rejects its next call |
 
 ### Tenant switch flow
 
@@ -89,8 +97,7 @@ sequenceDiagram
     A-->>U: token (no tid) + memberships [acme: prod, sandbox; globex: sandbox]
     U->>A: POST /api/auth/switch {tenant: acme, environment: sandbox}
     A->>DB: membership(alex, acme) active? environment belongs to acme?
-    A->>DB: INSERT audit (tenant.switch)
-    A-->>U: token tid=acme, eid=sandbox (15 min)
+    A-->>U: token tid=acme, eid=sandbox (15 min) + refresh cookie bound to them
     Note over U,A: Every request uses tid/eid from the token only. A record ID from another tenant is simply not found (RLS).
 ```
 
@@ -99,7 +106,8 @@ A token without `tid` can only call login, switch, refresh and profile endpoints
 ### Consequences
 
 - Good: no external IdP to run in Gate 1; the principal model already separates identity from membership for Gate 2 federation.
-- Good: the token states exactly one tenant/environment; switching produces an audit row.
+- Good: the token states exactly one tenant/environment.
+- Bad: switching is not yet written to the audit log (the master spec asks for auditable switching).
 - Bad: we issue tokens ourselves; key rotation (`kid` header, two active keys) must be built before production.
 - Bad: local passwords are not acceptable for production tenants; SSO is required before the private pilot goes live (Gate 2).
 
@@ -113,5 +121,5 @@ A token without `tid` can only call login, switch, refresh and profile endpoints
 
 ## More information
 
-- Verification (planned): `Integration.Auth.Switch_to_non_member_tenant_is_forbidden`, `Integration.Auth.Token_without_tid_cannot_read_records`, `Integration.Auth.Disabled_agent_token_rejected_by_mcp`, `Integration.Auth.Agent_scopes_cannot_exceed_allowed_scopes`.
+- Verification: `Api.ApiTests` (`Switching_to_a_tenant_you_do_not_belong_to_is_forbidden`, `Requests_without_a_selected_workspace_are_refused`, `Refresh_rotates_and_detects_reuse`, `Agent_tokens_are_rejected_by_the_api_audience`); `Api.SecurityHardeningTests` (`Sign_in_is_rate_limited_per_address`, `Repeated_wrong_passwords_lock_the_account_temporarily`, `Concurrent_redemption_of_one_refresh_token_yields_at_most_one_successor`, `Builder_delegation_has_no_record_access_by_default`, `Hosts_refuse_the_public_development_signing_key_unless_allowed`); `Mcp.McpServerTests` (`Api_tokens_are_rejected_by_the_mcp_server`, `Disabling_the_agent_stops_its_next_call`, `Scopes_limit_the_agent_and_errors_are_structured`).
 - Revisit triggers: Gate 2 SSO (per-tenant OIDC/SAML/SCIM) — the issuer may become a federation broker or be replaced by an IdP product, via a new ADR.

@@ -29,7 +29,7 @@ Tenants customize first-party modules through overlays, by hand or through the A
 
 ### Overlay operations
 
-An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (15 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`).
+An overlay is an ordered JSON array. Each op has a discriminator `op` and addresses stable IDs. The C# model is [`OverlayOps.cs`](../../packages/Esmbler.Sdk/Overlay/OverlayOps.cs) (16 ops: `field.*`, `choice_list.add`, `choice.*`, `rule.*`, `node.*`, `permission.field_access`, `element.reset`).
 
 ```json
 [
@@ -48,6 +48,7 @@ An overlay is an ordered JSON array. Each op has a discriminator `op` and addres
 - **Anchors**, not positions: `before`/`after` a sibling ID, or `position: start|end`. A missing anchor places the item at the end and emits `overlay.anchor_missing`.
 - **Base is immutable:** base fields and nodes can be hidden or relabeled, never removed (`field.remove`/`node.remove` on base elements hide instead or fail).
 - **Permission-affecting ops** (`AffectsPermissions`, e.g. `permission.field_access`) also need `permissions.admin` ([ADR 0004](0004-authorization-engine.md)).
+- **Reset to default** (`element.reset`, `ResetElement`, REQ-CFG-011): `{ "op": "element.reset", "target": "core.tickets.ticket/category" }` makes every earlier op that touches the target (or its children, such as a choice list's options) stop applying; those ops get the composer status `reset`, and a reset with nothing to undo is `redundant`. Elements the tenant added disappear, so rules or nodes that still use them show up as validation errors in the draft's impact preview. Because it is an op, a reset is a draft step: previewed, undoable, published and audited like any other change. `GET /api/config/customizations` lists what a workspace has customized, and the MCP tool `reset_to_default` appends the op. Covered by `Configuration.ResetToDefaultTests`.
 
 ### Composition and three-way upgrade
 
@@ -69,7 +70,7 @@ Example: Tickets 1.0.0 → 1.1.0 changes `estimated_effort.help` to "Replaced by
     "suggestion": "Keep your value (\"Hours, max one decimal\") or accept the new default (\"Replaced by Effort (hours). Kept read-only for history.\")." }] }
 ```
 
-The upgrade is held until an admin chooses, and the choice becomes a new op with an updated `expected`. Covered by `UpgradeTests.Relabel_conflicts_when_base_changed_the_same_property` and `UpgradeTests.Base_adopting_the_tenant_value_is_compatible`.
+The upgrade is held until an admin chooses, and the choice becomes a new op with an updated `expected`. Covered by unit tests `Configuration.UpgradeTests.Relabel_conflicts_when_base_changed_the_same_property` and `Configuration.UpgradeTests.Base_adopting_the_tenant_value_is_compatible`.
 
 ### Artifact and manifest
 
@@ -88,7 +89,7 @@ The upgrade is held until an admin chooses, and the choice becomes a new op with
 }
 ```
 
-Artifacts are immutable rows in `kernel.config_artifacts (tenant_id, environment_id, revision, content_hash, manifest, config, overlay, status, source, created_by, approved_by, created_at)`; the runtime role cannot delete them. `kernel.active_config (tenant_id, environment_id, revision, previous_revision, activated_at, activated_by)` is the pointer. Both tables exist (migration `0001_kernel.sql`); the draft, publish and activation services that use them are planned (G1-M6, G1-M7).
+Artifacts are immutable rows in `kernel.config_artifacts (tenant_id, environment_id, revision, content_hash, manifest, config, overlay, status, source, created_by, approved_by, created_at)`; the runtime role cannot delete them. `kernel.active_config (tenant_id, environment_id, revision, previous_revision, activated_at, activated_by)` is the pointer. Both tables are in migration `0001_kernel.sql`. `DraftService`, `PublishService`, `ConfigActivator` and `UpgradeService` (`packages/Esmbler.Kernel.Infrastructure/Configuration/`) implement the flow below.
 
 ### Compile/publish state machine
 
@@ -110,14 +111,14 @@ stateDiagram-v2
     active --> [*]
 ```
 
-Approval (`kernel.publish_requests`) records `draft_id`, `draft_version`, `artifact_hash`, `summary`, requester (and agent), `status` (`pending`, `approved`, `rejected`, `stale`) and the decider. Planned for G1-M7: binding the approval also to `expectedPublishedRevision`, the approver's permission fingerprint (`config.publish`, plus `permissions.admin` when `permissionImpact.changed`) and a 24 h expiry. Any difference at activation voids it.
+A publish request (`kernel.publish_requests`, created by `request_publish` or the UI) records `draft_id`, `draft_version`, `artifact_hash`, `summary`, requester (and agent), `status` (`pending`, `approved`, `rejected`, `stale`) and the decider. A person publishes with `POST /api/config/publish` `{artifactHash, expectedRevision}`. At that moment the service recompiles the draft and requires: the same content hash (`409 approval_stale` otherwise), the expected published revision (`409 publish_conflict`), `config.publish` from fresh authorization facts, and `permissions.admin` when `permissionImpact.changed`. Agents are refused. Pending requests for the draft become `approved` (same hash) or `stale`. Not built yet: the 24 h expiry of publish requests ([ASM-027](../decisions/assumptions.md)).
 
 ### Drafts and the command log
 
 - One open draft per tenant environment (Gate 1), enforced by the partial unique index `drafts_one_open` on `kernel.drafts (tenant_id, environment_id) WHERE status = 'open'`. Each edit appends to `kernel.draft_commands (draft_id, seq, op, summary, targets, actor, agent, source, undone, created_at)` and increments `drafts.version`.
 - The draft config = active overlay + non-undone commands in `seq` order, composed on demand.
 - **Undo** step N sets `undone = true` (itself a command, so it bumps the version and is audited); **redo** clears it. If later steps depend on step N (a node shows the field step N added), undo fails with `draft.undo_has_dependents` naming those steps.
-- Every edit carries `expectedDraftVersion`.
+- Every edit carries the expected draft version (`expectedVersion` in the API, `expected_version` in MCP tools).
 
 ### Concurrent edits and publish (REQ-ACC-02)
 
@@ -127,30 +128,36 @@ The AI adds a field at draft version 12 while Alex drags a node in the UI, also 
 HTTP/1.1 409 Conflict
 Content-Type: application/problem+json
 
-{ "type": "https://esmbler.dev/errors/draft_conflict", "title": "The draft changed since you loaded it",
-  "status": 409, "code": "draft_conflict", "expectedDraftVersion": 12, "currentDraftVersion": 13,
-  "diff": [{ "seq": 13, "op": "field.add", "actor": "user:alex", "agent": "agent:assistant-alex",
-             "summary": "Add short text field \"Vendor\" (tenant__vendor) to core.tickets.ticket",
-             "targets": ["core.tickets.ticket/tenant__vendor"] }],
-  "suggestion": "Reload the draft (version 13) and repeat the move; it does not touch the same elements." }
+{ "type": "https://docs.esmbler.dev/errors/draft_conflict",
+  "title": "The draft changed while you were editing (version 12 → 13). Review the latest steps and try again.",
+  "status": 409, "code": "draft_conflict",
+  "suggestion": "Reload the draft and re-apply your change.",
+  "details": { "expectedVersion": 12, "currentVersion": 13,
+               "steps": [{ "seq": 13, "summary": "Add short text field \"Vendor\" (tenant__vendor) to core.tickets.ticket",
+                           "undone": false, "agent": "9b3e…" }] },
+  "traceId": "0HN…" }
 ```
 
-Publish-level conflict: Alex's approved publish request expected published revision 7, but a second admin session activated the Tickets 1.1.0 upgrade as revision 8 first. Activation returns `409 publish_conflict` with `expectedPublishedRevision: 7`, `currentPublishedRevision: 8` and the element-level diff between artifact 7 and 8. The draft is recomposed on revision 8, and a new approval is required.
+Publish-level conflict: Alex publishes expecting published revision 7, but a second admin session activated the Tickets 1.1.0 upgrade as revision 8 first. Activation returns `409 publish_conflict` with `details: { expectedRevision: 7, currentRevision: 8 }`. The draft recomposes on revision 8, and Alex reviews and publishes again (`Configuration.ConfigLifecycleTests.Competing_edits_and_stale_publishes_are_rejected_with_details`).
 
 ### Failed activation and recovery
 
-Publishing revision 9 requires `convert_effort` (text → decimal):
+Publishes and rollbacks activate in one transaction (`ConfigActivator.ActivateAsync`): check the expected revision, insert the artifact, move the `active_config` pointer, write a `config.published` outbox event, then run `ActivationHealthCheck` inside the same transaction. The health check loads the stored artifact back and evaluates every enabled rule on a sample of up to 25 live records per entity. Any problem throws `422 activation_unhealthy`, the transaction rolls back, and the previous revision stays live (`Configuration.ActivationHealthTests`).
 
-1. **Prepare:** JSONB needs no expand DDL. A `kernel.jobs` migration job converts in batches of 200, writing a checkpoint (last record id) per batch. Values that do not parse stay in `estimated_effort` and go to the migration report; they are never dropped.
-2. **Failure:** the worker crashes at 41%. The publish stays `activating`; the pointer still points at revision 8, so users see no change.
-3. **Resume:** the lease expires, the job restarts from its checkpoint; conversion is idempotent (skips records whose `effort_hours` is set).
-4. **Switch:** one transaction updates `active_config` where `revision = 8` (expected) and writes a `config.published` outbox event.
-5. **Health check:** within 60 s every API instance loads revision 9 and compiles rules and views; failure marks the publish `failed`.
-6. **Rollback:** allowed because revision 8 is compatible with the data (only expand/backfill ran). A contract or destructive migration blocks rollback, and the response offers a forward-repair plan instead.
+Module upgrades with data migrations (Tickets 1.0.0 → 1.1.0, `convert_effort` text → decimal) run as an `upgrade.run` job (`UpgradeService`):
+
+1. **Plan:** `POST /api/modules/{module}/upgrade-plan` composes the candidate base under the tenant overlay and reports compatible, redundant and conflicting changes with their impact; conflicts block the upgrade.
+2. **Migrate:** `MigrationExecutor` converts records in checkpointed batches; each batch commits its record updates, audit entries, events and checkpoint together. Values that do not parse stay in the old field and go to the migration report; they are never dropped. The active pointer is untouched, so users see no change.
+3. **Failure:** a failed batch marks the run and the upgrade `failed`; work committed so far is invisible to the old revision (expand phase).
+4. **Resume:** `POST /api/upgrades/{id}/resume` continues from the last checkpoint; conversion is idempotent.
+5. **Switch:** after every migration completes, the activator moves the pointer (with the health check above) and records the new module version.
+6. **Rollback:** `POST /api/config/rollback` restores an earlier configuration as a new revision. It is refused with `409 rollback_unsafe` when module versions differ (data migrations ran in between) and suggests a forward fix instead.
+
+Covered by `Configuration.UpgradeTests.Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure`, `Configuration.UpgradeTests.Conflicting_customization_blocks_the_upgrade_with_an_impact_report` and `Configuration.ConfigLifecycleTests.Rollback_restores_an_earlier_configuration_as_a_new_revision`.
 
 ### Request pinning
 
-Each request resolves one config revision. Clients send `X-Config-Revision`. A write under an older revision that is incompatible (a field it submits was removed or changed type) returns `409 config_conflict` with `currentRevision` and reload instructions; compatible older revisions are accepted.
+Each request resolves one config revision. Record writes may send `configRevision` (the revision the form was rendered with). A write under an older revision whose entity definition differs returns `409 config_conflict` with `clientRevision`, `currentRevision` and reload instructions; compatible older revisions are accepted (`Configuration.ConfigLifecycleTests.Form_submitted_under_an_incompatible_older_revision_gets_a_conflict`).
 
 ### Consequences
 

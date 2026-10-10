@@ -120,32 +120,32 @@ Compiler rules: `==` compiles to `IS NOT DISTINCT FROM` and `!=` to `IS DISTINCT
 
 ### Query limits at pilot scale
 
-The compiler defines `MaxPageSize = 100`, `MaxOffset = 10000` and `MaxFilterNodes = 64` (filter length 1,000 chars, depth 16). The list API that enforces page, offset and timeout limits is planned for G1-M5.
+The compiler defines `MaxPageSize = 100`, `MaxOffset = 10000` and `MaxFilterNodes = 64` (filter length 1,000 chars, depth 16). `RecordService.QueryAsync` (used by the list API and the MCP tools) enforces them.
 
 | Limit | Value | Status |
 |---|---|---|
-| Page size | default 25, max 100 | constant in compiler; enforced by the list API (planned) |
+| Page size | default 25, max 100 | enforced (clamped) |
 | Filter size | 64 nodes, 1,000 chars, depth 16 per filter | enforced (`invalid_filter`) |
 | Sort keys | 1 | enforced by the query shape |
-| Offset paging | offset ≤ 10,000 | constant in compiler; enforced by the list API (planned) |
-| Count | exact up to 10,000, then `"10000+"` | planned |
-| Statement timeout | 5 s per query (`SET LOCAL statement_timeout`) | planned |
+| Offset paging | offset ≤ 10,000 | enforced (clamped) |
+| Count | exact up to 10,000, then capped (`total` = 10,000 with `totalIsCapped: true`) | enforced |
+| Statement timeout | 5 s per list query (`SET LOCAL statement_timeout`) | enforced; a timeout is not yet mapped to a dedicated `query_timeout` error |
 | Relationship traversal in filters | none in Gate 1 (filter lookups by ID) | enforced (`unsupported_filter`) |
 | Export | async job, `records.export` action | planned (Gate 2) |
 
-Targets at 500k tickets and 200 custom fields per tenant: list p95 < 300 ms for indexed filters. Range filters and sorts on custom fields have no index: they scan the permission-filtered (tenant, environment, entity) slice and are bounded by the timeout.
+Targets at 500k tickets and 200 custom fields per tenant: list p95 < 300 ms for indexed filters. `Records.QueryBenchmarkTests.List_queries_meet_the_latency_budget_at_100k_tickets` checks the budget in CI at 100k tickets with the permission predicate in SQL. Range filters and sorts on custom fields have no index: they scan the permission-filtered (tenant, environment, entity) slice and are bounded by the timeout.
 
 ### Custom-field index policy
 
 - No per-tenant indexes, columns or tables. Platform migrations own every index.
-- The shared GIN index (`jsonb_path_ops`) serves containment (`@>`) predicates. The Gate 0 compiler emits `->>` comparisons, which it does not use; switching scalar equality to `@>` where null semantics allow is planned for the G1-M5 benchmark.
+- The shared GIN index (`jsonb_path_ops`) serves containment (`@>`) predicates. The compiler emits `->>` comparisons, which it does not use; switching scalar equality to `@>` where null semantics allow remains an option if the benchmark regresses (the restrict check on delete already uses `@>`).
 - A field is searchable only if no permission set hides it: the record service builds the `search` tsvector from those fields only, so full-text search cannot leak hidden values.
 
 ### Soft delete, integrity and concurrency
 
-The record engine (G1-M4) is planned; the rules below are its design. The write pipeline (`RecordWriteEngine`) exists.
+Implemented in `RecordService` (`packages/Esmbler.Kernel.Infrastructure/Records/RecordService.cs`) on top of the write pipeline (`RecordWriteEngine`).
 
-- **Soft delete:** sets `deleted_at` (the actor is in `kernel.audit_log`); restore clears it within 30 days; purge is a Gate 2 retention job. Deleting a record referenced by a non-deleted record through a `restrict` relationship fails with `record.delete_restricted` listing the referencing count (only counts the caller can see; otherwise a generic message).
+- **Soft delete:** sets `deleted_at` and bumps the revision (the actor is in `kernel.audit_log`, and a `record.deleted` event is written). `POST /api/records/{entity}/{id}/restore` clears it within 30 days for anyone allowed to delete the record (`restore_expired` after that, [ASM-027](../decisions/assumptions.md)); purge is a Gate 2 retention job. Deleting a record referenced by a non-deleted record through a `restrict` relationship fails with `409 has_children` and the referencing count. The count is not yet limited to records the caller can see.
 - **Revision:** every update is `UPDATE … SET revision = revision + 1 WHERE … AND revision = $expected`. Zero rows means `409 record_conflict` with the current revision and the fields changed since the client's revision (from audit). There is no silent server merge; the renderer re-applies non-overlapping edits and asks the user about overlapping ones.
 - **Idempotency:** commands may carry `Idempotency-Key`. The key row is written in the same transaction as the record.
 
@@ -157,12 +157,12 @@ CREATE TABLE kernel.idempotency_keys (
   request_hash text NOT NULL,          -- sha256 of method + route + canonical body
   response jsonb NOT NULL,             -- replayed verbatim on retry
   status_code integer NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),  -- keys expire after 24 h (cleanup job planned)
+  created_at timestamptz NOT NULL DEFAULT now(),  -- 24 h retention intended; no cleanup job yet
   PRIMARY KEY (tenant_id, environment_id, key)
 );
 ```
 
-Planned (G1-M4): the same key with a different body returns `422 idempotency_key_reused`; a key still in flight returns `409 idempotency_in_progress`.
+The same key with a different body, or from another principal, returns `422 idempotency_key_reused`; a matching retry replays the stored response. Concurrent retries of one key are serialized with a transaction-scoped advisory lock instead of returning `409 idempotency_in_progress`. Verification: `Records.RecordServiceTests.Idempotency_key_replays_the_same_result`, `Records.RecordServiceTests.Create_update_conflict_and_history`, `Records.RecordServiceTests.Deleted_records_can_be_restored_by_people_who_may_delete_them`.
 
 ### Consequences
 

@@ -34,8 +34,9 @@ The master spec ("Architecture model") asks for a modular monolith with enforced
 | `packages/Esmbler.Expressions` | CEL-subset language ([ADR 0009](0009-rule-expression-language.md)) | Yes |
 | `packages/Esmbler.Sdk` | Specs, overlay ops, element registry, module API, event envelope | Yes (the public SDK) |
 | `packages/Esmbler.Kernel` | Configuration compiler, request context, record write pipeline (`RecordWriteEngine`, `IRecordWriteHook`), PDP, ports (`IRelationshipGraph`); no database or network | No |
-| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, config store, audit writer | No |
-| `packages/Esmbler.Platform` | Write hooks: workflow (order 100), assignment (200), rules (300); notifications planned | No |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, record, draft, publish, upgrade and preview services, outbox dispatcher, job runner, notification consumer, audit writer | No |
+| `packages/Esmbler.Platform` | Write hooks: workflow (order 100), assignment (200), rules (300) | No |
+| `packages/Esmbler.Assistant` | AI builder planners (`ScriptedPlanner`, `ClaudePlanner`) and the MCP client they act through ([ADR 0013](0013-ai-assistant-model-adapter.md)); no kernel access | No |
 | `packages/Esmbler.Hosting` | Composition root shared by hosts | No |
 | `modules/<name>/Esmbler.Modules.<Name>` (+ `.Contracts`) | Business module; declarative releases in `Releases/<version>/module.json` | Contracts only |
 | `apps/Esmbler.Api`, `apps/Esmbler.Mcp`, `apps/Esmbler.Worker`, `apps/web` | Deployables (one container image each) | n/a |
@@ -58,10 +59,13 @@ flowchart BT
     K[Esmbler.Kernel] --> SDK
     INF[Kernel.Infrastructure] --> K
     PLAT[Esmbler.Platform] --> K
+    INF --> PLAT
+    ASSIST[Esmbler.Assistant]
     HOST[Esmbler.Hosting] --> INF
     HOST --> PLAT
     HOST --> TM
     API[apps/Esmbler.Api] --> HOST
+    API --> ASSIST
     MCP[apps/Esmbler.Mcp] --> HOST
     WRK[apps/Esmbler.Worker] --> HOST
 ```
@@ -79,8 +83,9 @@ Implemented in [`tests/Esmbler.ArchitectureTests/BoundaryTests.cs`](../../tests/
 | `Sdk_depends_on_nothing_internal` | Sdk references no internal assembly and no module |
 | `Kernel_does_not_depend_on_platform_modules_infrastructure_or_hosts` | Kernel has no dependency on Platform, Modules, Infrastructure, Hosting, hosts, `Npgsql`, `Microsoft.EntityFrameworkCore`, `OpenFga` |
 | `Platform_does_not_depend_on_modules_or_infrastructure` | Platform has no dependency on Modules, Infrastructure, Hosting, `Npgsql`, `OpenFga` |
+| `Assistant_changes_workspaces_only_through_mcp` | `Esmbler.Assistant` has no dependency on Kernel, Infrastructure, Platform, Hosting, hosts, Modules, Sdk, `Npgsql`, EF Core or `OpenFga`: it can act only through MCP tools |
 
-Planned additions as code lands: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel and Platform are already covered above); only `apps/Esmbler.Api` references `Anthropic` ([ADR 0013](0013-ai-assistant-model-adapter.md)); `apps/Esmbler.Mcp` exposes no tool parameter named `tenant` or `environment` ([ADR 0007](0007-mcp-server-design.md)).
+Not built yet: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel, Platform and Assistant are already covered above); only `Esmbler.Assistant` references `Anthropic` ([ADR 0013](0013-ai-assistant-model-adapter.md)); `apps/Esmbler.Mcp` exposes no tool parameter named `tenant` or `environment` ([ADR 0007](0007-mcp-server-design.md)).
 
 ### Data boundaries
 
@@ -89,7 +94,7 @@ Planned additions as code lands: only `Kernel.Infrastructure` references `OpenFg
 
 ### Frontend
 
-`apps/web` is one Angular 22 workspace (standalone components, signals, zoneless). The renderer maps registry element types to components; feature folders mirror modules. Lint rules (ESLint `no-restricted-imports`) keep feature folders from importing each other's internals.
+`apps/web` is one Angular 22 workspace (standalone components, signals, zoneless). The renderer maps registry element types to components; folders are `core`, `renderer`, `ui`, `pages`, `builder`, `admin` and `shell`. ESLint rules (`no-restricted-imports`) that keep feature folders from importing each other's internals are not set up yet.
 
 ### Consequences
 

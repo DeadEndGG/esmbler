@@ -99,8 +99,19 @@ Only `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler
 | `kernel.find_tenant_by_slug(slug)` | Resolve a tenant ID from its slug |
 | `kernel.claim_outbox(worker, batch, lease_seconds)` | Worker claim of outbox events ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `kernel.claim_jobs(worker, batch, lease_seconds)` | Fair worker claim of jobs ([ADR 0005](0005-job-and-workflow-execution.md)) |
+| `kernel.refresh_lookup(hash)` | Look up a refresh token by its hash before the principal is known ([ADR 0011](0011-identity-and-development-authentication.md)); migration `0002_refresh_tokens.sql` |
+| `kernel.bump_authz_revision()` | Trigger on `memberships`, `group_members` and `role_assignments` that increments `kernel.tenants.authz_revision` in the same transaction, so permission caches never reuse facts from before a revocation ([ADR 0004](0004-authorization-engine.md)); migration `0003_authz_revision.sql`. `EXECUTE` stays with `PUBLIC` because PostgreSQL only calls it as a trigger, and `esmbler_definer` may update only that column |
 
-An allow-list test of all `SECURITY DEFINER` functions is planned (`.claude/rules/database-migrations.md` names it as `DatabaseIsolationTests`).
+The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_allow_listed_security_definer_functions_exist` fails if any other `SECURITY DEFINER` function appears in `kernel`, or if one is not owned by `esmbler_definer` or lacks the fixed `search_path`.
+
+### Migrations so far
+
+| File | Content |
+|---|---|
+| `0001_kernel.sql` | Kernel schema, roles' grants, RLS policies, privileged functions, outbox, inbox, jobs, drafts, artifacts, audit |
+| `0002_refresh_tokens.sql` | `kernel.refresh_tokens` (hashed, owner-only RLS) and `refresh_lookup` |
+| `0003_authz_revision.sql` | `kernel.tenants.authz_revision` and the `bump_authz_revision` triggers |
+| `0004_refresh_session_cap.sql` | `refresh_tokens.session_started_at` for the absolute session lifetime |
 
 ### Consequences
 
@@ -119,5 +130,5 @@ An allow-list test of all `SECURITY DEFINER` functions is planned (`.claude/rule
 
 ## More information
 
-- Verification: `tests/Esmbler.IntegrationTests/Isolation/DatabaseIsolationTests.cs` (connects as `esmbler_app`): `Runtime_role_sees_only_the_current_tenant_environment`, `Writing_another_tenants_row_is_rejected_by_policy`, `Runtime_role_is_not_privileged_and_cannot_rewrite_audit` (also checks every `kernel` table has forced RLS), `Tenant_context_does_not_leak_across_pooled_connections`. Planned: the `SECURITY DEFINER` allow-list test.
+- Verification: `tests/Esmbler.IntegrationTests/Isolation/DatabaseIsolationTests.cs` (connects as `esmbler_app`): `Runtime_role_sees_only_the_current_tenant_environment`, `Writing_another_tenants_row_is_rejected_by_policy`, `Runtime_role_is_not_privileged_and_cannot_rewrite_audit` (also checks every `kernel` table has forced RLS), `Tenant_context_does_not_leak_across_pooled_connections`, `Only_allow_listed_security_definer_functions_exist`.
 - Revisit triggers: dedicated-database tier (REQ-TEN-007) needs per-database migration orchestration; online migrations need lock-timeout tooling.

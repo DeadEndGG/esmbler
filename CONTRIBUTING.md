@@ -73,7 +73,7 @@ Security, tenant isolation and data integrity are never deferred, stubbed or ski
 - **Module boundaries:** modules reference only `Esmbler.Sdk`, `Esmbler.Expressions`, their own projects and other modules' `*.Contracts`. Architecture tests enforce this ([ADR 0012](docs/adr/0012-repository-layout-and-module-boundaries.md)).
 - **Tenant context:** comes only from the authenticated session. Never accept tenant or environment from a request body, record ID or tool argument.
 - **Errors:** errors returned to callers carry `code`, `message`, `target` and `suggestion`. Write them so a person or an AI can fix the problem.
-- **Tests:** test names include the requirement ID where one applies, for example `[Trait("Requirement", "REQ-ACC-01")]`.
+- **Tests:** test names are sentences (`Requester_cannot_write_hidden_fields`); the class summary cites the requirement IDs it verifies, optionally also as `[Trait("Requirement", "REQ-ACC-07")]`; Playwright titles carry `@REQ-…` tags.
 - **UI:** specs and components use design tokens only. See [design principles](docs/explanation/design-principles.md).
 
 ## Documentation (docs-as-code)
@@ -92,7 +92,7 @@ Security, tenant isolation and data integrity are never deferred, stubbed or ski
   ```
 
 - **Structure:** one H1, short sections, relative links, and diagrams in Mermaid so they diff in git.
-- **Generated references:** `tools/Esmbler.DocGen` generates `docs/reference/schemas/*.schema.json` and `docs/reference/element-catalog.md` from code (`dotnet run --project tools/Esmbler.DocGen`); CI fails if they are stale (`--check`). OpenAPI, MCP tool, event and permission references follow in Gate 1. Never hand-edit them; prose docs link to them instead of copying.
+- **Generated references:** `tools/Esmbler.DocGen` generates `docs/reference/schemas/*.schema.json` and `docs/reference/element-catalog.md` from code (`dotnet run --project tools/Esmbler.DocGen`); CI fails if they are stale (`--check`). OpenAPI is generated at runtime (`/openapi/v1.json` on the API); generated MCP tool, event and permission references are not built yet. Never hand-edit generated files; prose docs link to them instead of copying.
 - **ADRs:** use the MADR template, `docs/adr/NNNN-short-title.md`, with status `proposed`, `accepted` or `superseded`.
 - **Agent files:** `AGENTS.md`, `CLAUDE.md` and `.claude/rules/*` link to docs and never duplicate them.
 - **CI checks:** Markdown lint (`markdownlint-cli2`), relative link checking (`node tools/check-links.mjs`), and a check that generated references are current. Front-matter validation is planned.

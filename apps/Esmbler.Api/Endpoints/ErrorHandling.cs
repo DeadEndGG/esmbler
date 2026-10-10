@@ -43,6 +43,13 @@ public sealed class KernelExceptionHandler(ILogger<KernelExceptionHandler> logge
                 logger.LogWarning(exception, "Request failed with {Code}", kex.Code);
             }
         }
+        else if (IsQueryTimeout(exception))
+        {
+            // The 5 s statement timeout on list queries (ADR 0002): say how to make the query cheaper.
+            problem = new ProblemDetails { Status = 503, Title = "This list took too long to load." };
+            problem.Extensions["code"] = "query_timeout";
+            problem.Extensions["suggestion"] = "Add a filter or a search term, or sort by a different column.";
+        }
         else if (exception is BadHttpRequestException bad)
         {
             problem = new ProblemDetails { Status = 400, Title = "The request could not be read.", Detail = bad.Message };
@@ -59,5 +66,18 @@ public sealed class KernelExceptionHandler(ILogger<KernelExceptionHandler> logge
         httpContext.Response.StatusCode = problem.Status ?? 500;
         await httpContext.Response.WriteAsJsonAsync(problem, (System.Text.Json.JsonSerializerOptions?)null, "application/problem+json", cancellationToken);
         return true;
+    }
+
+    private static bool IsQueryTimeout(Exception exception)
+    {
+        for (var e = (Exception?)exception; e is not null; e = e.InnerException)
+        {
+            if (e is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.QueryCanceled })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

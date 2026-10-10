@@ -123,7 +123,7 @@ All base rules are data-scoped, so they are enforced on every write path ([REQ-R
 1. `core.tickets.assign.network`: when `record.category == 'network'`, assign group `network` (order 10).
 2. `core.tickets.assign.default`: always, assign group `service_desk` (order 100).
 
-**Notification templates** (Gate 1 delivers to the in-app fake outbox):
+**Notification templates** (Gate 1 delivers to the in-app channel through `NotificationConsumer`):
 
 - `core.tickets.notify.resolved`: on `record.transitioned:resolved`, notifies `requester`.
 - `core.tickets.notify.assigned`: on `record.updated:assignee`, notifies `assignee`.
@@ -214,14 +214,16 @@ Nine synthetic tickets seed new environments and draft previews. They cover each
 
 1. **Compose.** The compiler composes 1.1.0 beneath each tenant's overlay and classifies every op as applied, redundant, conflict or failed ([REQ-CFG-009](../../spec/traceability.md)).
 2. **Report.** The artifact manifest lists `core.tickets@1.1.0:backfill_impact` and `core.tickets@1.1.0:convert_effort`.
-3. **Migrate.** Migrations run as resumable worker jobs (expand and backfill) before the pointer switch.
+3. **Migrate.** `POST /api/modules/core.tickets/upgrades` queues an `upgrade.run` job; the worker runs the migrations (expand and backfill) in checkpointed batches before the pointer switch, and the activation health check runs before the new revision commits.
 4. **Convert safely.** `convert_effort` never drops values. A value that is not a number (for example "half a day") stays in `estimated_effort` and is listed in the migration report ([REQ-MIG-002](../../spec/traceability.md)).
-5. **Recover from failure.** Batches checkpoint progress. If a run fails partway, it resumes from the last checkpoint. Rollback to 1.0.0 is offered only if no record has been written under 1.1.0-only fields; otherwise the report offers a forward repair ([REQ-ACC-04](../../spec/traceability.md)).
+5. **Recover from failure.** Batches checkpoint progress. If a run fails partway, the upgrade is marked failed, the 1.0.0 revision stays live, and `POST /api/upgrades/{id}/resume` continues from the last checkpoint. Configuration rollback to a revision with a different module version is refused (`rollback_unsafe`), because it would not undo the data migrations; the response suggests a forward repair ([REQ-ACC-04](../../spec/traceability.md)).
 
-Unit-level evidence today:
+Evidence:
 
 - `tests/Esmbler.UnitTests/Configuration/UpgradeTests.cs`: the canonical customization survives 1.1.0; relabel conflicts; base adopting the tenant value is redundant; removed dependencies block with an impact report; a missing anchor falls back with a warning.
 - `TicketsReleaseTests.cs`: both releases compile; the content hash is deterministic.
+- `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs`: `Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure`, `Conflicting_customization_blocks_the_upgrade_with_an_impact_report`, `Requesters_and_agents_cannot_manage_module_versions`.
+- `Acceptance.Gate1PathTests.Customize_with_ai_publish_operate_upgrade_and_isolate` and Playwright `gate1.spec.ts` (`@REQ-ACC-03`).
 
 ## Related documents
 

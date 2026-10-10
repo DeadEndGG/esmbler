@@ -28,7 +28,7 @@ Rules ("if category is Access, Justification is required"), query filters ([ADR 
 
 ## Decision outcome
 
-**Chosen option 1.** C# in [`packages/Esmbler.Expressions`](../../packages/Esmbler.Expressions/) (`Lexer`, `Parser`, `Checker`, `Evaluator`); TypeScript twin in `apps/web` (planned, Gate 1). Shared cases in [`conformance/cases.json`](../../packages/Esmbler.Expressions/conformance/cases.json).
+**Chosen option 1.** C# in [`packages/Esmbler.Expressions`](../../packages/Esmbler.Expressions/) (`Lexer`, `Parser`, `Checker`, `Evaluator`); TypeScript twin in [`apps/web/src/app/core/expressions`](../../apps/web/src/app/core/expressions/) (used by the renderer for instant form feedback; the server stays authoritative). Shared cases in [`conformance/cases.json`](../../packages/Esmbler.Expressions/conformance/cases.json).
 
 ### Grammar (EBNF)
 
@@ -128,4 +128,5 @@ The AI restates each rule: "Justification is required when Category is Access, o
 
 ## More information
 
+- Verification: `Unit.Expressions.ConformanceTests` (C#) and `apps/web/src/app/core/expressions/expressions.spec.ts` (TypeScript, `npx ng test`) both run every case in `conformance/cases.json`.
 - Revisit triggers: a gate needs timestamps/durations (SLA, Gate 2) or list macros; a mature, conformant CEL library appears for both .NET and TypeScript.

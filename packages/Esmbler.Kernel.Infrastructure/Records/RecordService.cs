@@ -109,7 +109,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 var children = await db.Records.CountAsync(r => r.EntityId == rel.Entity && r.DeletedAt == null && EF.Functions.JsonContains(r.Data, $"{{\"{rel.Field}\":\"{id}\"}}"), ct);
                 if (children > 0)
                 {
-                    throw KernelException.Conflict("has_children", $"This {entity.Label.ToLowerInvariant()} has {children} linked {rel.InverseLabel.ToLowerInvariant()}. Unlink or delete them first.");
+                    // No count: linked records the caller cannot read must not be revealed.
+                    throw KernelException.Conflict("has_children", $"This {entity.Label.ToLowerInvariant()} still has linked {rel.InverseLabel.ToLowerInvariant()}. Unlink or delete them first.");
                 }
             }
 

@@ -169,6 +169,8 @@ Every renderer component (one per placeable registry element) follows this contr
 | `DL-009` | No spinner component in list, record or navigation routes; use skeletons | Lint rule on templates |
 | `DL-010` | Icons only from the approved set, with an accessible name or `aria-hidden` | Template lint and axe |
 
+Status at the Gate 1 close: `DL-002` is enforced by the config compiler (`Configuration.OverlayTests.Invalid_props_are_rejected`), and Playwright `a11y.spec.ts` (`@REQ-DS-003`) runs axe WCAG scans on the sign-in, list, record and draft pages in CI. The Stylelint rules (`DL-001`, `DL-003` to `DL-006`), the registry token test (`DL-007`), the contrast test (`DL-008`) and the template lints (`DL-009`, `DL-010`) are not set up yet.
+
 Gate 3 extends these rules to marketplace UI packages through the design-system SDK.
 
 ## Design review checklist for new screens
@@ -190,8 +192,9 @@ Gate 3 extends these rules to marketplace UI packages through the design-system 
 - [ ] Motion uses `motion.fast` or `motion.base` and respects reduced motion.
 - [ ] Copy is calm and precise: says what happened and what to do next; no exclamation marks.
 
-## Known gaps to close in Gate 1
+## Known gaps (open at the Gate 1 close)
 
 - **Primary tone token.** `action.button`, `action.transition_buttons` and `feedback.loading` list `accent.blue` for the primary tone. Switch them to `accent.brand`, or document that the primary tone resolves to `accent.brand`.
 - **Missing tokens in the registry.** The Tickets choice lists use `accent.purple`, and no registry element lists it yet. `DL-007` must validate it against the token set above.
+- **Design-lint tooling.** See the status note under [Design-lint rules](#design-lint-rules).
 - **Generated token reference.** The token file (`apps/web` design tokens, exposed as MCP resource `esmbler://design-system/tokens`) becomes the source of truth. A generated reference will replace the tables on this page.

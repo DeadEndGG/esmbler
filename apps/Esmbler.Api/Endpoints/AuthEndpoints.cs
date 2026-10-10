@@ -47,6 +47,7 @@ public static class AuthEndpoints
             RejectAgent(principal);
             var id = RequestContextFactory.PrincipalId(principal);
             var (tenant, env) = await identity.ResolveSwitchAsync(id, body.Tenant, body.Environment, ct);
+            await identity.AuditSwitchAsync(id, tenant.TenantId, env.EnvironmentId, ct);
             var name = principal.FindFirstValue("name") ?? string.Empty;
             var refresh = await tokens.CreateRefreshAsync(id, tenant.TenantId, env.EnvironmentId, ct);
             SetRefreshCookie(http, refresh);
