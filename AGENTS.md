@@ -42,7 +42,7 @@ Toolchain: .NET SDK 10.0.4xx (`global.json`), Node 24, Docker. Run from the repo
 ## Conventions that differ from defaults
 
 - IDs: base `core.<module>.*`; tenant-created IDs and field keys start with `tenant__`; publishers `<publisher>__` keys. Field keys are snake_case and unique per entity. Choice option IDs are stable strings.
-- Expressions use the CEL subset in `packages/Esmbler.Expressions` (one number type; absent = null). Change semantics only with matching updates to `conformance/cases.json` and the TypeScript evaluator.
+- Expressions use the CEL subset in `packages/Esmbler.Expressions` (one number type; absent = null). Change semantics only with matching updates to `packages/Esmbler.Expressions/conformance/cases.json` and the TypeScript evaluator.
 - Errors: `KernelException(code, message, status, target, suggestion)` → RFC 9457 problem details (API) or structured tool errors (MCP). Messages are user-facing and suggest a fix.
 - Record values: date `YYYY-MM-DD`, instant `yyyy-MM-ddTHH:mm:ss.fffZ` (UTC), decimals rounded to field scale, references are UUID strings.
 - Tests: xUnit; name tests as sentences (`Requester_cannot_write_hidden_fields`); integration tests use real Postgres via `PostgresFixture` and connect as `esmbler_app`; cite requirement IDs in the class summary.

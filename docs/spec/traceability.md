@@ -8,7 +8,7 @@ requirements: [all]
 
 # Traceability matrix
 
-Maps each master-spec requirement to its gate, implementation, verification, and evidence. Requirement IDs are referenced in code comments, test names or doc comments, and commit messages. Status values: `planned`, `in-progress`, `done` (implemented and verified), `deferred` (moved to a later gate with a reason).
+Maps each master-spec requirement to its gate, implementation, verification, and evidence. Requirement IDs are referenced in code comments, test names or doc comments, and commit messages. Status values: `planned`, `in-progress`, `done` (implemented and verified), `partial` (part implemented and verified; the row says what is missing and where it is tracked), `deferred` (moved to a later gate with a reason).
 
 Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/execution-brief.md` (EB).
 

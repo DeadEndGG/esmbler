@@ -459,7 +459,7 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
 
     public string? RequiredAction => null;
 
-    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug, string EnvironmentKey);
+    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug, string EnvironmentKey, IReadOnlySet<string> Declared);
 
     public async Task RunAsync(JobContext job, CancellationToken ct)
     {
@@ -576,7 +576,8 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
             await db.SaveChangesAsync(ct);
             var slug = await db.Tenants.Where(t => t.Id == job.TenantId).Select(t => t.Slug).FirstAsync(ct);
             var environment = await db.Environments.Where(e => e.Id == job.EnvironmentId).Select(e => e.Key).FirstAsync(ct);
-            return new Send(d, JsonNode.Parse(instance.Settings) as JsonObject ?? [], slug, environment);
+            var declared = (JsonNode.Parse(instance.SecretRefs) as JsonArray ?? []).Select(n => n?.GetValue<string>()).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            return new Send(d, JsonNode.Parse(instance.Settings) as JsonObject ?? [], slug, environment, declared);
         }, ct);
 
         if (send is null)
@@ -589,7 +590,7 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
         ChannelResult result;
         try
         {
-            result = await adapter.SendAsync(new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null), send.Settings, secrets.For(send.TenantSlug, send.EnvironmentKey), delivery.IdempotencyKey, ct);
+            result = await adapter.SendAsync(new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null), send.Settings, new DeclaredSecrets(secrets.For(send.TenantSlug, send.EnvironmentKey), send.Declared), delivery.IdempotencyKey, ct);
         }
         catch (Exception)
         {
@@ -617,6 +618,12 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
         {
             throw new InvalidOperationException("Transient delivery failure; retrying with backoff.");
         }
+    }
+
+    /// <summary>Adapters read only the secret names the channel instance declares, so the channel page shows all it uses.</summary>
+    private sealed class DeclaredSecrets(ISecretAccessor inner, IReadOnlySet<string> declared) : ISecretAccessor
+    {
+        public string? Get(string name) => declared.Contains(name) ? inner.Get(name) : null;
     }
 
     /// <summary>
