@@ -128,13 +128,23 @@ public sealed class PreviewService(Database database, ConfigStore configs, Draft
                 explanations);
         }, ct);
 
+    /// <summary>The configuration a builder is working on: the open draft if any, else the published one.</summary>
+    public Task<(EffectiveConfig Config, EffectivePermissions Perms, int? DraftVersion, int PublishedRevision)> WorkingConfigAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var (config, perms, draft, compiled) = await ResolveAsync(db, ctx, ct);
+            var published = compiled?.Published.Revision ?? (await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct)).Revision;
+            return (config, perms, draft?.Version, published);
+        }, ct);
+
     private async Task<(EffectiveConfig Config, EffectivePermissions Perms, DraftRow? Draft, CompiledDraft? Compiled)> ResolveAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
     {
         var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-        var publishedPerms = await access.ForAsync(db, ctx, published.Config, ct);
-        if (!publishedPerms.Can(PlatformActions.ConfigEdit))
+        var publishedPerms = await access.ForAsync(db, ctx, published.Config, ct); // also validates the agent, if any
+        var userPerms = ctx.AgentId is null ? publishedPerms : await access.ForAsync(db, ctx with { AgentId = null, Scopes = null }, published.Config, ct);
+        if (!userPerms.Can(PlatformActions.ConfigEdit) || !ctx.HasScope(AgentScopes.ConfigRead))
         {
-            throw KernelException.Forbidden("Draft previews are available to builders.");
+            throw KernelException.Forbidden("Draft previews and configuration discovery are available to builders.");
         }
 
         var draft = await db.Drafts.FirstOrDefaultAsync(d => d.Status == "open", ct);
