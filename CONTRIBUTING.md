@@ -33,8 +33,8 @@ Example:
 ```text
 feat(kernel): enforce forced RLS on kernel.records
 
-Adds tenant/environment policies with fail-closed NULLIF(current_setting(...)) and
-grants only DML to esmbler_app.
+Adds tenant/environment policies on kernel.current_tenant() and
+kernel.current_environment() (fail closed) and grants only DML to esmbler_app.
 
 Refs: REQ-TEN-001
 ```
@@ -92,7 +92,7 @@ Security, tenant isolation and data integrity are never deferred, stubbed or ski
   ```
 
 - **Structure:** one H1, short sections, relative links, and diagrams in Mermaid so they diff in git.
-- **Generated references:** reference docs (schemas, OpenAPI, MCP tools, events, element catalog) are generated from code in CI. Never hand-edit them; prose docs link to them instead of copying.
+- **Generated references:** `tools/Esmbler.DocGen` generates `docs/reference/schemas/*.schema.json` and `docs/reference/element-catalog.md` from code (`dotnet run --project tools/Esmbler.DocGen`); CI fails if they are stale (`--check`). OpenAPI, MCP tool, event and permission references follow in Gate 1. Never hand-edit them; prose docs link to them instead of copying.
 - **ADRs:** use the MADR template, `docs/adr/NNNN-short-title.md`, with status `proposed`, `accepted` or `superseded`.
 - **Agent files:** `AGENTS.md`, `CLAUDE.md` and `.claude/rules/*` link to docs and never duplicate them.
-- **CI checks:** Markdown lint, link checking, front-matter validation, and a check that generated references are current.
+- **CI checks:** Markdown lint (`markdownlint-cli2`), relative link checking (`node tools/check-links.mjs`), and a check that generated references are current. Front-matter validation is planned.

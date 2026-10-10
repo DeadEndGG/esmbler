@@ -1,0 +1,871 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/overlay_op.schema.json",
+  "title": "OverlayOp",
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "anyOf": [
+    {
+      "properties": {
+        "op": {
+          "const": "field.add"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "field": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "help": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "type": "boolean"
+            },
+            "hidden": {
+              "type": "boolean"
+            },
+            "deprecated": {
+              "type": "boolean"
+            },
+            "system": {
+              "type": "boolean"
+            },
+            "maxLength": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "minLength": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "scale": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "pattern": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "patternMessage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "choiceList": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "unique": {
+              "type": "boolean"
+            },
+            "default": true,
+            "defaultExpression": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "maxItems": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "prefix": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "type",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "entity",
+        "field"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "field.update"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "help": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "readOnly": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "maxLength": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "minLength": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pattern": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "patternMessage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": true
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "entity",
+        "field",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "field.hide"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entity",
+        "field"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "field.remove"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity",
+        "field"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "choice_list.add"
+        },
+        "choiceList": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "tone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "hidden": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "choiceList"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "choice.add"
+        },
+        "choiceList": {
+          "type": "string"
+        },
+        "option": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "tone": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "hidden": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        },
+        "anchor": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "before": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "position": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "choiceList",
+        "option"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "choice.update"
+        },
+        "choiceList": {
+          "type": "string"
+        },
+        "option": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "choiceList",
+        "option"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "rule.add"
+        },
+        "rule": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "entity": {
+              "type": "string"
+            },
+            "view": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "assert": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "field": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "field": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "value": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "tone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "order": {
+              "type": "integer"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "entity"
+          ]
+        }
+      },
+      "required": [
+        "rule"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "rule.update"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "replacement": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "entity": {
+              "type": "string"
+            },
+            "view": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "assert": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "field": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "actions": {
+              "$ref": "#/anyOf/7/properties/rule/properties/actions"
+            },
+            "order": {
+              "type": "integer"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "entity"
+          ]
+        },
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "expectedHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rule"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "rule.remove"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "node.insert"
+        },
+        "view": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "node": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "props": {
+              "type": "object"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "props": {
+                    "type": "object"
+                  },
+                  "children": {
+                    "$ref": "#/anyOf/10/properties/node/properties/children"
+                  },
+                  "hidden": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "type"
+                ]
+              }
+            },
+            "hidden": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "type"
+          ]
+        },
+        "anchor": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "before": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "position": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "view",
+        "parent",
+        "node"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "node.update"
+        },
+        "view": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object"
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "view",
+        "node",
+        "props"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "node.move"
+        },
+        "view": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "anchor": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "before": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "position": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "view",
+        "node",
+        "parent"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "node.remove"
+        },
+        "view": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "view",
+        "node"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "permission.field_access"
+        },
+        "permissionSet": {
+          "type": "string"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "access": {
+          "type": "string"
+        },
+        "affectsPermissions": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "permissionSet",
+        "entity",
+        "field",
+        "access"
+      ]
+    }
+  ]
+}

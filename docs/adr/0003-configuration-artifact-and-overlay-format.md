@@ -88,7 +88,7 @@ The upgrade is held until an admin chooses, and the choice becomes a new op with
 }
 ```
 
-Artifacts are immutable rows in `kernel.config_artifacts (tenant_id, environment_id, revision, content_hash, manifest jsonb, config jsonb, created_at)`. `kernel.active_config (tenant_id, environment_id, revision, artifact_revision, previous_artifact_revision)` is the pointer.
+Artifacts are immutable rows in `kernel.config_artifacts (tenant_id, environment_id, revision, content_hash, manifest, config, overlay, status, source, created_by, approved_by, created_at)`; the runtime role cannot delete them. `kernel.active_config (tenant_id, environment_id, revision, previous_revision, activated_at, activated_by)` is the pointer. Both tables exist (migration `0001_kernel.sql`); the draft, publish and activation services that use them are planned (G1-M6, G1-M7).
 
 ### Compile/publish state machine
 
@@ -110,11 +110,11 @@ stateDiagram-v2
     active --> [*]
 ```
 
-Approval (`kernel.publish_requests`) records `artifactHash`, tenant, environment, `expectedPublishedRevision`, approver, the approver's permission fingerprint (`config.publish`, plus `permissions.admin` when `permissionImpact.changed`) and `expiresAt` (24 h). Any difference at activation voids it.
+Approval (`kernel.publish_requests`) records `draft_id`, `draft_version`, `artifact_hash`, `summary`, requester (and agent), `status` (`pending`, `approved`, `rejected`, `stale`) and the decider. Planned for G1-M7: binding the approval also to `expectedPublishedRevision`, the approver's permission fingerprint (`config.publish`, plus `permissions.admin` when `permissionImpact.changed`) and a 24 h expiry. Any difference at activation voids it.
 
 ### Drafts and the command log
 
-- One open draft per tenant environment (Gate 1). Each edit appends to `kernel.draft_commands (draft_id, seq, op jsonb, actor, agent, undone bool, draft_version, created_at)` and increments `drafts.version`.
+- One open draft per tenant environment (Gate 1), enforced by the partial unique index `drafts_one_open` on `kernel.drafts (tenant_id, environment_id) WHERE status = 'open'`. Each edit appends to `kernel.draft_commands (draft_id, seq, op, summary, targets, actor, agent, source, undone, created_at)` and increments `drafts.version`.
 - The draft config = active overlay + non-undone commands in `seq` order, composed on demand.
 - **Undo** step N sets `undone = true` (itself a command, so it bumps the version and is audited); **redo** clears it. If later steps depend on step N (a node shows the field step N added), undo fails with `draft.undo_has_dependents` naming those steps.
 - Every edit carries `expectedDraftVersion`.

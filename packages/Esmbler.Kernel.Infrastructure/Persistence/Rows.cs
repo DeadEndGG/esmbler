@@ -83,6 +83,8 @@ public sealed class GroupRow
 
 public sealed class GroupMemberRow
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
+
     public Guid TenantId { get; set; }
 
     public Guid GroupId { get; set; }
@@ -96,6 +98,8 @@ public sealed class GroupMemberRow
 
 public sealed class RoleAssignmentRow
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
+
     public Guid TenantId { get; set; }
 
     public string RoleId { get; set; } = "";

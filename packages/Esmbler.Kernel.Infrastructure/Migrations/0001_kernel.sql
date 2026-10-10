@@ -119,6 +119,7 @@ CREATE TABLE kernel.groups (
 );
 
 CREATE TABLE kernel.group_members (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id     uuid NOT NULL,
     group_id      uuid NOT NULL,
     principal_id  uuid REFERENCES kernel.principals (id),
@@ -130,6 +131,7 @@ CREATE TABLE kernel.group_members (
 CREATE UNIQUE INDEX group_members_unique ON kernel.group_members (tenant_id, group_id, coalesce(principal_id, member_group));
 
 CREATE TABLE kernel.role_assignments (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id     uuid NOT NULL REFERENCES kernel.tenants (id),
     role_id       text NOT NULL,
     principal_id  uuid REFERENCES kernel.principals (id),
@@ -465,7 +467,8 @@ END $$;
 REVOKE ALL ON FUNCTION kernel.claim_outbox(text, integer, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION kernel.claim_outbox(text, integer, integer) TO esmbler_app;
 
--- Jobs are claimed fairly: at most one job per tenant per claim round, oldest first.
+-- Jobs are claimed fairly: at most one job per tenant per claim round, oldest first. Running jobs whose lease
+-- expired (worker crashed) are reclaimed and resume from their checkpoint.
 CREATE FUNCTION kernel.claim_jobs(p_worker text, p_batch integer, p_lease_seconds integer)
 RETURNS TABLE (id uuid, tenant_id uuid, environment_id uuid, kind text, attempts integer)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = kernel, pg_temp
@@ -475,8 +478,8 @@ BEGIN
     WITH candidates AS (
         SELECT DISTINCT ON (j.tenant_id) j.id
         FROM kernel.jobs j
-        WHERE j.status = 'pending' AND j.available_at <= now()
-          AND NOT EXISTS (SELECT 1 FROM kernel.jobs r WHERE r.tenant_id = j.tenant_id AND r.status = 'running' AND r.locked_until > now())
+        WHERE ((j.status = 'pending' AND j.available_at <= now()) OR (j.status = 'running' AND j.locked_until < now()))
+          AND NOT EXISTS (SELECT 1 FROM kernel.jobs r WHERE r.tenant_id = j.tenant_id AND r.status = 'running' AND r.locked_until > now() AND r.id <> j.id)
         ORDER BY j.tenant_id, j.available_at
     ), next AS (
         SELECT j.id FROM kernel.jobs j JOIN candidates c ON c.id = j.id

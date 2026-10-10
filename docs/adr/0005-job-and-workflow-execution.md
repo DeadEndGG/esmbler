@@ -32,73 +32,81 @@ Record changes must produce events reliably (notifications, assignment, projecti
 
 ### Tables
 
+Abridged from `packages/Esmbler.Kernel.Infrastructure/Migrations/0001_kernel.sql` (the authoritative definition):
+
 ```sql
 CREATE TABLE kernel.outbox (
   id uuid PRIMARY KEY,                       -- = EventEnvelope.EventId
   tenant_id uuid NOT NULL, environment_id uuid NOT NULL,
   type text NOT NULL,                        -- record.updated, config.published, ...
-  record_id uuid, record_revision int,       -- ordering key
-  envelope jsonb NOT NULL,                   -- Esmbler.Sdk.Events.EventEnvelope
-  status text NOT NULL DEFAULT 'pending',    -- pending | leased | done | dead
-  attempts int NOT NULL DEFAULT 0,
+  record_id uuid, record_revision integer,   -- ordering key
+  event jsonb NOT NULL,                      -- Esmbler.Sdk.Events.EventEnvelope
+  status text NOT NULL DEFAULT 'pending',    -- pending | dispatched | dead
+  attempts integer NOT NULL DEFAULT 0,
   available_at timestamptz NOT NULL DEFAULT now(),
-  leased_by text, lease_until timestamptz, last_error text,
-  created_at timestamptz NOT NULL DEFAULT now()
+  locked_until timestamptz, locked_by text, last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(), dispatched_at timestamptz
 );
-CREATE INDEX outbox_ready ON kernel.outbox (available_at) WHERE status = 'pending';
+CREATE INDEX outbox_pending ON kernel.outbox (available_at) WHERE status = 'pending';
 
 CREATE TABLE kernel.inbox (
-  tenant_id uuid NOT NULL, environment_id uuid NOT NULL,
   consumer text NOT NULL, event_id uuid NOT NULL,
+  tenant_id uuid NOT NULL, environment_id uuid NOT NULL,
   processed_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, environment_id, consumer, event_id)
+  PRIMARY KEY (consumer, event_id)
+);
+
+-- Projections remember the last applied record revision and ignore older events.
+CREATE TABLE kernel.record_projections (
+  tenant_id uuid NOT NULL, environment_id uuid NOT NULL, consumer text NOT NULL,
+  record_id uuid NOT NULL, record_revision integer NOT NULL, state jsonb NOT NULL, ...
 );
 
 CREATE TABLE kernel.jobs (
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL, environment_id uuid NOT NULL,
   kind text NOT NULL,                        -- config.migration, workflow.timer, authz.sync, ...
   payload jsonb NOT NULL, checkpoint jsonb,  -- resumable progress
-  status text NOT NULL DEFAULT 'pending',    -- pending | leased | done | dead | cancelled
-  attempts int NOT NULL DEFAULT 0, max_attempts int NOT NULL DEFAULT 10,
-  run_at timestamptz NOT NULL DEFAULT now(), lease_until timestamptz, leased_by text,
-  principal text NOT NULL,                   -- whose authority the job runs with
-  causation_depth int NOT NULL DEFAULT 0
+  status text NOT NULL DEFAULT 'pending',    -- pending | running | succeeded | failed | dead | cancelled
+  attempts integer NOT NULL DEFAULT 0, max_attempts integer NOT NULL DEFAULT 5,
+  available_at timestamptz NOT NULL DEFAULT now(), locked_until timestamptz, locked_by text,
+  last_error text, created_by uuid,          -- whose authority the job runs with
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 ```
 
-All three tables have `FORCE ROW LEVEL SECURITY` ([ADR 0010](0010-database-migrations-and-roles.md)).
+All of these tables have `FORCE ROW LEVEL SECURITY` with the tenant-and-environment policy ([ADR 0010](0010-database-migrations-and-roles.md)).
 
 ### Dispatch
 
-The worker cannot see rows across tenants under RLS. It claims work through one narrow `SECURITY DEFINER` function, `kernel.claim_work(worker text, max int)`, owned by `esmbler_migrator` with a fixed `search_path`. It returns only `(id, tenant_id, environment_id, kind)` and sets the lease:
+The worker cannot see rows across tenants under RLS. It claims work through two narrow `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler_definer`, each with `SET search_path = kernel, pg_temp`. Both take `(p_worker text, p_batch integer, p_lease_seconds integer)`, lock rows with `FOR UPDATE SKIP LOCKED`, set `locked_until`/`locked_by`, increment `attempts`, and return identifiers only:
+
+- `kernel.claim_outbox` returns `(id, tenant_id, environment_id, attempts)` for pending events whose lease is free, oldest first.
+- `kernel.claim_jobs` returns `(id, tenant_id, environment_id, kind, attempts)` and is fair across tenants: at most one job per tenant per claim round, and none for a tenant that already has a running job with a live lease. Claimed jobs move to `running`.
 
 ```sql
--- inside kernel.claim_work: round-robin across tenants, per-tenant cap
-WITH ready AS (
-  SELECT id, tenant_id,
-         row_number() OVER (PARTITION BY tenant_id ORDER BY available_at) AS rn
-  FROM kernel.outbox
-  WHERE status = 'pending' AND available_at <= now()
+-- inside kernel.claim_jobs (abridged)
+WITH candidates AS (
+  SELECT DISTINCT ON (j.tenant_id) j.id FROM kernel.jobs j
+  WHERE j.status = 'pending' AND j.available_at <= now()
+    AND NOT EXISTS (SELECT 1 FROM kernel.jobs r
+                    WHERE r.tenant_id = j.tenant_id AND r.status = 'running' AND r.locked_until > now())
+  ORDER BY j.tenant_id, j.available_at
+), next AS (
+  SELECT j.id FROM kernel.jobs j JOIN candidates c ON c.id = j.id
+  ORDER BY j.available_at LIMIT p_batch FOR UPDATE OF j SKIP LOCKED
 )
-SELECT o.id FROM kernel.outbox o JOIN ready USING (id)
-WHERE ready.rn <= 4                                  -- per-tenant concurrency cap
-  AND NOT EXISTS (SELECT 1 FROM kernel.outbox p       -- per-record ordering
-                  WHERE p.record_id = o.record_id AND p.tenant_id = o.tenant_id
-                    AND p.status IN ('pending','leased') AND p.record_revision < o.record_revision)
-ORDER BY ready.rn, o.available_at
-LIMIT $max
-FOR UPDATE OF o SKIP LOCKED;
+UPDATE kernel.jobs j SET status = 'running', locked_until = now() + make_interval(secs => p_lease_seconds), ...
 ```
 
-For each claimed item the worker opens a transaction, sets `app.tenant_id`/`app.environment_id` with `set_config(..., true)`, reads the envelope under RLS, and runs the handler.
+For each claimed item the worker opens a transaction through `Database.InTenantAsync` (which sets `app.tenant_id`/`app.environment_id` with `set_config(..., true)`), reads the item under RLS, and runs the handler. The worker dispatcher and handlers are planned for G1-M4; the tables and claim functions exist.
 
-- **Leases:** 60 s, renewed by long jobs; an expired lease returns the item to `pending`.
+- **Leases:** `p_lease_seconds` (60 s planned), renewed by long jobs. An outbox event whose lease expired is claimable again (it stays `pending` until dispatched). `claim_jobs` claims only `pending` jobs, so a sweeper that returns `running` jobs with expired leases to `pending` is planned with the dispatcher.
 - **Backoff:** `min(5 s × 2^attempts, 15 min)` with ±20% jitter.
-- **Dead letter:** after `max_attempts` (10) the status becomes `dead` with `last_error`; operators inspect and replay (Gate 2 UI; replay is audited and re-authorizes the principal).
+- **Dead letter:** after `max_attempts` (default 5) the status becomes `dead` with `last_error`; operators inspect and replay (Gate 2 UI; replay is audited and re-authorizes the principal).
 - **Inbox:** a handler inserts `(consumer, event_id)` in the same transaction as its effect; a duplicate key means "already done" and the item is acknowledged.
-- **Stale revisions:** projections store the last applied `record_revision` and ignore lower ones; business-transition consumers detect gaps and reload the record.
-- **Cycles and fan-out:** `causation_depth` > 8 stops automation with an audited `automation.depth_exceeded`; fan-out per event is capped at 100 jobs (Gate 2 governor).
-- **Tenant isolation of jobs:** a job always carries tenant, environment and principal; the handler re-checks the principal's permissions before acting (REQ-ACC-07).
+- **Per-record ordering and stale revisions:** `claim_outbox` does not order per record, so consumers must tolerate reordering: projections (`kernel.record_projections`) store the last applied `record_revision` and ignore lower ones; business-transition consumers detect gaps and reload the record.
+- **Cycles and fan-out (planned):** a causation depth above 8 (carried in the event envelope) stops automation with an audited `automation.depth_exceeded`; fan-out per event is capped at 100 jobs (Gate 2 governor).
+- **Tenant isolation of jobs:** a job always carries tenant, environment and principal (`created_by`); the handler re-checks the principal's permissions before acting (REQ-ACC-07).
 
 ```mermaid
 sequenceDiagram
@@ -107,17 +115,17 @@ sequenceDiagram
     participant W as Worker
     participant H as Handler
     API->>DB: BEGIN; SET LOCAL tenant; UPDATE record; INSERT audit; INSERT outbox; COMMIT
-    W->>DB: kernel.claim_work() (SKIP LOCKED, fair)
+    W->>DB: kernel.claim_outbox() / kernel.claim_jobs() (SKIP LOCKED)
     W->>DB: BEGIN; set_config(tenant, env); SELECT envelope
     W->>H: handle(envelope)
     H->>DB: INSERT inbox(consumer, event_id); effect
-    W->>DB: UPDATE outbox SET status='done'; COMMIT
+    W->>DB: UPDATE outbox SET status='dispatched'; COMMIT
 ```
 
 ### Consequences
 
 - Good: no extra broker; transactional by construction; RLS context per job is explicit and tested.
-- Good: tenant fairness is visible in one SQL query and its tests.
+- Good: job fairness across tenants is visible in one SQL function and its tests.
 - Bad: we own dispatcher code (leases, backoff, metrics) and its tests.
 - Bad: Postgres polling (1 s idle interval plus `LISTEN esmbler_outbox` wake-up) limits throughput to a few thousand events/s, far above pilot need.
 

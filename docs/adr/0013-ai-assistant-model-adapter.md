@@ -29,7 +29,7 @@ Where does the agent loop run, how does it reach the tools, and what happens wit
 
 ## Decision outcome
 
-**Chosen option 1.** Interface `IAssistantPlanner` with two implementations: `ClaudePlanner` (model `claude-opus-5-5` by default, `Assistant:Model` in configuration) and `ScriptedPlanner`. `ClaudePlanner` is used when `ANTHROPIC_API_KEY` is set; otherwise `ScriptedPlanner`. Both call tools through the same MCP client, authenticated with a freshly minted agent token for the current user, tenant and environment ([ADR 0011](0011-identity-and-development-authentication.md)).
+**Chosen option 1.** Interface `IAssistantPlanner` with two implementations: `ClaudePlanner` (model `claude-opus-5-5` by default, `Esmbler:Assistant:Model` in configuration) and `ScriptedPlanner`. `ClaudePlanner` is used when an API key is configured (`Esmbler:Assistant:AnthropicApiKey`; Docker Compose maps `ANTHROPIC_API_KEY` to it); otherwise `ScriptedPlanner`. Both call tools through the same MCP client, authenticated with a freshly minted agent token for the current user, tenant and environment ([ADR 0011](0011-identity-and-development-authentication.md)).
 
 ### Agent loop
 

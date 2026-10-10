@@ -2,12 +2,16 @@
   <!-- Adapters for kernel ports: PostgreSQL (EF Core + Npgsql, RLS sessions, migrations, outbox), OpenFGA. -->
   <ItemGroup>
     <ProjectReference Include="..\Esmbler.Kernel\Esmbler.Kernel.csproj" />
+    <ProjectReference Include="..\Esmbler.Platform\Esmbler.Platform.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="OpenFga.Sdk" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="HtmlSanitizer" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Migrations\*.sql" LogicalName="migrations/%(Filename)%(Extension)" />

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/notification_template.schema.json",
+  "title": "NotificationTemplateSpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "event": {
+      "type": "string"
+    },
+    "entity": {
+      "type": "string"
+    },
+    "recipients": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subject": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "event",
+    "entity",
+    "subject",
+    "body"
+  ]
+}

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Generates docs/reference from source (execution brief section 7). The check flag fails when files are stale. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Esmbler.Sdk\Esmbler.Sdk.csproj" />
+  </ItemGroup>
+</Project>

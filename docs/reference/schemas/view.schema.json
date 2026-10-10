@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/view.schema.json",
+  "title": "ViewSpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "entity": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object"
+              },
+              "children": {
+                "$ref": "#/properties/layout/properties/children"
+              },
+              "hidden": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "type"
+            ]
+          }
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "entity",
+    "label",
+    "layout"
+  ]
+}

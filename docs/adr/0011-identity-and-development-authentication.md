@@ -27,27 +27,26 @@ Gate 1 needs real authentication so isolation and authorization tests mean somet
 
 ## Decision outcome
 
-**Chosen option 1.**
+**Chosen option 1.** Status: tokens, login, tenant switching and agent tokens are planned for G1-M2. The identity tables below exist in `0001_kernel.sql`; refresh-token storage and the agent's allowed scopes need a later migration.
 
 ### Data model
 
-- `kernel.principals (id, kind: user | agent | service | package, display_name, email, disabled_at)`: global, not tenant-scoped (one person, many tenants).
-- `kernel.credentials (principal_id, password_hash)`: PBKDF2 via ASP.NET Core `PasswordHasher<T>`; dev and pilot only.
-- `kernel.memberships (tenant_id, principal_id, user_type, status)`: RLS by tenant.
-- `kernel.agents (tenant_id, id, acts_for principal_id, allowed_scopes, disabled_at)`: an agent principal per user per tenant.
+- `kernel.principals (id, kind: user | agent | service | module, email, display_name, password_hash, acts_for, agent_tenant, disabled)`: global, not tenant-scoped (one person, many tenants). `password_hash` is PBKDF2 via ASP.NET Core `PasswordHasher<T>` (dev and pilot only). An agent is a principal with `kind = 'agent'`, `acts_for` its user and `agent_tenant` its tenant: one agent per user per tenant. Login reads the hash through the `SECURITY DEFINER` function `kernel.login_lookup` ([ADR 0010](0010-database-migrations-and-roles.md)).
+- `kernel.memberships (tenant_id, principal_id, title)`: RLS by tenant; a principal also sees its own memberships (tenant switcher).
+- `kernel.groups`, `kernel.group_members` (nested groups through `member_group`) and `kernel.role_assignments` (to a principal or a group): the system of record for identity relations; the tenant's OpenFGA store is derived from them ([ADR 0004](0004-authorization-engine.md)).
 - Later: `kernel.identity_links (principal_id, issuer, subject)` for OIDC/SAML (Gate 2).
 
 Groups and role assignments are tenant-wide; configuration and records are per environment ([assumptions](../decisions/assumptions.md)).
 
 ### Tokens
 
-JWT access tokens, 15 minutes, signed with a key from configuration (`Auth:SigningKey`; dev key in `appsettings.Development.json`, production key is a [human action](../human-actions.md)). Refresh tokens are opaque, stored hashed, rotated on use, 8-hour lifetime.
+JWT access tokens, 15 minutes, signed with a key from configuration (`Esmbler:Auth:SigningKey`, environment variable `Esmbler__Auth__SigningKey`; Docker Compose supplies a development-only default, the production key is a [human action](../human-actions.md)). Refresh tokens are opaque, stored hashed, rotated on use, 8-hour lifetime.
 
 API token after selecting tenant `acme`, environment `sandbox`:
 
 ```json
 {
-  "iss": "https://esmbler.local", "aud": "esmbler-api",
+  "iss": "esmbler", "aud": "esmbler-api",
   "sub": "user:6a0f…", "name": "Alex",
   "tid": "tenant:6f1c…", "eid": "env:a7d2…", "ten": "acme", "env": "sandbox",
   "authz_rev": 42,
@@ -59,7 +58,7 @@ Agent token for MCP (minted by the API, see [ADR 0007](0007-mcp-server-design.md
 
 ```json
 {
-  "iss": "https://esmbler.local", "aud": "esmbler-mcp",
+  "iss": "esmbler", "aud": "esmbler-mcp",
   "sub": "user:6a0f…", "tid": "tenant:6f1c…", "eid": "env:a7d2…",
   "act": { "sub": "agent:assistant-alex" },
   "scp": "config:read config:edit config:publish:request records:read",

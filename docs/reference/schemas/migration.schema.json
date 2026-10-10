@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/migration.schema.json",
+  "title": "MigrationSpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "entity": {
+      "type": "string"
+    },
+    "field": {
+      "type": "string"
+    },
+    "value": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "batchSize": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "entity",
+    "field"
+  ]
+}

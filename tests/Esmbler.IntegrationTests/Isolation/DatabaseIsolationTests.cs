@@ -108,6 +108,29 @@ public class DatabaseIsolationTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task Only_allow_listed_security_definer_functions_exist()
+    {
+        string[] allowed = ["claim_jobs", "claim_outbox", "find_tenant_by_slug", "login_lookup", "provision_tenant"];
+        await using var conn = new NpgsqlConnection(pg.AppConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("""
+            SELECT p.proname, r.rolname, coalesce(array_to_string(p.proconfig, ','), '')
+            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner
+            WHERE n.nspname = 'kernel' AND p.prosecdef ORDER BY p.proname
+            """, conn);
+        var found = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            found.Add(reader.GetString(0));
+            Assert.Equal("esmbler_definer", reader.GetString(1));
+            Assert.Contains("search_path=kernel, pg_temp", reader.GetString(2));
+        }
+
+        Assert.Equal(allowed, found);
+    }
+
+    [Fact]
     public async Task Tenant_context_does_not_leak_across_pooled_connections()
     {
         var a = await NewTenantAsync("iso-e-" + Guid.NewGuid().ToString("N")[..6]);

@@ -21,7 +21,7 @@ The element registry is the self-describing catalog of every building block that
 | C# model | `Esmbler.Sdk.Registry.ElementDefinition`, loaded by `ElementRegistry.LoadBuiltIn()` |
 | Tests | `tests/Esmbler.UnitTests/Configuration/TicketsReleaseTests.cs` (`Registry_loads_gate1_catalog`) |
 
-> This page is hand-written for Gate 0. In Gate 1, CI generates the field reference from `element.schema.json` and the catalog from `Registry/Elements/*.json`. The generated pages will replace the [catalog section](#gate-1-catalog) below, and this page will keep only the explanation and link to them ([execution brief section 7](../spec/execution-brief.md)).
+> **Generated references.** `tools/Esmbler.DocGen` generates the full [element catalog](element-catalog.md) (every element with its props, containment and examples) from `Registry/Elements/*.json`, and JSON Schemas for every spec type in [`schemas/`](schemas/) (for example [`entity.schema.json`](schemas/entity.schema.json), [`overlay_op.schema.json`](schemas/overlay_op.schema.json), [`node.schema.json`](schemas/node.schema.json)). Regenerate with `dotnet run --project tools/Esmbler.DocGen`; CI runs it with `--check` and fails when they are stale. This page explains the element definition format; the [catalog section](#gate-1-catalog) below is a hand-written summary, and the generated catalog wins on any difference ([execution brief section 7](../spec/execution-brief.md)).
 
 ## Field-by-field
 
@@ -203,4 +203,4 @@ A how-to guide (`docs/how-to/add-an-element.md`, planned for Gate 1) will cover 
 1. Add `Registry/Elements/<id>.json` with the current gate.
 2. Add the Angular component and register it in the renderer map.
 3. Add examples that compile.
-4. Regenerate the reference.
+4. Regenerate the references (`dotnet run --project tools/Esmbler.DocGen`) and commit [`element-catalog.md`](element-catalog.md).

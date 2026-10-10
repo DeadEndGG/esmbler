@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/assignment_rule.schema.json",
+  "title": "AssignmentRuleSpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "entity": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "when": {
+      "type": "string"
+    },
+    "group": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "order": {
+      "type": "integer"
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "entity",
+    "when"
+  ]
+}

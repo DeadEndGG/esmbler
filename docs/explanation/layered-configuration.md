@@ -55,7 +55,7 @@ Defined in `packages/Esmbler.Sdk/Overlay/OverlayOps.cs`. The JSON is camelCase, 
 ## Provenance and customized markers
 
 - `EffectiveConfig.Provenance` maps every element key (`entity/field`, rule ID, node ID, …) to the layer that produced it: `core.tickets@1.0.0` or `tenant`. A base element changed by an overlay keeps its base provenance, so "reset to default" knows there is a default to return to.
-- `EffectiveConfig.Customized` lists every key the tenant added or changed. The builder shows "Modified" badges from it, and the AI answers "what have we customized in Tickets?" from it (MCP `get_customizations`) ([REQ-CFG-011](../spec/traceability.md)).
+- `EffectiveConfig.Customized` lists every key the tenant added or changed. The builder shows "Modified" badges from it, and the AI answers "what have we customized in Tickets?" from it (MCP `get_customizations`, planned for G1-M9) ([REQ-CFG-011](../spec/traceability.md)).
 - Compare with default: compile the same base with an empty overlay and diff the element.
 
 ## Worked example: tenant A customizes Tickets

@@ -15,6 +15,19 @@ const files = [];
 })(root);
 
 let broken = 0;
+// Every doc under docs/ (except requirement sources and generated files) needs front matter (execution brief section 7).
+const required = ['title', 'status', 'owner', 'last_reviewed', 'requirements'];
+const exempt = new Set(['docs/spec/master-spec.md', 'docs/spec/execution-brief.md']);
+for (const file of files) {
+  const rel = file.slice(root.length + 1);
+  if (!rel.startsWith('docs/') || exempt.has(rel)) continue;
+  const head = readFileSync(file, 'utf8').match(/^---\n([\s\S]*?)\n---/);
+  const missing = head ? required.filter((k) => !new RegExp(`^${k}:`, 'm').test(head[1])) : required;
+  if (missing.length) {
+    console.error(`${rel}: front matter missing ${missing.join(', ')}`);
+    broken++;
+  }
+}
 const link = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 for (const file of files) {
   const text = readFileSync(file, 'utf8').replace(/```[\s\S]*?```/g, '');
@@ -29,5 +42,5 @@ for (const file of files) {
     }
   }
 }
-console.log(`${files.length} Markdown files checked, ${broken} broken links.`);
+console.log(`${files.length} Markdown files checked, ${broken} problems (broken links or missing front matter).`);
 process.exit(broken ? 1 : 0);

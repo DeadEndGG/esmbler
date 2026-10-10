@@ -35,7 +35,7 @@ JWT bearer, audience `esmbler-mcp` only; API tokens (`esmbler-api`) are rejected
 
 ```json
 {
-  "iss": "https://esmbler.local", "aud": "esmbler-mcp",
+  "iss": "esmbler", "aud": "esmbler-mcp",
   "sub": "user:6a0f…", "tid": "tenant:acme-uuid", "eid": "env:sandbox-uuid",
   "act": { "sub": "agent:assistant-alex" },
   "scp": "config:read config:edit config:publish:request records:read",
@@ -43,7 +43,7 @@ JWT bearer, audience `esmbler-mcp` only; API tokens (`esmbler-api`) are rejected
 }
 ```
 
-No tool takes a tenant or environment argument. Each call resolves `TenantContext` from `tid`/`eid`, checks the agent principal is enabled, and evaluates `user permission ∩ scp ∩ acts_for` in the PDP ([ADR 0004](0004-authorization-engine.md)).
+No tool takes a tenant or environment argument. Each call resolves the `RequestContext` from `tid`/`eid`, checks the agent principal is enabled, and evaluates `user permission ∩ scp ∩ acts_for` in the PDP ([ADR 0004](0004-authorization-engine.md)).
 
 ### Tools (Gate 1)
 
@@ -106,7 +106,7 @@ The approve endpoint exists only in the API, requires an `esmbler-api` token wit
 
 ### Audit and limits
 
-Every call writes `kernel.audit`: actor, agent, tool, target IDs, config revision, draft version, outcome, duration. Arguments are stored minus free-text record content.
+Every call writes `kernel.audit_log`: actor, agent, tool, target IDs, config revision, draft version, outcome, duration. Arguments are stored minus free-text record content.
 
 | Limit (Gate 1 governor) | Value |
 |---|---|

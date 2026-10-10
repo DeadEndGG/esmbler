@@ -1,0 +1,136 @@
+# One command starts the full system with seed data:
+#   docker compose -f deploy/docker-compose.yml up --build
+# Web: http://localhost:8080   API: http://localhost:5080   MCP: http://localhost:5090/mcp   OpenFGA: http://localhost:8081
+# Credentials below are development-only defaults; override them via environment variables or a .env file.
+name: esmbler
+
+x-dotnet-env: &dotnet-env
+  Esmbler__Database__App: Host=postgres;Database=esmbler;Username=esmbler_app;Password=${ESMBLER_APP_PASSWORD:-dev-only-app};Gss Encryption Mode=Disable
+  Esmbler__OpenFga__ApiUrl: http://openfga:8080
+  Esmbler__Auth__SigningKey: ${ESMBLER_SIGNING_KEY:-dev-only-signing-key-change-me-0123456789abcdef}
+  Esmbler__Assistant__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
+  Logging__LogLevel__Default: Information
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-only-postgres}
+      ESMBLER_APP_PASSWORD: ${ESMBLER_APP_PASSWORD:-dev-only-app}
+      ESMBLER_MIGRATOR_PASSWORD: ${ESMBLER_MIGRATOR_PASSWORD:-dev-only-migrator}
+      ESMBLER_OPENFGA_PASSWORD: ${ESMBLER_OPENFGA_PASSWORD:-dev-only-openfga}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./postgres/00-roles.sh:/docker-entrypoint-initdb.d/00-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d esmbler"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "55432:5432"
+
+  openfga-migrate:
+    image: openfga/openfga:v1.22.0
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://esmbler_openfga:${ESMBLER_OPENFGA_PASSWORD:-dev-only-openfga}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  openfga:
+    image: openfga/openfga:v1.22.0
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://esmbler_openfga:${ESMBLER_OPENFGA_PASSWORD:-dev-only-openfga}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_LOG_LEVEL: warn
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=openfga:8081"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "8081:8080"
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      args: { APP: Esmbler.Api }
+      secrets: [extra_ca]
+    environment:
+      <<: *dotnet-env
+      Esmbler__Database__Migrator: Host=postgres;Database=esmbler;Username=esmbler_migrator;Password=${ESMBLER_MIGRATOR_PASSWORD:-dev-only-migrator};Gss Encryption Mode=Disable
+      Esmbler__MigrateOnStartup: "true"
+      Esmbler__SeedDemoData: "true"
+      Esmbler__Mcp__Url: http://mcp:8080/mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openfga:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dotnet", "Esmbler.Api.dll", "healthcheck", "/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    ports:
+      - "5080:8080"
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      args: { APP: Esmbler.Mcp }
+      secrets: [extra_ca]
+    environment:
+      <<: *dotnet-env
+      Esmbler__MigrateOnStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dotnet", "Esmbler.Mcp.dll", "healthcheck", "/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    ports:
+      - "5090:8080"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      args: { APP: Esmbler.Worker }
+      secrets: [extra_ca]
+    environment:
+      <<: *dotnet-env
+      Esmbler__MigrateOnStartup: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/docker/web.Dockerfile
+      secrets: [extra_ca]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+secrets:
+  extra_ca:
+    file: ${EXTRA_CA_FILE:-./docker/empty-ca.crt}
+
+volumes:
+  pgdata:

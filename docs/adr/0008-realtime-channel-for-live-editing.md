@@ -28,7 +28,7 @@ While a user chats with the assistant beside the real Tickets page, each change 
 
 ## Decision outcome
 
-**Chosen option 1.** Hub `/hubs/live` in `apps/Esmbler.Api`. Both the API and MCP write draft commands to Postgres and call `pg_notify('esmbler_draft', …)` in the same transaction, so the notification is delivered only on commit. Each API instance holds one dedicated Npgsql connection with `LISTEN esmbler_draft`.
+**Chosen option 1.** Hub `/hubs/live` in `apps/Esmbler.Api`. Both the API and MCP write draft commands to Postgres and call `pg_notify('esmbler_draft', …)` in the same transaction, so the notification is delivered only on commit. Each API instance holds one dedicated Npgsql connection with `LISTEN esmbler_draft`. Status: planned for G1-M10; the `kernel.drafts` and `kernel.draft_commands` tables exist, the hub and listener do not yet.
 
 ```mermaid
 sequenceDiagram
@@ -39,11 +39,11 @@ sequenceDiagram
     participant H as SignalR hub /hubs/live
     participant R as Angular renderer
     M->>MCP: add_field(..., expectedDraftVersion 12)
-    MCP->>DB: BEGIN; check version 12; INSERT draft_commands seq 13; version=13
+    MCP->>DB: BEGIN; check version 12; INSERT kernel.draft_commands seq 13; drafts.version=13
     MCP->>DB: pg_notify('esmbler_draft', {t,e,draftId,version:13,seq:13}); COMMIT
     MCP-->>M: ok (seq 13, version 13)
     DB-->>L: notification (after commit)
-    L->>DB: SET LOCAL tenant; load command 13; recompose changed view
+    L->>DB: InTenantAsync(t, e); load command 13; recompose changed view
     L->>H: group draft:{t}:{e}:{draftId}
     H-->>R: draftChanged (version 13)
     R->>R: version == last+1? patch nodes by ID, highlight changedTargets
@@ -57,7 +57,7 @@ The `pg_notify` payload carries IDs only (well under the 8,000-byte limit, no re
 { "t": "6f1c…", "e": "a7d2…", "draftId": "0192f4…", "version": 13, "seq": 13 }
 ```
 
-The listener reads the command under that tenant's RLS context and sends:
+The listener reads the command (its `op`, `summary`, `targets`, `actor`, `agent`) under that tenant's RLS context (`Database.InTenantAsync`) and sends:
 
 ```json
 {
@@ -99,7 +99,7 @@ The listener reads the command under that tenant's RLS context and sends:
 | Margin (GC, contention) | 500 ms |
 | **Total** | **1,000 ms** |
 
-Measured in Playwright: the tool result timestamp (from the MCP audit row) to a `data-node-id` element becoming visible with the highlight class.
+Measured in Playwright: the tool result timestamp (from the MCP call's `kernel.audit_log` row) to a `data-node-id` element becoming visible with the highlight class.
 
 ### Consequences
 

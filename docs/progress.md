@@ -14,10 +14,10 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 
 | Field | Value |
 | --- | --- |
-| Current gate | Gate 0: Decisions and foundation |
-| Current milestone | G0-M3 documentation (decision docs), with G0-M4 and G0-M6 documentation in parallel |
-| Done | G0-M2 (expression language, spec model, config compiler, Tickets 1.0.0 and 1.1.0 releases, 60-element registry); G0-M5 authorization spike (OpenFGA, ADR 0004); extension-runtime ADR 0006 drafted from its spike; architecture overview, Tickets architecture, registry reference, design principles, layered configuration, authorization model, acceptance plan and this backlog written |
-| Next | Finish G0-M3 (ADRs 0001–0013, assumptions, threat model, human actions); then G0-M1 remainder (Dockerfiles, Compose, CI), G0-M7 (agent files, docs lint), then close Gate 0 |
+| Current gate | Gate 1: Architecture proof |
+| Current milestone | G1-M2 identity, dev auth, OpenFGA facts; G1-M4 record engine |
+| Done | Gate 0 (tag `gate-0-complete`). Gate 1: G1-M1 kernel schema and RLS; record service, identity service, provisioning and demo seed with integration tests (parts of G1-M2, G1-M4, G1-M5) |
+| Next | JWT auth and REST API endpoints (G1-M2/G1-M4), outbox dispatcher in the worker, then drafts and publish (G1-M6, G1-M7) |
 | Blockers | None |
 
 ## How to read the backlog
@@ -28,19 +28,19 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 
 ## Gate 0: decisions and foundation
 
-- [ ] **G0-M1 Repo scaffold and CI.** Solution, projects, Angular workspace (`apps/web`), Dockerfiles, `compose.yaml` with seed, CI (build, lint, typecheck, architecture tests, unit and integration tests, docs lint, secret scan). Solution, projects and Angular workspace done; Dockerfiles, Compose and CI pending. REQ-OPS-006, REQ-MOD-002
+- [x] **G0-M1 Repo scaffold and CI.** Solution, projects, Angular workspace (`apps/web`), Dockerfiles (`deploy/docker/`), `deploy/docker-compose.yml`, CI (`.github/workflows/ci.yml`: build, format, unit, architecture, integration, frontend, docs lint and links, gitleaks, compose + Playwright acceptance). REQ-OPS-006, REQ-MOD-002
 - [x] **G0-M2 Expression language, spec model, config compiler.** `Esmbler.Expressions` (CEL subset plus conformance cases); SDK specs and overlay ops; `Composer`, `ConfigValidator`, `DependencyGraph`, `ConfigCompiler`; Tickets releases; unit tests. REQ-RULE-003, REQ-CFG-001, REQ-CFG-002, REQ-CFG-004, REQ-CFG-005, REQ-CFG-006, REQ-AI-001
-- [ ] **G0-M3 Decision docs.** ADRs 0001–0013, `docs/decisions/assumptions.md`, `docs/security/threat-model.md`, `docs/human-actions.md`, `docs/known-issues.md`. REQ-AUTHZ-001, REQ-EXT-001, REQ-AISAFE-001
-- [ ] **G0-M4 Architecture, registry, design principles.** `docs/architecture/overview.md` (C4 levels 1–3), `docs/architecture/modules/tickets.md`, `docs/reference/element-registry-schema.md`, Gate 1 element specs (60 JSON files), `docs/explanation/design-principles.md`, `layered-configuration.md`, `authorization-model.md`. Docs written; registry token gaps to close (see design principles). REQ-AI-002, REQ-EL-001, REQ-DS-001, REQ-DS-002
-- [ ] **G0-M5 Spikes.** Authorization (OpenFGA vs SpiceDB vs Cedar) done; extension runtime (Wasmtime sidecar, Rust guest) ADR written, spike code in `spikes/extension-runtime` to be finalized. REQ-AUTHZ-001, REQ-EXT-001, REQ-EXT-003
-- [ ] **G0-M6 Traceability, acceptance plan, backlog.** `docs/spec/traceability.md` seeded; `docs/testing/acceptance-plan.md` and this backlog written. REQ-ACC-01 to REQ-ACC-14 (planning), REQ-AISAFE-005
-- [ ] **G0-M7 Agent instruction files and docs lint.** Root `AGENTS.md` and `CLAUDE.md`, nested `AGENTS.md`/`CLAUDE.md` per module and package, `.claude/rules/*`, `.claude/agents/*` (boundary, security, spec, docs reviewers), markdownlint, link check, front-matter check in CI. REQ-MOD-002
-- [ ] **Gate 0 close.** All Gate 0 evidence in the [acceptance plan](testing/acceptance-plan.md#gate-0-decisions) passes; tag `gate-0-complete`; `docs/testing/gate-0-test-guide.md`; CHANGELOG updated
+- [x] **G0-M3 Decision docs.** ADRs 0001–0013, `docs/decisions/assumptions.md`, `docs/security/threat-model.md`, `docs/human-actions.md`, `docs/known-issues.md`. REQ-AUTHZ-001, REQ-EXT-001, REQ-AISAFE-001
+- [x] **G0-M4 Architecture, registry, design principles.** `docs/architecture/overview.md` (C4 levels 1–3), `docs/architecture/modules/tickets.md`, `docs/reference/element-registry-schema.md`, Gate 1 element specs (60 JSON files), `docs/explanation/design-principles.md`, `layered-configuration.md`, `authorization-model.md`. Docs written; generated catalog in `docs/reference/element-catalog.md`; registry token gaps tracked in design principles. REQ-AI-002, REQ-EL-001, REQ-DS-001, REQ-DS-002
+- [x] **G0-M5 Spikes.** Authorization (OpenFGA vs SpiceDB vs Cedar) done; extension runtime (Wasmtime sidecar, Rust guest) done. REQ-AUTHZ-001, REQ-EXT-001, REQ-EXT-003
+- [x] **G0-M6 Traceability, acceptance plan, backlog.** `docs/spec/traceability.md` seeded; `docs/testing/acceptance-plan.md` and this backlog written. REQ-ACC-01 to REQ-ACC-14 (planning), REQ-AISAFE-005
+- [x] **G0-M7 Agent instruction files and docs lint.** Root `AGENTS.md` and `CLAUDE.md`, nested `AGENTS.md`/`CLAUDE.md` per module and package, `.claude/rules/*`, `.claude/agents/*` (boundary, security, spec, docs reviewers), markdownlint, link check, front-matter check in CI. REQ-MOD-002
+- [x] **Gate 0 close.** All Gate 0 evidence in the [acceptance plan](testing/acceptance-plan.md#gate-0-decisions) passes; tag `gate-0-complete`; `docs/testing/gate-0-test-guide.md`; CHANGELOG updated
 
 ## Gate 1: architecture proof
 
-- [ ] **G1-M1 Kernel tenancy, RLS, migrations.** `kernel` schema, SQL migration runner, roles `esmbler_migrator` and `esmbler_app`, `FORCE ROW LEVEL SECURITY`, `set_config('app.tenant_id', …, true)` per transaction, fail-closed policies, RLS tests for every table. REQ-TEN-001, REQ-TEN-002, REQ-REC-001
-- [ ] **G1-M2 Identity, dev auth, OpenFGA facts.** Principals and memberships, password login, JWT (`esmbler-api`), explicit tenant/environment switch, agent tokens (`esmbler-mcp`), OpenFGA store per tenant-environment, membership outbox writer, seed tenants and users. REQ-IAM-001, REQ-IAM-002, REQ-TEN-003, REQ-AISAFE-004
+- [x] **G1-M1 Kernel tenancy, RLS, migrations.** `kernel` schema, SQL migration runner, roles `esmbler_migrator` and `esmbler_app`, `FORCE ROW LEVEL SECURITY`, `set_config('app.tenant_id', …, true)` per transaction, fail-closed policies, RLS tests for every table. REQ-TEN-001, REQ-TEN-002, REQ-REC-001
+- [ ] **G1-M2 Identity, dev auth, OpenFGA facts.** Principals and memberships, password login, JWT (`esmbler-api`), explicit tenant/environment switch, agent tokens (`esmbler-mcp`), OpenFGA store per tenant, membership outbox writer, seed tenants and users. REQ-IAM-001, REQ-IAM-002, REQ-TEN-003, REQ-AISAFE-004
 - [ ] **G1-M3 PDP.** Four-level decisions from compiled permission sets plus OpenFGA, agent intersection, fail closed, explain access (API). REQ-AUTHZ-002, REQ-AUTHZ-003, REQ-AUTHZ-006, REQ-AUTHZ-007, REQ-AUTHZ-009, REQ-AUTHZ-010
 - [ ] **G1-M4 Record engine, audit, outbox.** `kernel.records` CRUD and soft delete, revisions and idempotency keys, precise types, referential integrity, audit in the same transaction, outbox, worker dispatcher, inbox dedup, per-record ordering. REQ-REC-004, REQ-REC-005, REQ-REC-006, REQ-REC-007, REQ-EVT-001, REQ-EVT-002, REQ-EVT-003, REQ-EVT-004, REQ-ACC-06
 - [ ] **G1-M5 Query compiler and list API.** Typed query contract, CEL filter to parameterized SQL over JSONB, permission predicate before paging and count, bounds (page 100, 64 nodes, 5 s), GIN and tsvector indexes, pilot-scale benchmark. REQ-REC-002, REQ-REC-003, REQ-AUTHZ-005

@@ -24,7 +24,7 @@ public class WritePipelineTests
 
     private static readonly RecordWriteEngine Engine = new(
         new FieldNormalizer(new PassThroughSanitizer()),
-        [new WorkflowHook(), new AssignmentHook(new Groups()), new RulesHook()]);
+        [new WorkflowHook(), new AssignmentHook(), new RulesHook()]);
 
     private static EffectivePermissions Perms(Guid user, string role, IReadOnlySet<string>? scopes = null, Guid? agent = null, params Guid[] groups) =>
         new(Config, new AuthorizationFacts
@@ -39,7 +39,7 @@ public class WritePipelineTests
     private static EffectivePermissions AgentPerms => Perms(AgentUser, "core.tickets.agent", null, null, ServiceDesk);
 
     private static Task<RecordWriteContext> Create(EffectivePermissions perms, JsonObject changes) =>
-        Engine.PrepareAsync(Config, Ticket, perms, WriteOperations.Create, null, changes, "2026-10-10T09:00:00.000Z", null, default);
+        Engine.PrepareAsync(Config, Ticket, perms, WriteOperations.Create, null, changes, "2026-10-10T09:00:00.000Z", null, Lookups, default);
 
     [Fact]
     public async Task Create_applies_defaults_initial_state_and_assignment()
@@ -87,10 +87,10 @@ public class WritePipelineTests
         var prior = created.Data;
         prior["status"] = "in_progress";
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
-            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, prior, [], "2026-10-10T10:00:00.000Z", "resolve", default));
+            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, prior, [], "2026-10-10T10:00:00.000Z", "resolve", Lookups, default));
         Assert.Contains(ex.Errors, e => e.Field == "resolution_notes" && e.Code == "required");
 
-        var resolved = await Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, prior, new JsonObject { ["resolution_notes"] = "Replaced router" }, "2026-10-10T10:00:00.000Z", "resolve", default);
+        var resolved = await Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, prior, new JsonObject { ["resolution_notes"] = "Replaced router" }, "2026-10-10T10:00:00.000Z", "resolve", Lookups, default);
         Assert.Equal("resolved", resolved.Data["status"]!.GetValue<string>());
         Assert.Equal("2026-10-10T10:00:00.000Z", resolved.Data["resolved_at"]!.GetValue<string>());
         Assert.Equal("in_progress", resolved.FromState);
@@ -101,10 +101,10 @@ public class WritePipelineTests
     {
         var created = await Create(RequesterPerms, new JsonObject { ["title"] = "Need a monitor" });
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
-            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, created.Data, [], "2026-10-10T10:00:00.000Z", "confirm", default));
+            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Transition, created.Data, [], "2026-10-10T10:00:00.000Z", "confirm", Lookups, default));
         Assert.Equal("invalid_transition", ex.Errors[0].Code);
         await Assert.ThrowsAsync<KernelException>(() =>
-            Engine.PrepareAsync(Config, Ticket, RequesterPerms, WriteOperations.Transition, created.Data, [], "2026-10-10T10:00:00.000Z", "start", default));
+            Engine.PrepareAsync(Config, Ticket, RequesterPerms, WriteOperations.Transition, created.Data, [], "2026-10-10T10:00:00.000Z", "start", Lookups, default));
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class WritePipelineTests
     {
         var closed = new JsonObject { ["title"] = "Old ticket", ["status"] = "closed", ["priority"] = "p3", ["requester"] = Requester.ToString(), ["resolution_notes"] = "done" };
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() =>
-            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Update, closed, new JsonObject { ["title"] = "Changed title" }, "2026-10-10T10:00:00.000Z", null, default));
+            Engine.PrepareAsync(Config, Ticket, AgentPerms, WriteOperations.Update, closed, new JsonObject { ["title"] = "Changed title" }, "2026-10-10T10:00:00.000Z", null, Lookups, default));
         Assert.Equal("read_only", Assert.Single(ex.Errors).Code);
     }
 
@@ -170,9 +170,11 @@ public class WritePipelineTests
         public string Sanitize(string html) => html;
     }
 
-    private sealed class Groups : IGroupDirectory
+    private static readonly Groups Lookups = new();
+
+    private sealed class Groups : IRecordLookups
     {
-        public Task<Guid?> FindByKeyAsync(string key, CancellationToken cancellationToken) =>
+        public Task<Guid?> FindGroupByKeyAsync(string key, CancellationToken cancellationToken) =>
             Task.FromResult<Guid?>(key == "service_desk" ? ServiceDesk : key == "network" ? Guid.Parse("00000000-0000-0000-0000-00000000000a") : null);
     }
 }

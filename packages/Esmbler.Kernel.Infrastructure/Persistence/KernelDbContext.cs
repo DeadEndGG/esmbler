@@ -67,8 +67,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<PrincipalRow>().ToTable("principals").HasKey(x => x.Id);
         b.Entity<MembershipRow>().ToTable("memberships").HasKey(x => new { x.TenantId, x.PrincipalId });
         b.Entity<GroupRow>().ToTable("groups").HasKey(x => new { x.TenantId, x.Id });
-        b.Entity<GroupMemberRow>().ToTable("group_members").HasNoKey();
-        b.Entity<RoleAssignmentRow>().ToTable("role_assignments").HasNoKey();
+        b.Entity<GroupMemberRow>().ToTable("group_members").HasKey(x => x.Id);
+        b.Entity<RoleAssignmentRow>().ToTable("role_assignments").HasKey(x => x.Id);
         b.Entity<InstallationRow>().ToTable("installations").HasKey(x => new { x.TenantId, x.EnvironmentId, x.ModuleId });
         b.Entity<ConfigArtifactRow>().ToTable("config_artifacts").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Revision });
         b.Entity<ActiveConfigRow>().ToTable("active_config").HasKey(x => new { x.TenantId, x.EnvironmentId });

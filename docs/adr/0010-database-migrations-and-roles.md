@@ -27,67 +27,86 @@ Tenant isolation rests on PostgreSQL row-level security. The master spec ("Datab
 
 ## Decision outcome
 
-**Chosen option 1.** Files `packages/Esmbler.Kernel.Infrastructure/Migrations/NNNN_description.sql` are embedded resources. `apps/Esmbler.Worker --migrate` applies them as `esmbler_migrator`, each in its own transaction, recording `kernel.schema_migrations (version, name, checksum sha256, applied_at)`. A changed checksum of an applied file stops startup. EF Core is still the data-access library (mapping, LINQ for simple reads); it never generates schema.
+**Chosen option 1.** Files `packages/Esmbler.Kernel.Infrastructure/Migrations/NNNN_description.sql` are embedded resources. `MigrationRunner` applies them as `esmbler_migrator` under an advisory lock, each in its own transaction, recording `esmbler_meta.schema_migrations (version, checksum, applied_at)` (SHA-256 checksum; the meta schema is outside `kernel`, so the runtime role has no access). The API runs it at startup when `Esmbler:MigrateOnStartup` is true (Docker Compose sets this), or on demand with `dotnet run --project apps/Esmbler.Api -- migrate`. A changed checksum of an applied file stops startup. EF Core is still the data-access library (mapping, LINQ for simple reads); it never generates schema.
 
 ### Roles
 
+Created once by `deploy/postgres/00-roles.sh` on first Postgres start; passwords come from the environment.
+
 | Role | Attributes | Owns | Grants | Used by |
 |---|---|---|---|---|
-| `esmbler_migrator` | LOGIN, NOSUPERUSER, NOBYPASSRLS | schema `kernel` and all tables, functions | full DDL | Migration runner only |
-| `esmbler_app` | LOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, not owner | nothing | `SELECT, INSERT, UPDATE, DELETE` on tenant tables; `INSERT, SELECT` only on `kernel.audit`; `EXECUTE` on `kernel.claim_work` | API, MCP, Worker |
-| `esmbler_backup` | LOGIN, NOSUPERUSER, BYPASSRLS | nothing | `SELECT` on all tables (`pg_read_all_data`) | `pg_dump` and tenant restore-extract (Gate 2) |
+| `esmbler_migrator` | LOGIN, NOSUPERUSER, NOCREATEROLE, NOBYPASSRLS; may `SET ROLE esmbler_definer` (without inheriting it) | database `esmbler`, schema `kernel`, all tables | full DDL | Migration runner only |
+| `esmbler_app` | LOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, not owner | nothing | `SELECT, INSERT, UPDATE, DELETE` on `kernel` tables; `INSERT, SELECT` only on `kernel.audit_log`; no `DELETE` on `kernel.tenants`, `kernel.principals`, `kernel.config_artifacts`; `EXECUTE` on the privileged functions below | API, MCP, Worker |
+| `esmbler_definer` | NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, BYPASSRLS | the `SECURITY DEFINER` functions | `USAGE, CREATE` on schema `kernel`; `SELECT` on `kernel.principals`; `SELECT, INSERT` on `kernel.tenants`; `SELECT, UPDATE` on `kernel.outbox`, `kernel.jobs` | Nobody logs in as it; privileged functions run with its rights |
+| `esmbler_openfga` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS | database `openfga` | none in `esmbler` | OpenFGA datastore ([ADR 0004](0004-authorization-engine.md)) |
+| `esmbler_backup` (planned, Gate 2) | LOGIN, NOSUPERUSER, BYPASSRLS | nothing | `SELECT` on all tables (`pg_read_all_data`) | `pg_dump` and tenant restore-extract |
 
-The OpenFGA datastore uses its own database and role, outside RLS ([ADR 0004](0004-authorization-engine.md)).
+`PUBLIC` has no `CONNECT` on database `esmbler` and no `CREATE` on schema `public`. The OpenFGA datastore is a separate database (`openfga`) outside RLS, isolated by store ID.
 
 ### RLS policy
 
 Every tenant table gets the same pattern:
 
 ```sql
+CREATE FUNCTION kernel.current_tenant() RETURNS uuid LANGUAGE sql STABLE
+AS $$ SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid $$;
+-- kernel.current_environment() and kernel.current_principal() read app.environment_id and app.principal_id
+
 ALTER TABLE kernel.records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kernel.records FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON kernel.records
-  USING (
-    tenant_id      = NULLIF(current_setting('app.tenant_id', true), '')::uuid
-    AND environment_id = NULLIF(current_setting('app.environment_id', true), '')::uuid
-  )
-  WITH CHECK (
-    tenant_id      = NULLIF(current_setting('app.tenant_id', true), '')::uuid
-    AND environment_id = NULLIF(current_setting('app.environment_id', true), '')::uuid
-  );
+CREATE POLICY tenant_environment_isolation ON kernel.records
+  USING (tenant_id = kernel.current_tenant() AND environment_id = kernel.current_environment())
+  WITH CHECK (tenant_id = kernel.current_tenant() AND environment_id = kernel.current_environment());
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON kernel.records TO esmbler_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA kernel TO esmbler_app;
 ```
 
-Unset or empty settings give `NULL`, and `tenant_id = NULL` is never true, so no rows are visible or writable. Tenant-wide identity tables (memberships, groups, role assignments) use a tenant-only policy without `environment_id` ([assumption ASM-016](../decisions/assumptions.md)).
+Unset or empty settings give `NULL`, and `tenant_id = NULL` is never true, so no rows are visible or writable. Tenant-wide identity tables (`groups`, `group_members`, `role_assignments`) use a tenant-only policy (`tenant_isolation`) without `environment_id` ([assumption ASM-016](../decisions/assumptions.md)). `kernel.tenants`, `kernel.environments`, `kernel.memberships` and `kernel.principals` are also visible to the current principal's own memberships (for the tenant switcher). `kernel.audit_log` allows tenant-wide entries with a null `environment_id`.
 
-`kernel.audit` additionally has no UPDATE or DELETE grant, so an application bug cannot rewrite history.
+`kernel.audit_log` additionally has no UPDATE or DELETE grant, so an application bug cannot rewrite history.
 
 ### Transaction-local context
 
-A `TenantSessionInterceptor` (EF Core `DbTransactionInterceptor`) runs at the start of every transaction:
+All data access goes through `Database` (`packages/Esmbler.Kernel.Infrastructure/Persistence/Database.cs`). Each of its entry points opens a transaction and sets the context first:
 
 ```sql
 BEGIN;
 SELECT set_config('app.tenant_id',      $1, true),   -- true = local to this transaction
        set_config('app.environment_id', $2, true),
-       set_config('app.principal',      $3, true);
+       set_config('app.principal_id',   $3, true);
 -- ... commands ...
 COMMIT;   -- settings vanish; the pooled connection carries nothing to the next user
 ```
 
-`set_config(..., true)` is the parameterizable form of `SET LOCAL`. Code paths without a transaction are rejected by the interceptor (`TenantContextMissingException`) rather than silently running without context.
+| Method | Context set | Used for |
+|---|---|---|
+| `InTenantAsync(tenant, environment, principal?, …)` | tenant, environment, principal | records, configuration, jobs: everything environment-scoped |
+| `InTenantWideAsync(tenant, principal?, …)` | tenant, principal | identity data (groups, role assignments) and tenant-wide audit |
+| `AsPrincipalAsync(principal, …)` | principal only | the principal's own memberships (tenant switcher) |
+| `AnonymousAsync(…)` | nothing | login lookup, provisioning, health checks; only the privileged functions return rows |
+
+`set_config(..., true)` is the parameterizable form of `SET LOCAL`. Code never sets context on a raw pooled connection.
 
 ### Privileged functions
 
-Only `SECURITY DEFINER` functions owned by `esmbler_migrator`, each with `SET search_path = kernel, pg_temp`, returning minimal columns. Gate 1 has one: `kernel.claim_work` ([ADR 0005](0005-job-and-workflow-execution.md)). A test lists all `SECURITY DEFINER` functions and fails on any not in an allow-list.
+Only `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler_definer` (not by the migrator, so they never run with owner or DDL rights), each with `SET search_path = kernel, pg_temp`, `EXECUTE` revoked from `PUBLIC` and granted to `esmbler_app`, returning minimal columns:
+
+| Function | Purpose |
+|---|---|
+| `kernel.login_lookup(email)` | Password hash lookup before any context exists |
+| `kernel.provision_tenant(id, slug, name)` | Insert a tenant before a context exists for it |
+| `kernel.find_tenant_by_slug(slug)` | Resolve a tenant ID from its slug |
+| `kernel.claim_outbox(worker, batch, lease_seconds)` | Worker claim of outbox events ([ADR 0005](0005-job-and-workflow-execution.md)) |
+| `kernel.claim_jobs(worker, batch, lease_seconds)` | Fair worker claim of jobs ([ADR 0005](0005-job-and-workflow-execution.md)) |
+
+An allow-list test of all `SECURITY DEFINER` functions is planned (`.claude/rules/database-migrations.md` names it as `DatabaseIsolationTests`).
 
 ### Consequences
 
 - Good: policies, grants and functions are reviewed as SQL; the security reviewer agent and `.claude/rules/` for migrations target one folder.
 - Good: isolation holds even if application code forgets a `WHERE tenant_id`.
-- Bad: no generated migrations; EF model and SQL can drift, so an integration test compares the EF model to the live schema.
+- Bad: no generated migrations; EF model and SQL can drift, so an integration test comparing the EF model to the live schema is planned.
 - Bad: we maintain a small runner (about 150 lines).
 
 ## Pros and cons of the options
@@ -100,5 +119,5 @@ Only `SECURITY DEFINER` functions owned by `esmbler_migrator`, each with `SET se
 
 ## More information
 
-- Verification (planned, Gate 1, blocking): `Integration.Rls.Missing_context_returns_no_rows`, `Integration.Rls.Tenant_a_cannot_read_or_write_tenant_b`, `Integration.Rls.App_role_is_not_owner_and_has_no_bypassrls`, `Integration.Rls.Context_does_not_leak_across_pooled_connections`, `Integration.Rls.Audit_log_rejects_update_and_delete`, `Integration.Rls.Only_allowlisted_security_definer_functions`.
+- Verification: `tests/Esmbler.IntegrationTests/Isolation/DatabaseIsolationTests.cs` (connects as `esmbler_app`): `Runtime_role_sees_only_the_current_tenant_environment`, `Writing_another_tenants_row_is_rejected_by_policy`, `Runtime_role_is_not_privileged_and_cannot_rewrite_audit` (also checks every `kernel` table has forced RLS), `Tenant_context_does_not_leak_across_pooled_connections`. Planned: the `SECURITY DEFINER` allow-list test.
 - Revisit triggers: dedicated-database tier (REQ-TEN-007) needs per-database migration orchestration; online migrations need lock-timeout tooling.

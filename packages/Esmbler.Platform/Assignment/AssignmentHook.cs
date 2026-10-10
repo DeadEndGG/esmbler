@@ -6,17 +6,11 @@ using Esmbler.Sdk.Specs;
 
 namespace Esmbler.Platform.Assignment;
 
-/// <summary>Resolves a tenant group key (e.g. "service_desk") to its ID within the current tenant.</summary>
-public interface IGroupDirectory
-{
-    Task<Guid?> FindByKeyAsync(string key, CancellationToken cancellationToken);
-}
-
 /// <summary>
 /// Default assignment strategy (extension point core.tickets.strategy.assignment): on create, the first enabled
 /// assignment rule whose condition matches sets the entity's first group access field, unless it is already set.
 /// </summary>
-public sealed class AssignmentHook(IGroupDirectory groups) : IRecordWriteHook
+public sealed class AssignmentHook : IRecordWriteHook
 {
     public int Order => 200;
 
@@ -53,7 +47,7 @@ public sealed class AssignmentHook(IGroupDirectory groups) : IRecordWriteHook
                 continue;
             }
 
-            if (await groups.FindByKeyAsync(rule.Group, cancellationToken) is { } groupId)
+            if (await ctx.Lookups.FindGroupByKeyAsync(rule.Group, cancellationToken) is { } groupId)
             {
                 ctx.SystemSet(groupField.Key, JsonValue.Create(groupId.ToString()));
                 ctx.Messages.Add(new RuleMessage(rule.Id, "info", $"Assigned to group '{rule.Group}' by {rule.Description ?? rule.Id}.", groupField.Key));

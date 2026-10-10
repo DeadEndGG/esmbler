@@ -12,8 +12,8 @@ requirements: [REQ-TEN-001, REQ-TEN-002, REQ-TEN-003, REQ-CFG-001, REQ-CFG-006, 
 
 Esmbler is an AI-native, composable Enterprise Service Management platform. It is a **modular monolith**: one repository and one set of .NET assemblies, deployed as a few containers that share a kernel library.
 
-- **Kernel** (`packages/Esmbler.Kernel`): tenant/environment context, identity and authorization enforcement (the PDP), the record engine, configuration compile/draft/publish, audit, the transactional outbox and the module registry. It knows no business-module internals.
-- **Shared platform services** (`packages/Esmbler.Platform`): rules, workflow state machines, assignment and notifications, plugged into kernel hooks.
+- **Kernel** (`packages/Esmbler.Kernel`, pure logic) and its adapters (`packages/Esmbler.Kernel.Infrastructure`: PostgreSQL, OpenFGA): tenant/environment context, identity and authorization enforcement (the PDP), the record engine, configuration compile/draft/publish, audit, the transactional outbox and the module registry. It knows no business-module internals.
+- **Shared platform services** (`packages/Esmbler.Platform`): workflow (hook order 100), assignment (200) and rules (300), plugged into the kernel's `IRecordWriteHook`; notifications are planned.
 - **Business modules** (`modules/*`): declarative spec releases on the public SDK (`packages/Esmbler.Sdk`). Tickets is the first. Modules never reference the kernel; architecture tests enforce this ([ADR 0012](../adr/0012-repository-layout-and-module-boundaries.md)).
 - **Configuration is a compiled artifact.** Base modules plus the tenant overlay (typed operations) compile into an immutable, content-hashed `EffectiveConfig`. Each request pins one config revision ([ADR 0003](../adr/0003-configuration-artifact-and-overlay-format.md), [layered configuration](../explanation/layered-configuration.md)).
 - **Storage is pooled.** One PostgreSQL 18 database, schema `kernel`, a shared `kernel.records` table with JSONB data, and RLS with `FORCE` on every tenant table ([ADR 0002](../adr/0002-storage-and-query-model.md), [ADR 0010](../adr/0010-database-migrations-and-roles.md)).
@@ -21,6 +21,10 @@ Esmbler is an AI-native, composable Enterprise Service Management platform. It i
 - **The AI builder** uses Esmbler's own MCP server (`apps/Esmbler.Mcp`). The in-app chat runs Claude as an MCP client with the user's delegated agent token ([ADR 0007](../adr/0007-mcp-server-design.md), [ADR 0013](../adr/0013-ai-assistant-model-adapter.md)).
 - **Live editing:** every build tool writes a Command to the draft. A SignalR push lets the Angular renderer apply each change in under a second ([ADR 0008](../adr/0008-realtime-channel-for-live-editing.md)).
 - **Extensions** (Gate 3) run in a Rust Wasmtime sidecar with no database credentials and no egress ([ADR 0006](../adr/0006-extension-runtime.md)).
+
+### Build status
+
+At Gate 0 close the following exist and are tested: the config compiler, the kernel schema with forced RLS and roles (`0001_kernel.sql`), `Database` (transaction-local context), the PDP (`EffectivePermissions`), the record write pipeline with its platform hooks, the query compiler, the OpenFGA adapter, the audit writer, and the four hosts with health endpoints. REST endpoints, the record engine's persistence, drafts and publish, the worker dispatcher, the MCP tools, the SignalR hub, the assistant loop and the Angular renderer are planned for Gate 1 ([progress](../progress.md)). The diagrams below show the Gate 1 target.
 
 ### Invariants
 
@@ -59,7 +63,7 @@ flowchart LR
 | Actor or system | Interaction | Gate |
 | --- | --- | --- |
 | Agents, requesters, admins | Browser UI (Angular). Dev auth uses local passwords | 1 |
-| Claude (Anthropic API) | Called by the API's assistant loop. A deterministic scripted planner replaces it when `ANTHROPIC_API_KEY` is unset | 1 |
+| Claude (Anthropic API) | Called by the API's assistant loop. A deterministic scripted planner replaces it when no API key is configured (`ANTHROPIC_API_KEY`, mapped to `Esmbler__Assistant__AnthropicApiKey`) | 1 |
 | External MCP clients | Connect to `/mcp` with an agent token minted for a user (`POST /api/auth/agent-token`) | 1 |
 | Email, object storage | Behind adapters with local fakes. Gate 1 notifications go to an in-app fake outbox | 2 |
 | Identity providers | Per-tenant OIDC/SAML/SCIM | 2 |
@@ -74,9 +78,9 @@ flowchart TB
         web[web<br/>Angular 22 static bundle]
         api[api<br/>ASP.NET Core: REST, SignalR /hubs/live,<br/>assistant loop]
         mcp[mcp<br/>ASP.NET Core + C# MCP SDK<br/>/mcp streamable HTTP]
-        worker[worker<br/>outbox dispatcher, jobs,<br/>migrations, timers]
+        worker[worker<br/>outbox dispatcher, jobs,<br/>data migrations, timers]
         pg[(postgres 18<br/>db esmbler: schema kernel<br/>db openfga)]
-        fga[openfga v1.22<br/>store per tenant-environment]
+        fga[openfga v1.22<br/>store per tenant]
         ext[extension runtime sidecar<br/>Rust + Wasmtime 48 LTS<br/>Gate 3]
     end
     claude[[Anthropic API]]
@@ -87,9 +91,9 @@ flowchart TB
     api -- MCP client, agent token --> mcp
     api --> claude
     extclient --> mcp
-    api -- esmbler_app role, RLS --> pg
+    api -- esmbler_app role, RLS; migrator role for schema --> pg
     mcp -- esmbler_app role, RLS --> pg
-    worker -- esmbler_app role; migrator role for schema --> pg
+    worker -- esmbler_app role, RLS --> pg
     api --> fga
     mcp --> fga
     worker --> fga
@@ -103,11 +107,11 @@ flowchart TB
 | Container | Technology | Responsibilities | Data access |
 | --- | --- | --- | --- |
 | `web` | Angular 22 (standalone, signals, zoneless), Angular CDK | Shell, server-driven renderer (one component per registry element), live editing, command palette, chat panel | None directly; REST and SignalR to `api` |
-| `api` | ASP.NET Core on .NET 10 | REST API (OpenAPI from code), auth endpoints, SignalR hub `/hubs/live`, assistant loop (Anthropic SDK + MCP client), `pg_notify` listener | `esmbler_app` role via kernel |
+| `api` | ASP.NET Core on .NET 10 | REST API (OpenAPI from code), auth endpoints, SignalR hub `/hubs/live`, assistant loop (Anthropic SDK + MCP client), `pg_notify` listener; `/health/live`, `/health/ready` | `esmbler_app` role via kernel; runs schema migrations as `esmbler_migrator` at startup (`Esmbler:MigrateOnStartup`) or with the `migrate` argument |
 | `mcp` | ASP.NET Core + `ModelContextProtocol.AspNetCore` | Discovery, build, review, lifecycle and explain tools; resources `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph`. Accepts only `esmbler-mcp` audience tokens | Same kernel services in-process, same authorization |
-| `worker` | .NET generic host | Outbox dispatch (`FOR UPDATE SKIP LOCKED`, leases, backoff, dead letters), inbox dedup, data migrations, OpenFGA tuple writer, timers | `esmbler_app`; runs schema migrations as `esmbler_migrator` at startup |
-| `postgres` | PostgreSQL 18 | `kernel` schema (records, audit, outbox, inbox, jobs, config artifacts, drafts, identity); separate `openfga` database | RLS with `FORCE`; runtime role is not owner and has no `BYPASSRLS` |
-| `openfga` | OpenFGA v1.22 | Relationship facts: nested group membership, role assignments, agent `acts_for` | Own database; isolation by store |
+| `worker` | .NET generic host | Outbox and job dispatch through `kernel.claim_outbox` / `kernel.claim_jobs` (`FOR UPDATE SKIP LOCKED`, leases, backoff, dead letters), inbox dedup, data migrations, OpenFGA tuple writer, timers | `esmbler_app` only |
+| `postgres` | PostgreSQL 18 | Database `esmbler`: `kernel` schema (records, audit log, outbox, inbox, jobs, config artifacts, drafts, identity) and `esmbler_meta.schema_migrations`; separate `openfga` database. Roles from `deploy/postgres/00-roles.sh` | RLS with `FORCE`; runtime role is not owner and has no `BYPASSRLS` |
+| `openfga` | OpenFGA v1.22 | Relationship facts: nested group membership, role assignments, agent `acts_for`. A derived index of `kernel.group_members` / `kernel.role_assignments`, one store per tenant | Own database (`openfga`, role `esmbler_openfga`); isolation by store |
 | extension runtime | Rust sidecar, `wasmtime =48.0.5` (Gate 3) | Runs tenant extension components with fuel, epoch and memory limits | None: no DB or vault credentials, egress denied |
 
 ## Level 3: components inside the API and kernel
@@ -139,7 +143,7 @@ flowchart LR
         asg[Assignment + notifications]
     end
     subgraph infra[Esmbler.Kernel.Infrastructure]
-        pgad[PostgreSQL adapter<br/>EF Core + Npgsql, SET LOCAL]
+        pgad[PostgreSQL adapter<br/>EF Core + Npgsql, set_config per transaction]
         fgaad[OpenFGA adapter]
     end
 
@@ -171,17 +175,17 @@ flowchart LR
 
 | Component | Responsibility | Key types or tables |
 | --- | --- | --- |
-| Tenancy context | Resolves tenant, environment, principal, agent and delegated scopes from the token. Opens every transaction with `set_config('app.tenant_id', …, true)` | `app.tenant_id`, `app.environment_id` |
+| Tenancy context | Resolves tenant, environment, principal, agent and delegated scopes from the token. `Database.InTenantAsync` opens every transaction with `set_config('app.tenant_id', …, true)` | `RequestContext`, `Database`; `app.tenant_id`, `app.environment_id`, `app.principal_id` |
 | Config compiler | Composes base modules (sorted by module ID), then applies overlay ops in order. Validates against the element registry and builds the dependency graph | `Composer`, `ConfigValidator`, `DependencyGraph`, `ConfigCompiler`, `ArtifactManifest` |
-| Draft service | One open draft per tenant environment. Each edit is a Command with `expectedDraftVersion`; a mismatch returns `409 draft_conflict` with a diff. Undo marks a command undone | `kernel.draft_commands`, `kernel.publish_requests` |
+| Draft service | One open draft per tenant environment. Each edit is a Command with `expectedDraftVersion`; a mismatch returns `409 draft_conflict` with a diff. Undo marks a command undone | `kernel.drafts` (partial unique index `drafts_one_open`), `kernel.draft_commands`, `kernel.publish_requests` |
 | Publish service | Recompiles, compares against the approved hash, runs migrations, switches `kernel.active_config` with optimistic concurrency, health-checks, keeps the previous artifact | `kernel.config_artifacts`, `kernel.active_config` |
-| Record engine | Create, update, transition and soft delete. Checks revision and idempotency key, then runs PDP, rules, workflow, audit and outbox in one transaction | `kernel.records`, `kernel.audit`, `kernel.outbox` |
-| Query compiler | Typed query contract to parameterized SQL over JSONB. The permission predicate is ANDed before `ORDER BY`/`LIMIT`/`COUNT` | Max page 100, 64 filter nodes, `statement_timeout` 5 s |
-| PDP | Policy decisions with an explain trace. Fails closed | `IAuthorizationEngine`, `IRelationshipGraph` |
-| Audit | Append-only change history with actor, agent and config revision. Runtime role has `INSERT`/`SELECT` only | `kernel.audit` |
-| Outbox | Writes event envelopes in the record transaction. The worker dispatches at least once | `kernel.outbox`, `kernel.inbox`, `kernel.jobs` |
+| Record engine | Create, update, transition and soft delete. Checks revision and idempotency key, then runs PDP, the write pipeline (field permissions, normalization, defaults, hooks, required checks), audit and outbox in one transaction | `RecordWriteEngine`, `IRecordWriteHook`; `kernel.records`, `kernel.record_sequences`, `kernel.idempotency_keys`, `kernel.audit_log`, `kernel.outbox` |
+| Query compiler | Typed query contract to parameterized SQL over JSONB. The permission predicate is ANDed before `ORDER BY`/`LIMIT`/`COUNT`; filtering on hidden fields is rejected | `QueryCompiler`: max page 100, offset ≤ 10,000, 64 filter nodes; `statement_timeout` 5 s planned |
+| PDP | Policy decisions with an explain trace. Fails closed | `EffectivePermissions`, `AccessService`, `IRelationshipGraph` |
+| Audit | Append-only change history with actor, agent and config revision. Runtime role has `INSERT`/`SELECT` only | `AuditWriter`, `kernel.audit_log` |
+| Outbox | Writes event envelopes in the record transaction. The worker dispatches at least once | `kernel.outbox`, `kernel.inbox`, `kernel.record_projections`, `kernel.jobs` |
 | Registry | Module releases and the element catalog. Read by the compiler, renderer and MCP | `IElementRegistry`, `IModuleDefinition` |
-| Rules and workflow services | Evaluate data rules on every write path and declarative state machines in-transaction | `RuleSpec`, `WorkflowSpec` |
+| Rules and workflow services | Evaluate data rules on every write path and declarative state machines in-transaction | `WorkflowHook`, `AssignmentHook`, `RulesHook`; `RuleSpec`, `WorkflowSpec` |
 | SignalR hub | Group `draft:{tenant}:{env}:{draftId}`; pushes `draftChanged {draftId, version, seq, ops summary, changedTargets, view spec}` | `/hubs/live` |
 | Assistant loop | Agent loop with bounded tool calls and spend. Wraps untrusted record content as data and applies field redaction before sending context | ADR 0013 |
 
@@ -203,7 +207,7 @@ sequenceDiagram
     P-->>K: allow with trace, or deny (fail closed)
     K->>K: workflow guard, data rules, validation
     K->>DB: UPDATE kernel.records WHERE revision = expected
-    K->>DB: INSERT kernel.audit
+    K->>DB: INSERT kernel.audit_log
     K->>DB: INSERT kernel.outbox (record.updated envelope)
     K->>DB: COMMIT
     K-->>C: 200 with new revision (or 409 record_conflict, 422 rule errors)
@@ -302,14 +306,14 @@ flowchart BT
 | Event consumer | One transaction: inbox row `(consumer, event_id)` plus the handler's own writes | At-least-once delivery; per-record ordering by revision |
 | Draft command (human or AI) | One transaction: `draft_commands` row, draft version bump and `pg_notify` | NOTIFY is delivered only on commit |
 | Publish | Several steps. (1) Compile and verify the approval hash. (2) Run expand/backfill migrations as resumable jobs in batches. (3) One transaction: pointer switch with expected revision, audit, outbox `config.published` | Not one atomic distributed transaction ([REQ-CFG-007](../spec/traceability.md), [REQ-MIG-002](../spec/traceability.md)) |
-| Membership and role change | PostgreSQL transaction plus outbox, then an idempotent OpenFGA writer | Revocations dispatched synchronously, with the outbox as fallback; nightly reconciliation |
+| Membership and role change | `kernel.group_members` / `kernel.role_assignments` (system of record) plus outbox, then an idempotent OpenFGA writer | Revocations written to OpenFGA before commit; grants after commit, with the outbox as fallback; nightly reconciliation (planned) |
 | External side effects (Gate 2+) | Outside any DB transaction; provider idempotency keys or reconciliation | Never hold a transaction open on a remote call |
 | Cross-module workflows (Gate 4) | Sagas with compensation over events | No cross-module transaction |
 
 ## Configuration revisions and caches
 
 - Clients send `X-Config-Revision`. A write under an incompatible older revision returns `409 config_conflict` with reload instructions ([REQ-CFG-008](../spec/traceability.md)).
-- Caches are keyed by `(tenant, environment, config revision)` or `(store, principal, authz_revision)`. No cache key omits the tenant ([REQ-TEN-002](../spec/traceability.md)).
+- Caches are keyed by `(tenant, environment, config revision)` or, once list-filter caching arrives (G1-M17), `(store, principal, authz_revision)`. No cache key omits the tenant ([REQ-TEN-002](../spec/traceability.md)).
 - Active workflow instances pin their definition version. Authorization always uses current access rules.
 
 ## Service extraction path
@@ -330,9 +334,9 @@ Costs to plan for: a network hop on the record write path, broker operations, di
 
 ## Deployment
 
-- `docker compose up` starts web, api, mcp, worker, postgres and openfga with seed data: tenants `acme` and `globex`, environments `prod` and `sandbox` ([REQ-OPS-006](../spec/traceability.md)).
-- Kubernetes manifests are provided but not exercised in CI ([assumptions](../decisions/assumptions.md)).
-- Images: one per deployable. The extension runtime is added in Gate 3.
+- `docker compose -f deploy/docker-compose.yml up --build` starts postgres, openfga (after `openfga-migrate`), api, mcp, worker and web. Ports: web 8080, API 5080, MCP 5090 (`/mcp`), OpenFGA 8081, Postgres 55432. Demo seed data (tenants `acme` and `globex`, environments `prod` and `sandbox`) is planned for G1-M2; Compose already sets `Esmbler__SeedDemoData` ([REQ-OPS-006](../spec/traceability.md)).
+- Images: one per deployable. `deploy/docker/dotnet.Dockerfile` builds each .NET host (`APP` = `Esmbler.Api`, `Esmbler.Mcp` or `Esmbler.Worker`); `deploy/docker/web.Dockerfile` builds the Angular bundle served by nginx. Health checks run `dotnet <Host>.dll healthcheck <path>`, so runtime images need no curl. The extension runtime is added in Gate 3.
+- Kubernetes manifests are planned and will not be exercised in CI at first ([assumptions](../decisions/assumptions.md)).
 
 ## Related documents
 

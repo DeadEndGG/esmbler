@@ -54,12 +54,12 @@ Which engine should the kernel's policy decision point (PDP) use, and how should
 
 ## Decision outcome
 
-**Chosen option: OpenFGA**, accessed only through the kernel ports `IAuthorizationEngine` and `IRelationshipGraph`.
+**Chosen option: OpenFGA**, accessed only through the kernel port `IRelationshipGraph` (adapter `OpenFgaRelationshipGraph`); decisions are made by the kernel PDP (`EffectivePermissions`).
 
 It is the only option that meets three of the drivers at once:
 
 - record attributes without dual-write (contextual tuples)
-- an isolation primitive built into the engine (a store per tenant-environment, with models pinned per store)
+- an isolation primitive built into the engine (a store per tenant, with the model pinned per store; see [Refinement (2026-10-10)](#refinement-2026-10-10))
 - an official, idiomatic .NET SDK
 
 The spike also confirmed the rest: CEL conditions work, a PostgreSQL datastore is supported, and the list-predicate plan holds up. SpiceDB was a close second. It is stronger on consistency tokens and on gRPC latency, but it needs dual-writes and has no tenancy primitive. Cedar does not traverse a relationship graph, and it has no official in-process .NET option.
@@ -69,7 +69,7 @@ The spike also confirmed the rest: CEL conditions work, a PostgreSQL datastore i
 Good:
 
 - Record rows remain the single source of truth for record attributes. The engine stores only memberships, role assignments, delegation and compiled policy grants. These change far less often than records.
-- Tenant isolation is enforced twice. Each tenant-environment has its own store, and model ids are scoped to a store: using one tenant's model id against another tenant's store failed with `authorization_model_not_found`.
+- Tenant isolation is enforced twice. Each tenant has its own store, and model ids are scoped to a store: using one tenant's model id against another tenant's store failed with `authorization_model_not_found`.
 - One HTTP client serves every store, because store and model are chosen per request.
 - The model can be tested in CI with `fga model test`, without .NET.
 - The port interfaces keep the engine swappable.
@@ -114,68 +114,54 @@ Environment: OpenFGA v1.22.0, OpenFga.Sdk 0.10.4, .NET 10, PostgreSQL 18. The ho
 
 ## Integration design
 
+### Refinement (2026-10-10)
+
+The decision above said "a store per tenant-environment". The implementation uses **one OpenFGA store per tenant**, because identity (groups, group members, role assignments, agent delegation) is tenant-wide: the same people and groups apply in production and sandbox. Environment-specific policy lives in the permission-set specs of each environment's configuration, not in the store. The store and model IDs are kept on the tenant row (`kernel.tenants.authz_store_id`, `authz_model_id`).
+
 ### Policy decision point
 
-The kernel PDP is the only caller of the engine. For each request it combines:
+The kernel PDP (`EffectivePermissions` in `packages/Esmbler.Kernel/Authorization/PolicyDecisionPoint.cs`) is the only consumer of authorization facts. For each request it combines:
 
-1. an engine Check, with contextual tuples derived from the record row and attributes passed as `context`
-2. in-process tenant policy rules
-3. field rules
-4. the agent intersection, which requires the user's permission, the agent's delegated scope and the `acts_for` delegation all to be true (one BatchCheck)
-5. package capability and licence entitlement checks
+1. relationship facts from the tenant's store (`AuthorizationFacts`: roles, direct or via nested groups, and transitive group memberships)
+2. the versioned permission-set specs of the pinned configuration (entity, record, field and action levels)
+3. record relations (`requester`, `assignee`, `owner_group`), checked in-process from the record's access fields, or through OpenFGA with contextual tuples (`IsRelatedAsync`)
+4. for agents, the intersection with the agent's delegated scopes; agents never get `permissions.admin`, `config.publish`, `modules.manage` or `records.export`
 
-It returns a `Decision` with an explain trace.
+It also produces an explanation ("why can X see this?", REQ-AUTHZ-009). Package capability and licence checks are planned with the extension runtime (Gate 3).
 
 ### Fixed platform model and tenant policy
 
-- **The engine model is fixed and versioned by the platform.** Tenants never edit it. It has generic types: `user`, `agent`, `group`, `role`, `entity_type`, record types, `field` and `tenant`.
-  - It uses a fixed relation vocabulary: `requester`, `assignee`, `watcher`, `owner_group`, `entity`, and `read_all` / `edit_all` / `create`.
-  - CEL conditions in the model are limited to platform-defined rules, for example the priority guard pattern and JIT or break-glass expiry.
-- **Tenant customization lives in versioned permission-set specs,** which go through the same overlay, draft and rollback process as all other config. Activating a spec revision compiles it into two parts:
-  - policy grant tuples, for example `role:X#assignee → entity_type:ticket#read_all`, `field:...#reader`, and `tenant:...#config_publish`
-  - in-process ABAC predicates, which the PDP evaluates and the SQL compiler translates
+- **The engine model is fixed and versioned by the platform** (`packages/Esmbler.Kernel.Infrastructure/Authorization/platform-model.fga`, JSON form `platform-model.fga.json`). Tenants never edit it. Types: `user`, `agent` (`acts_for`), `group` (`member`, nested through `group#member`), `role` (`assignee`) and `record` (`requester`, `assignee`, `owner_group`, `related`). Record relations are only ever sent as contextual tuples.
+- **Tenant customization lives in versioned permission-set specs,** which go through the same overlay, draft and rollback process as all other config. The PDP evaluates them in-process; they are not compiled into tuples.
 
 ### Record attributes and lists
 
-- **Record attributes are always sent as contextual tuples.** They are never stored.
-  - For direct user relations (requester, assignee, watcher), the PDP sends only the tuples whose subject is the current principal. This keeps every Check far below the 100-tuple cap.
-- **Lists are compiled into a SQL predicate.** The PDP calls `ListObjects(user, member, group)` and checks `read_all` / `edit_all`. It also checks the guarded relation once for each enumerable attribute value.
-  - These results become a SQL predicate that is applied before pagination and aggregation.
-  - Search indexes and derived surfaces reuse the same compiled principal facts (group ids, role flags).
-- **A conformance test runs in CI.** It uses OpenFGA in Testcontainers to compare engine Check against the SQL filter over generated rows and memberships, and to compare the in-memory fake against OpenFGA.
+- **Record attributes are never stored as tuples.** The record row is the source of truth.
+- **Lists are compiled into a SQL predicate** (`QueryCompiler.PermissionPredicate`): read scope `all` becomes `true`; scope `related` becomes one clause per entity access field (`data->>'requester' = <principal>`, `data->>'assignment_group' = ANY(<groups>)`). The predicate is part of `WHERE`, so it applies before ordering, paging and counting.
+- **A conformance test** comparing the SQL predicate with `EffectivePermissions` and the in-memory fake (`InMemoryRelationshipGraph`) with OpenFGA is planned (G1-M3).
 
-### Tenancy
+### Tenancy and system of record
 
-- **Each tenant-environment has its own store.** A kernel table, protected by RLS, maps the tenant-environment to its store id and pinned model id.
-- Provisioning a store is part of creating an environment. A sandbox never copies production tuples implicitly.
+- **One store per tenant**, created on demand by `EnsureTenantAsync` (`CreateStore` plus `WriteAuthorizationModel`) and recorded on the tenant row through `IAuthzStoreRegistry`.
+- **The kernel tables `kernel.group_members` and `kernel.role_assignments` are the system of record.** The OpenFGA store is a derived index that can be rebuilt from them.
 
-### Writes, caching and revocation
+### Writes, consistency and revocation
 
-- **Relationship writes use a transactional outbox.** Membership and role changes commit in PostgreSQL, and an idempotent writer applies them to the store in chunks of 100 or fewer. It also bumps a per-store `authz_revision`.
-- **A nightly reconciliation job** diffs PostgreSQL against `Read()`.
-- **Staleness is bounded.** The OpenFGA check cache has a TTL of 10 s or less. Compiled list filters are cached by (store, principal, `authz_revision`), with a 30 s safety TTL.
-- **Revocations are dispatched synchronously,** with the outbox as fallback.
-- **Sensitive actions use `HIGHER_CONSISTENCY`.** These are `permissions.admin`, `config.publish`, export, break-glass, and package installs.
+- **Reads use `HIGHER_CONSISTENCY`** (`ListObjects` for facts, `Check` for record relations), so a revocation applies to the next request. There is no check cache in Gate 1.
+- **Writes** use `TransactionOptions { Disable = true, MaxPerChunk = 100 }` and ignore duplicate writes and missing deletes, so replays are idempotent.
+- Planned (G1-M2, G1-M17): the membership writer (revocations written to the graph before the database change commits; grants after commit, with retry through the outbox), a per-tenant `authz_revision` for cache keys, and a nightly reconciliation job that diffs the kernel tables against the store.
 
 ### Failure handling and testing
 
-- **The PDP fails closed.** Each call has a deadline of about 250 ms through a `CancellationToken`, and a circuit breaker stops calls to an unhealthy engine. Unavailability or engine errors become deny, an audited `authorization_unavailable` response, and a metric.
-  - Callers never fall back to a cached allow for sensitive actions.
-  - When the engine is unavailable, list endpoints serve no results.
-- **The ports are `IAuthorizationEngine`** (Check, BatchCheck, ListObjects, Expand for explain) **and `IRelationshipGraph`** (provision store and model, write and delete tuples, read for reconciliation).
-  - Unit tests use the in-memory fake `InMemoryAuthorizationEngine`, which implements the fixed model.
-  - The OpenFGA adapter is the only code that references `OpenFga.Sdk`. An architecture test enforces this.
-- **SDK usage is pinned to `OpenFga.Sdk` 0.10.4:**
-  - Store and model are passed in the per-request options.
-  - The `HttpClient` has an explicit timeout.
-  - Writes use `TransactionOptions { Disable = true, MaxPerChunk = 100 }`.
-  - The PDP always sends every attribute a condition references, because a missing parameter returns HTTP 400 rather than deny.
+- **The adapter fails closed.** Each call has a deadline (`OpenFgaOptions.TimeoutMs`, default 2,000 ms) and at most one retry. Any error becomes `AuthorizationUnavailableException` (`authorization_unavailable`, HTTP 503), and callers deny. A tenant without a store is denied the same way.
+- **The port is `IRelationshipGraph`** (`GetFactsAsync`, `IsRelatedAsync`, `WriteAsync`, `EnsureTenantAsync`). Unit tests use `InMemoryRelationshipGraph`; integration tests run OpenFGA in Testcontainers (planned with G1-M2). The OpenFGA adapter is the only code that references `OpenFga.Sdk`, enforced by an architecture test.
+- **SDK usage is pinned to `OpenFga.Sdk` 0.10.4:** store and model are passed in the per-request options, and the `HttpClient` has an explicit timeout.
 
 ## Revisit triggers
 
 - With the cache enabled on production-class hardware, Check p95 exceeds 10 ms, or list-filter compilation p95 exceeds 25 ms.
 - `OpenFga.Sdk` goes 6 months without a release, falls behind server API features we need, or OpenFGA project health declines.
 - We need more than 100 contextual tuples, per-write consistency tokens, or tenant-specific engine models.
-- The number of stores, or the operational cost of the datastore, becomes a scaling problem at the tenant-environment counts in the operating targets.
+- The number of stores, or the operational cost of the datastore, becomes a scaling problem at the tenant counts in the operating targets.
 - Cedar gains an official .NET binding or partial evaluation suitable for SQL compilation. It would then become the in-process evaluator for tenant permission-set rules.
 - SpiceDB adds contextual relationships and a tenancy primitive.

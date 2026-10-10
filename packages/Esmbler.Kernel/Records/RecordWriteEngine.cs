@@ -16,6 +16,12 @@ public static class WriteOperations
 
 public sealed record RuleMessage(string RuleId, string Tone, string Text, string? Field = null);
 
+/// <summary>Per-transaction lookups available to hooks (implemented by the record service on the open transaction).</summary>
+public interface IRecordLookups
+{
+    Task<Guid?> FindGroupByKeyAsync(string key, CancellationToken cancellationToken);
+}
+
 /// <summary>Mutable state flowing through the write pipeline for one command.</summary>
 public sealed class RecordWriteContext
 {
@@ -44,6 +50,8 @@ public sealed class RecordWriteContext
     public Dictionary<string, IReadOnlyList<string>> RestrictedOptions { get; } = new(StringComparer.Ordinal);
 
     public string? TransitionId { get; init; }
+
+    public required IRecordLookups Lookups { get; init; }
 
     /// <summary>Workflow state before and after a transition.</summary>
     public string? FromState { get; set; }
@@ -97,6 +105,7 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
         JsonObject changes,
         string now,
         string? transitionId,
+        IRecordLookups lookups,
         CancellationToken cancellationToken)
     {
         var data = prior?.DeepClone().AsObject() ?? new JsonObject();
@@ -110,6 +119,7 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
             Prior = prior,
             Data = data,
             TransitionId = transitionId,
+            Lookups = lookups,
         };
 
         foreach (var (key, value) in changes)

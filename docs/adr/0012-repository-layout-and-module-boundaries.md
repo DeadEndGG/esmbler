@@ -33,13 +33,15 @@ The master spec ("Architecture model") asks for a modular monolith with enforced
 |---|---|---|
 | `packages/Esmbler.Expressions` | CEL-subset language ([ADR 0009](0009-rule-expression-language.md)) | Yes |
 | `packages/Esmbler.Sdk` | Specs, overlay ops, element registry, module API, event envelope | Yes (the public SDK) |
-| `packages/Esmbler.Kernel` | Configuration compiler, tenancy, records, PDP, drafts, audit, outbox, ports | No |
-| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, RLS session, SQL migrations), OpenFGA adapter | No |
-| `packages/Esmbler.Platform` | Rules, workflow, assignment, notifications services | No |
+| `packages/Esmbler.Kernel` | Configuration compiler, request context, record write pipeline (`RecordWriteEngine`, `IRecordWriteHook`), PDP, ports (`IRelationshipGraph`); no database or network | No |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, config store, audit writer | No |
+| `packages/Esmbler.Platform` | Write hooks: workflow (order 100), assignment (200), rules (300); notifications planned | No |
 | `packages/Esmbler.Hosting` | Composition root shared by hosts | No |
 | `modules/<name>/Esmbler.Modules.<Name>` (+ `.Contracts`) | Business module; declarative releases in `Releases/<version>/module.json` | Contracts only |
 | `apps/Esmbler.Api`, `apps/Esmbler.Mcp`, `apps/Esmbler.Worker`, `apps/web` | Deployables (one container image each) | n/a |
 | `tests/Esmbler.UnitTests`, `.IntegrationTests`, `.ArchitectureTests`, `tests/e2e` | Tests | n/a |
+| `tools/Esmbler.DocGen`, `tools/check-links.mjs` | Generated references (`docs/reference/schemas/*.schema.json`, `docs/reference/element-catalog.md`; CI runs `--check`) and the docs link check | n/a |
+| `deploy/` | `docker-compose.yml`, `docker/dotnet.Dockerfile` (one image per .NET host via the `APP` build argument), `docker/web.Dockerfile`, `postgres/00-roles.sh` | n/a |
 | `spikes/*` | Throwaway spike code behind ADRs | n/a |
 
 ### Allowed dependency graph
@@ -78,7 +80,7 @@ Implemented in [`tests/Esmbler.ArchitectureTests/BoundaryTests.cs`](../../tests/
 | `Kernel_does_not_depend_on_platform_modules_infrastructure_or_hosts` | Kernel has no dependency on Platform, Modules, Infrastructure, Hosting, hosts, `Npgsql`, `Microsoft.EntityFrameworkCore`, `OpenFga` |
 | `Platform_does_not_depend_on_modules_or_infrastructure` | Platform has no dependency on Modules, Infrastructure, Hosting, `Npgsql`, `OpenFga` |
 
-Planned additions as code lands: only `Kernel.Infrastructure` references `OpenFga.Sdk` ([ADR 0004](0004-authorization-engine.md)); only `apps/Esmbler.Api` references `Anthropic` ([ADR 0013](0013-ai-assistant-model-adapter.md)); `apps/Esmbler.Mcp` exposes no tool parameter named `tenant` or `environment` ([ADR 0007](0007-mcp-server-design.md)).
+Planned additions as code lands: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel and Platform are already covered above); only `apps/Esmbler.Api` references `Anthropic` ([ADR 0013](0013-ai-assistant-model-adapter.md)); `apps/Esmbler.Mcp` exposes no tool parameter named `tenant` or `environment` ([ADR 0007](0007-mcp-server-design.md)).
 
 ### Data boundaries
 

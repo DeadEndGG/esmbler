@@ -16,42 +16,52 @@ The first module is **Tickets and Service Requests**. Later modules: Incidents, 
 
 ## Stack
 
-C# on .NET 10 (ASP.NET Core), Angular 22, PostgreSQL 18, OpenFGA v1.22, Docker Compose (Kubernetes-ready manifests). Claude via the Anthropic API.
+C# on .NET 10 (ASP.NET Core), Angular 22, PostgreSQL 18, OpenFGA v1.22, Docker Compose (Kubernetes manifests planned). Claude via the Anthropic API.
 
 ## Quick start
 
 Requirements: Docker with Compose v2.
 
 ```bash
-docker compose up
+docker compose -f deploy/docker-compose.yml up --build
 ```
 
-This starts the web app, API, MCP server, worker, PostgreSQL and OpenFGA with seed data: tenants `acme` and `globex`, each with `prod` and `sandbox` environments, and sample tickets.
+This builds and starts PostgreSQL 18, OpenFGA, the API, the MCP server, the worker and the web app. The API applies database migrations at startup.
 
-> The Compose file and seed are being added in milestone G0-M1. Ports, URLs and seed logins will be listed here when they land.
+| Service | URL |
+| --- | --- |
+| Web app | <http://localhost:8080> |
+| API | <http://localhost:5080> (`/health/ready`, `/openapi/v1.json`) |
+| MCP server | <http://localhost:5090/mcp> |
+| OpenFGA | <http://localhost:8081> |
+| PostgreSQL | `localhost:55432` |
 
-The AI assistant works without an API key, using a deterministic scripted planner. To use Claude, set `ANTHROPIC_API_KEY` in a local `.env` file (never commit it).
+Credentials in the Compose file are development-only defaults; override them with environment variables or a local `.env` file (never commit it). Seed data (tenants `acme` and `globex`, each with `prod` and `sandbox` environments, users and sample tickets) is planned for milestone G1-M2.
+
+The AI assistant (planned for Gate 1) works without an API key, using a deterministic scripted planner. To use Claude, set `ANTHROPIC_API_KEY` in `.env`.
 
 ## Development
 
-Requirements: the .NET 10 SDK (see `global.json`), Node.js with npm, and Docker for integration tests.
-
-<!-- The lead fills in the final commands; AGENTS.md is the authoritative list. -->
+Requirements: the .NET 10 SDK (see `global.json`), Node.js 24 with npm, and Docker for integration tests. [AGENTS.md](AGENTS.md) is the authoritative command list.
 
 ```bash
 # Backend
-dotnet build Esmbler.slnx
-dotnet test Esmbler.slnx                               # unit, architecture, integration (needs Docker)
-dotnet test tests/Esmbler.UnitTests                    # unit only
+dotnet build Esmbler.slnx                              # analyzers are errors
+dotnet test tests/Esmbler.UnitTests                    # unit
 dotnet test tests/Esmbler.ArchitectureTests            # module boundary checks
+dotnet test tests/Esmbler.IntegrationTests             # real PostgreSQL via Testcontainers (needs Docker)
+dotnet format Esmbler.slnx --verify-no-changes         # format check
+dotnet run --project apps/Esmbler.Api -- migrate       # apply migrations (needs Esmbler__Database__Migrator)
 
 # Frontend
 cd apps/web
 npm ci
-npx ng serve                                           # http://localhost:4200
-```
+npx ng build && npx ng test --watch=false
 
-Commands for lint, typecheck, migrate, seed, acceptance tests and docs lint will be added with the CI work (G0-M1, G0-M7).
+# Docs and generated references
+node tools/check-links.mjs
+dotnet run --project tools/Esmbler.DocGen              # regenerates docs/reference/schemas and element-catalog.md
+```
 
 ## Repository layout
 
@@ -59,11 +69,14 @@ Commands for lint, typecheck, migrate, seed, acceptance tests and docs lint will
 | --- | --- |
 | `packages/Esmbler.Sdk` | Public SDK: spec model, overlay operations, element registry, module and event contracts |
 | `packages/Esmbler.Expressions` | CEL-subset rule expression language |
-| `packages/Esmbler.Kernel` | Kernel: configuration compiler, and (in progress) tenancy, records, authorization, drafts and publish, audit, outbox |
-| `packages/Esmbler.Kernel.Infrastructure`, `Esmbler.Platform`, `Esmbler.Hosting` | Adapters, shared platform services, composition root |
+| `packages/Esmbler.Kernel` | Kernel logic: configuration compiler, request context, record write pipeline, policy decision point |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (SQL migrations, RLS unit of work), OpenFGA adapter, query compiler |
+| `packages/Esmbler.Platform`, `packages/Esmbler.Hosting` | Shared platform services (workflow, assignment, rules hooks); composition root |
 | `modules/tickets` | Default Tickets module (declarative releases) |
 | `apps/Esmbler.Api`, `apps/Esmbler.Mcp`, `apps/Esmbler.Worker`, `apps/web` | Deployable hosts and the Angular app |
 | `tests/` | Unit, architecture and integration tests; Playwright end-to-end tests (planned) |
+| `deploy/` | Docker Compose, Dockerfiles, PostgreSQL role setup |
+| `tools/` | Reference generator (`Esmbler.DocGen`) and docs link check |
 | `spikes/` | Throwaway Gate 0 spike code with results |
 
 ## Documentation
@@ -75,6 +88,7 @@ Start at the [documentation index](docs/README.md). Key documents:
 - [Authorization model](docs/explanation/authorization-model.md)
 - [Design principles](docs/explanation/design-principles.md)
 - [Acceptance test plan](docs/testing/acceptance-plan.md)
+- [Element catalog](docs/reference/element-catalog.md) (generated)
 
 ## Contributing and security
 

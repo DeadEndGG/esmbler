@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.esmbler.dev/specs/relationship.schema.json",
+  "title": "RelationshipSpec",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "entity": {
+      "type": "string"
+    },
+    "field": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "inverseLabel": {
+      "type": "string"
+    },
+    "onTargetDelete": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "entity",
+    "field",
+    "target",
+    "label",
+    "inverseLabel"
+  ]
+}
