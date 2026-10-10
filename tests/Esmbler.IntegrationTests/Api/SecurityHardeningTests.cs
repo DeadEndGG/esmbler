@@ -35,6 +35,31 @@ public class SecurityHardeningTests(PlatformFixture platform) : IClassFixture<Ap
     }
 
     [Fact]
+    public async Task Figure_requests_are_rate_limited_per_person_and_lists_take_at_most_twenty_filters()
+    {
+        // ADR 0019 / T-71: figures aggregate many rows, so each person gets a bounded number of requests per minute,
+        // and a list or group request carries a bounded number of filters.
+        var t = await platform.NewTenantAsync("fq", "1.6.0");
+        var signedIn = await Factory.SignInAsync($"sam@{Slug(t)}.example", Slug(t));
+        await using var limited = Factory.WithWebHostBuilder(b => b.UseSetting("Esmbler:MetricRequestsPerMinute", "2"));
+        var client = limited.CreateClient();
+        client.DefaultRequestHeaders.Authorization = signedIn.DefaultRequestHeaders.Authorization;
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 3; i++)
+        {
+            statuses.Add((await client.GetAsync("/api/metrics/core.tickets.metric.open")).StatusCode);
+        }
+
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests], statuses);
+
+        var filters = string.Join("&", Enumerable.Range(0, 21).Select(_ => "filter=" + Uri.EscapeDataString("record.priority == 'p1'")));
+        var tooMany = await signedIn.GetAsync($"/api/records/core.tickets.ticket?{filters}");
+        Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+        Assert.Equal("too_many_filters", (await tooMany.Content.ReadFromJsonAsync<JsonObject>(ApiFactory.Json))!["code"]!.GetValue<string>());
+        Assert.Equal(HttpStatusCode.BadRequest, (await signedIn.GetAsync($"/api/records/core.tickets.ticket/groups?field=priority&{filters}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Repeated_wrong_passwords_lock_the_account_temporarily()
     {
         var t = await platform.NewTenantAsync("lk");

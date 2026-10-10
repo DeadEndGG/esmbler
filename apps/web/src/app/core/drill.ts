@@ -18,8 +18,8 @@ export function drillParams(d: DrillQuery): Params {
 }
 
 /** A figure for display: counts get a "+" when capped; averages and durations get their unit. */
-export function formatMetric(m: MetricResult, value: number | null | undefined = m.value, count = m.count): string {
-  if (m.measure === 'count') return count.toLocaleString() + (m.capped ? '+' : '');
+export function formatMetric(m: MetricResult, value: number | null | undefined = m.value, count = m.count, capped = m.capped): string {
+  if (m.measure === 'count') return count.toLocaleString() + (capped ? '+' : '');
   if (value === null || value === undefined) return '—';
   const n = value.toLocaleString(undefined, { maximumFractionDigits: Math.abs(value) < 10 ? 1 : 0 });
   if (m.format === 'percent') return n + '%';

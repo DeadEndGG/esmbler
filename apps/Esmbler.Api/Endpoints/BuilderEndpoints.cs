@@ -12,7 +12,7 @@ namespace Esmbler.Api.Endpoints;
 
 public sealed record ApplyCommandRequest(JsonElement Op, int ExpectedVersion);
 
-public sealed record VersionRequest(int ExpectedVersion);
+public sealed record VersionRequest(int ExpectedVersion, bool WholeChange = false);
 
 public sealed record PublishRequest(string ArtifactHash, int ExpectedRevision);
 
@@ -39,9 +39,9 @@ public static class BuilderEndpoints
         d.MapPost("/current/commands", (ApplyCommandRequest body, ClaimsPrincipal u, DraftService drafts, CancellationToken ct) =>
             drafts.ApplyAsync(Ctx(u), ParseOp(body.Op), body.ExpectedVersion, "ui", ct));
         d.MapPost("/current/steps/{seq:int}/undo", (int seq, VersionRequest body, ClaimsPrincipal u, DraftService drafts, CancellationToken ct) =>
-            drafts.SetUndoneAsync(Ctx(u), seq, true, body.ExpectedVersion, ct));
+            drafts.SetUndoneAsync(Ctx(u), seq, true, body.ExpectedVersion, ct, body.WholeChange));
         d.MapPost("/current/steps/{seq:int}/redo", (int seq, VersionRequest body, ClaimsPrincipal u, DraftService drafts, CancellationToken ct) =>
-            drafts.SetUndoneAsync(Ctx(u), seq, false, body.ExpectedVersion, ct));
+            drafts.SetUndoneAsync(Ctx(u), seq, false, body.ExpectedVersion, ct, body.WholeChange));
         d.MapGet("/current/views/{view}", (string view, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.ViewAsync(Ctx(u), view, ct));
         d.MapGet("/current/sample/{entity}", (string entity, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.SampleAsync(Ctx(u), entity, ct));
         d.MapPost("/current/simulate/{entity}", (string entity, SimulateRequest body, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.SimulateAsync(Ctx(u), entity, body.Data ?? [], ct));

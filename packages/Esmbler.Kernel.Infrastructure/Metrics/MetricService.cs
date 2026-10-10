@@ -19,7 +19,8 @@ namespace Esmbler.Kernel.Infrastructure.Metrics;
 /// <summary>The explorer query a figure counts: open <c>/records/{Entity}</c> with these filters and SLA conditions.</summary>
 public sealed record DrillQuery(string Entity, IReadOnlyList<string> Filters, IReadOnlyList<string> Sla, string Label);
 
-public sealed record MetricBucketView(string Key, string Label, double? Value, long Count, DrillQuery Drill);
+/// <summary>One bar or row. <see cref="Drill"/> is null only for preview figures, which count no records.</summary>
+public sealed record MetricBucketView(string Key, string Label, double? Value, long Count, DrillQuery? Drill, bool Capped = false);
 
 /// <summary>
 /// A metric evaluated for one viewer. <see cref="Status"/> is <c>ok</c>, <c>restricted</c> (the viewer may not see it;
@@ -40,12 +41,17 @@ public sealed record MetricResult(
     bool MoreGroups,
     DrillQuery? Drill,
     DateTimeOffset AsOf,
-    int ConfigRevision);
+    int ConfigRevision,
+    bool Preview = false);
 
-public sealed record DashboardData(string View, int ConfigRevision, IReadOnlyList<MetricResult> Metrics);
+/// <summary>
+/// Figures of a dashboard. <see cref="Empty"/> means the viewer can see no records of the dashboard's entity yet; the
+/// figures are then clearly marked previews with sample values and no drill (REQ-WS-006), never real-looking numbers.
+/// </summary>
+public sealed record DashboardData(string View, int ConfigRevision, IReadOnlyList<MetricResult> Metrics, bool Empty = false);
 
 /// <summary>A group header in the explorer: its label, count and the filter that lists it.</summary>
-public sealed record GroupCount(string? Key, string Label, long Count, string Filter);
+public sealed record GroupCount(string? Key, string Label, long Count, string Filter, bool Capped = false);
 
 /// <summary>
 /// Evaluates metrics (ADR 0019, REQ-WS-004). Every figure is a <see cref="RecordQuery"/> whose WHERE clause comes from
@@ -82,6 +88,20 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 if (artifact.Config.FindMetric(id) is { } metric && artifact.Config.FindEntity(metric.Entity) is { } entity && !Restricted(artifact.Config, perms, entity, metric))
                 {
                     results.Add(await EvaluateAsync(session, artifact.Config, artifact.Revision, perms, metric, timeZone, ct));
+                }
+            }
+
+            // An empty workspace (for this viewer) gets labeled preview figures instead of a wall of zeros (REQ-WS-006).
+            if (results.Count > 0 && results.All(r => r.Status == "ok" && r.Count == 0) && artifact.Config.FindEntity(view.Entity) is { } viewEntity)
+            {
+                var cfg = artifact.Config;
+                var q = new QueryCompiler.Ctx(cfg, viewEntity, perms);
+                var where = QueryCompiler.Where(new RecordQuery { Entity = viewEntity.Id }, cfg, viewEntity, perms, q);
+                await using var cmd = session.Command($"SELECT EXISTS (SELECT 1 FROM kernel.records r WHERE {where})", q.Parameters);
+                if (!(bool)(await cmd.ExecuteScalarAsync(ct))!)
+                {
+                    var previews = results.Select(r => Preview(cfg, cfg.FindMetric(r.Id)!, timeZone, artifact.Revision)).ToList();
+                    return new DashboardData(view.Id, artifact.Revision, previews, Empty: true);
                 }
             }
 
@@ -124,7 +144,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             }
 
             var names = await NamesAsync(db, spec, rows.Select(r => r.Key), ct);
-            return rows.Select(r => new GroupCount(r.Key, GroupLabel(artifact.Config, spec, r.Key, names), r.Count, GroupFilter(spec, r.Key))).ToList();
+            return rows.Select(r => new GroupCount(r.Key, GroupLabel(artifact.Config, spec, r.Key, names), Math.Min(r.Count, QueryCompiler.MaxCount), GroupFilter(spec, r.Key), r.Count > QueryCompiler.MaxCount)).ToList();
         }, ct);
 
     private async Task<MetricResult> EvaluateAsync(Session session, EffectiveConfig config, int revision, EffectivePermissions perms, MetricSpec metric, string? timeZone, CancellationToken ct)
@@ -198,8 +218,10 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 await reader.ReadAsync(ct);
                 for (var i = 0; i < parts.Count; i++)
                 {
+                    // Each bar stops counting where the explorer total it drills into does (QueryCompiler.MaxCount).
                     var n = reader.GetInt64(i);
-                    buckets.Add(new MetricBucketView(parts[i].Key, parts[i].Label, n, n, drill with { Filters = [.. filters, bucketFilters[i]], Label = $"{metric.Label}: {parts[i].Label}" }));
+                    var shown = Math.Min(n, QueryCompiler.MaxCount);
+                    buckets.Add(new MetricBucketView(parts[i].Key, parts[i].Label, shown, shown, drill with { Filters = [.. filters, bucketFilters[i]], Label = $"{metric.Label}: {parts[i].Label}" }, n > QueryCompiler.MaxCount));
                 }
             }
             else if (metric.GroupBy is { } group && entity.FindField(group.Field) is { } groupField)
@@ -226,7 +248,9 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 buckets.AddRange(rows.Take(group.Limit).Select(r =>
                 {
                     var label = GroupLabel(config, groupField, r.Key, names);
-                    return new MetricBucketView(r.Key ?? string.Empty, label, r.Value, r.Count, drill with { Filters = [.. filters, GroupFilter(groupField, r.Key)], Label = $"{metric.Label}: {label}" });
+                    var shown = Math.Min(r.Count, QueryCompiler.MaxCount);
+                    var value = metric.Measure.Kind == MetricMeasures.Count ? shown : r.Value;
+                    return new MetricBucketView(r.Key ?? string.Empty, label, value, shown, drill with { Filters = [.. filters, GroupFilter(groupField, r.Key)], Label = $"{metric.Label}: {label}" }, r.Count > QueryCompiler.MaxCount);
                 }));
             }
 
@@ -238,6 +262,41 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             await session.RollbackAsync(ct);
             return Empty("timeout");
         }
+    }
+
+    /// <summary>
+    /// A preview figure for an empty workspace: sample values shaped like the metric (its date buckets, choice options,
+    /// or numbered sample teams and people), flagged <see cref="MetricResult.Preview"/>, with no drill and no record data.
+    /// </summary>
+    private MetricResult Preview(EffectiveConfig config, MetricSpec metric, string? timeZone, int revision)
+    {
+        var now = clock.UtcNow;
+        var seed = metric.Id.Sum(c => c) % 7;
+        int[] pattern = [6, 4, 7, 3, 5, 8, 4, 6, 5, 7, 3, 6];
+        double Sample(int i) => pattern[(i + seed) % pattern.Length];
+        var buckets = new List<MetricBucketView>();
+        var entity = config.FindEntity(metric.Entity);
+        if (metric.GroupBy is { Bucket: { } size } && metric.DateRange is { } range)
+        {
+            var zone = DateBuckets.Zone(range, config, timeZone);
+            buckets.AddRange(DateBuckets.Split(range, size, zone, now).Select((b, i) => new MetricBucketView(b.Key, b.Label, Sample(i), (long)Sample(i), null)));
+        }
+        else if (metric.GroupBy is { } group && entity?.FindField(group.Field) is { } field)
+        {
+            var labels = field.ChoiceList is { } list && config.FindChoiceList(list) is { } choices
+                ? choices.Options.Where(o => !o.Hidden).Select(o => o.Label).ToList()
+                : field.Type switch
+                {
+                    FieldTypes.Toggle => ["Yes", "No"],
+                    FieldTypes.User => ["Sample person 1", "Sample person 2", "Sample person 3"],
+                    _ => ["Sample team 1", "Sample team 2", "Sample team 3"],
+                };
+            buckets.AddRange(labels.Take(Math.Min(group.Limit, 5)).Select((l, i) => new MetricBucketView($"preview_{i}", l, Sample(i), (long)Sample(i), null)).OrderByDescending(b => b.Count));
+        }
+
+        var count = buckets.Count > 0 ? (long)buckets.Sum(b => b.Count) : (long)Sample(0) + 3;
+        double? value = metric.Measure.Kind == MetricMeasures.Count ? count : metric.Measure.Kind == MetricMeasures.Duration ? 4 + (seed / 2.0) : Sample(1);
+        return new MetricResult(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, count, false, buckets, false, null, now, revision, Preview: true);
     }
 
     /// <summary>Whether the viewer may not see the figure at all (no values are computed for them).</summary>
@@ -266,7 +325,6 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             }
         }
 
-        _ = config;
         return reads.Any(k => k != "id" && perms.FieldAccess(entity, k) == FieldAccessLevels.Hidden);
     }
 

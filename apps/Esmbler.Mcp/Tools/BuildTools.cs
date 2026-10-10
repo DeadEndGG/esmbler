@@ -468,12 +468,12 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("remove_rule", AgentScopes.ConfigEdit, rule, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveRule { Rule = rule }], expected_version));
 
-    [McpServerTool(Name = "undo_step"), Description("Undo one step of the draft by its number. Refused if later steps depend on it.")]
-    public Task<CallToolResult> UndoStep(int step, int expected_version) =>
+    [McpServerTool(Name = "undo_step"), Description("Undo a step of the draft by its number. By default the whole change the step belongs to (everything one tool call did) is undone; set only_this_step to undo just that step. Refused if later steps depend on it.")]
+    public Task<CallToolResult> UndoStep(int step, int expected_version, [Description("Undo only this step, not the rest of its change.")] bool only_this_step = false) =>
         runner.RunAsync("undo_step", AgentScopes.ConfigEdit, step.ToString(System.Globalization.CultureInfo.InvariantCulture), async ctx =>
         {
-            var state = await drafts.SetUndoneAsync(ctx, step, true, expected_version, default);
-            return new { state.Version, undone = step };
+            var state = await drafts.SetUndoneAsync(ctx, step, true, expected_version, default, wholeChange: !only_this_step);
+            return new { state.Version, undone = state.Steps.Where(s => s.Undone).Select(s => s.Seq) };
         });
 
     [McpServerTool(Name = "add_catalog_item"), Description("Add a service catalog item: the questions (variables) requesters answer and the fulfillment tasks that run, with dependencies (dependsOn) and optional conditions (when, over variables.<key>). Tasks start when an agent starts fulfillment; dependents wait for their prerequisites.")]

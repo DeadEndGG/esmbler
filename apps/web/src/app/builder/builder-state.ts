@@ -95,11 +95,12 @@ export class BuilderState {
     }, 2600);
   }
 
-  async undo(seq: number): Promise<void> {
+  /** Undoes one step, or with `wholeChange` every step of the change it belongs to. */
+  async undo(seq: number, wholeChange = false): Promise<void> {
     const d = this.draft();
     if (!d) return;
     try {
-      this.draft.set(await this.api.post<DraftState>(`/api/drafts/current/steps/${seq}/undo`, { expectedVersion: d.version }));
+      this.draft.set(await this.api.post<DraftState>(`/api/drafts/current/steps/${seq}/undo`, { expectedVersion: d.version, wholeChange }));
       this.revision.update((r) => r + 1);
     } catch (e: any) {
       this.toasts.show(e.message ?? 'Could not undo.', 'warning');
@@ -107,11 +108,11 @@ export class BuilderState {
     }
   }
 
-  async redo(seq: number): Promise<void> {
+  async redo(seq: number, wholeChange = false): Promise<void> {
     const d = this.draft();
     if (!d) return;
     try {
-      this.draft.set(await this.api.post<DraftState>(`/api/drafts/current/steps/${seq}/redo`, { expectedVersion: d.version }));
+      this.draft.set(await this.api.post<DraftState>(`/api/drafts/current/steps/${seq}/redo`, { expectedVersion: d.version, wholeChange }));
       this.revision.update((r) => r + 1);
     } catch (e: any) {
       this.toasts.show(e.message ?? 'Could not redo.', 'warning');

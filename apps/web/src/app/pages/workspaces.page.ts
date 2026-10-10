@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Session } from '../core/session';
 import { Icon } from '../ui/icon';
@@ -7,7 +7,7 @@ import { Icon } from '../ui/icon';
 /** Explicit tenant/environment switch (REQ-TEN-003): never inferred from a link or record ID. */
 @Component({
   selector: 'esm-workspaces',
-  imports: [Icon],
+  imports: [Icon, RouterLink],
   template: `
     <main class="backdrop-glow grid min-h-dvh place-items-center p-6">
       <section class="surface w-full max-w-[520px] p-6" aria-labelledby="t">
@@ -35,10 +35,11 @@ import { Icon } from '../ui/icon';
               </div>
             </li>
           } @empty {
-            <li class="rounded-md border border-dashed border-strong p-6 text-center text-muted">You are not a member of any workspace yet.</li>
+            <li class="rounded-md border border-dashed border-strong p-6 text-center text-muted">You are not a member of any workspace yet. Create one to get started.</li>
           }
         </ul>
-        <div class="mt-5 flex justify-end border-t border-subtle pt-4">
+        <div class="mt-5 flex justify-between gap-2 border-t border-subtle pt-4">
+          <a class="btn btn-sm" routerLink="/workspaces/new"><esm-icon name="plus" [size]="14" /> Create a workspace</a>
           <button class="btn btn-ghost btn-sm" (click)="signOut()"><esm-icon name="log-out" [size]="14" /> Sign out</button>
         </div>
       </section>

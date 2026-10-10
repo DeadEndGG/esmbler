@@ -80,7 +80,7 @@ public class MetricSpecTests
         bad.Roles = ["core.tickets.agnt"];
         bad.Sla = new MetricSlaSpec { Policy = "core.tickets.sla.request" };
         var result = Compile("1.6.0", new AddMetric { Metric = bad });
-        Assert.Contains(result.Errors, e => e.Code == "config.bad_filter" || e.Message.Contains("prior", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, e => e.Code == "config.bad_filter");
         Assert.Contains(result.Errors, e => e.Code == "config.bad_group");
         Assert.Contains(result.Errors, e => e.Code == "config.bad_measure");
         Assert.Contains(result.Errors, e => e.Code == "config.not_found" && e.Suggestion == "core.tickets.agent");

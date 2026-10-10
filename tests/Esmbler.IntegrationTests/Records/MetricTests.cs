@@ -69,7 +69,7 @@ public class MetricTests(PlatformFixture f)
                 Assert.Equal(await ExplorerTotalAsync(ctx, metric.Drill!), metric.Count);
                 foreach (var bucket in metric.Buckets)
                 {
-                    Assert.True(await ExplorerTotalAsync(ctx, bucket.Drill) == bucket.Count, $"{persona}: {metric.Id} / {bucket.Label}");
+                    Assert.True(await ExplorerTotalAsync(ctx, bucket.Drill!) == bucket.Count, $"{persona}: {metric.Id} / {bucket.Label}");
                 }
             }
         }
@@ -129,6 +129,38 @@ public class MetricTests(PlatformFixture f)
         // Requesters' dashboard data leaves out the team figures entirely.
         var data = await Metrics.DashboardAsync(f.As(t, "dana"), Dashboard, null, default);
         Assert.DoesNotContain(data.Metrics, m => m.Id == "core.tickets.metric.workload_by_team" || m.Status == "restricted");
+    }
+
+    [Fact]
+    public async Task Reports_group_and_filter_by_a_custom_field_and_drill_into_it()
+    {
+        // REQ-OPS-004: basic reports over custom fields, with the same agreement as base fields.
+        var t = await TenantWithTicketsAsync("metc");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyBatchAsync(admin,
+        [
+            new AddChoiceList { ChoiceList = new ChoiceListSpec { Id = "tenant__vendor_options", Label = "Vendor", Options = [new ChoiceOption { Id = "contoso", Label = "Contoso" }, new ChoiceOption { Id = "fabrikam", Label = "Fabrikam" }] } },
+            new AddField { Entity = Ticket, Field = new FieldSpec { Key = "tenant__vendor", Type = FieldTypes.SingleSelect, Label = "Vendor", ChoiceList = "tenant__vendor_options" } },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_by_vendor", Label = "Open by vendor", Entity = Ticket, Filter = "!(record.status in ['resolved', 'closed', 'cancelled']) && has(record.tenant__vendor)", GroupBy = new MetricGroupSpec { Field = "tenant__vendor" } } },
+        ], draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+
+        var agent = f.As(t, "agent");
+        var dana = t.Users["dana"].ToString();
+        foreach (var vendor in new[] { "contoso", "contoso", "fabrikam" })
+        {
+            await Records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = $"Broken {vendor} part", ["requester"] = dana, ["impact"] = "low", ["tenant__vendor"] = vendor }, null, null, default);
+        }
+
+        var byVendor = await Metrics.EvaluateAsync(agent, "tenant__metric_by_vendor", null, default);
+        Assert.Equal(("ok", 3L), (byVendor.Status, byVendor.Count));
+        Assert.Equal([("Contoso", 2L), ("Fabrikam", 1L)], byVendor.Buckets.Select(b => (b.Label, b.Count)));
+        foreach (var bucket in byVendor.Buckets)
+        {
+            Assert.Equal(bucket.Count, await ExplorerTotalAsync(agent, bucket.Drill!));
+        }
     }
 
     [Fact]

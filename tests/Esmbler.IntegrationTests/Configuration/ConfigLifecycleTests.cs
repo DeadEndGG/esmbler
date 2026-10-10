@@ -179,11 +179,17 @@ public class ConfigLifecycleTests(PlatformFixture f)
         Assert.Equal(ops.Length, applied.Steps.Count);
         Assert.All(applied.Draft.Steps, s => Assert.Equal(applied.Batch, s.Batch));
 
-        // Undoing any step of the batch undoes all of it; redo brings all of it back.
-        var undone = await Drafts.SetUndoneAsync(admin, 2, true, applied.Version, default);
+        // Any single step can still be undone alone when nothing depends on it (REQ-LIVE-003): the card placement.
+        var last = applied.Steps[^1].Seq;
+        var single = await Drafts.SetUndoneAsync(admin, last, true, applied.Version, default);
+        Assert.Equal([last], single.Steps.Where(s => s.Undone).Select(s => s.Seq));
+        single = await Drafts.SetUndoneAsync(admin, last, false, single.Version, default);
+
+        // Undoing the change undoes every step of it; redoing it brings all of it back.
+        var undone = await Drafts.SetUndoneAsync(admin, 2, true, single.Version, default, wholeChange: true);
         Assert.All(undone.Steps, s => Assert.True(s.Undone));
         Assert.DoesNotContain(undone.Changes, c => c.Id == $"{Ticket}/tenant__vendor");
-        var redone = await Drafts.SetUndoneAsync(admin, 1, false, undone.Version, default);
+        var redone = await Drafts.SetUndoneAsync(admin, 1, false, undone.Version, default, wholeChange: true);
         Assert.All(redone.Steps, s => Assert.False(s.Undone));
     }
 

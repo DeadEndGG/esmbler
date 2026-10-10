@@ -68,7 +68,10 @@ export interface MetricBucket {
   label: string;
   value?: number | null;
   count: number;
-  drill: DrillQuery;
+  /** Null for preview figures, which count no records. */
+  drill?: DrillQuery | null;
+  /** The bar stopped counting at the explorer's cap ("10,000+"). */
+  capped?: boolean;
 }
 
 /** A metric evaluated for the signed-in person (ADR 0019). */
@@ -87,12 +90,16 @@ export interface MetricResult {
   drill?: DrillQuery | null;
   asOf: string;
   configRevision: number;
+  /** Sample figure shown while the workspace has no records (REQ-WS-006); never links to records. */
+  preview?: boolean;
 }
 
 export interface DashboardData {
   view: string;
   configRevision: number;
   metrics: MetricResult[];
+  /** The viewer can see no records yet: the figures are labeled previews. */
+  empty?: boolean;
 }
 
 /** An explorer group header. */
@@ -101,6 +108,7 @@ export interface GroupCount {
   label: string;
   count: number;
   filter: string;
+  capped?: boolean;
 }
 
 /** One approver's step in a stage (ADR 0016). */
@@ -268,6 +276,8 @@ export interface FieldSpec {
   choiceList?: string;
   target?: string;
   default?: unknown;
+  /** Server-side default, e.g. user.id for "whoever creates it". */
+  defaultExpression?: string;
   prefix?: string;
 }
 

@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Api, ApiError } from '../core/api';
 import { viewerTimeZone } from '../core/drill';
 import { DashboardData, MetricResult } from '../core/models';
@@ -16,7 +17,7 @@ const REFRESH_MS = 60_000;
  */
 @Component({
   selector: 'esm-dashboard-page',
-  imports: [NodeComponent, Icon],
+  imports: [NodeComponent, Icon, RouterLink],
   providers: [RenderContext, MetricsContext],
   template: `
     @let s = ctx.spec();
@@ -33,6 +34,29 @@ const REFRESH_MS = 60_000;
       @if (error(); as err) {
         <div class="callout tone-red mb-4" role="alert">{{ err }}</div>
       }
+      @if (empty()) {
+        <section class="welcome mb-5 rounded-lg border border-subtle bg-raised p-5 shadow-xs" aria-labelledby="welcome-t">
+          <h2 id="welcome-t" class="text-title-sm">No {{ plural() }} yet</h2>
+          <p class="mt-1 text-body-sm text-muted">
+            The figures below are a <strong>preview with sample data</strong>, so you can see what this dashboard will show. They are not your records and disappear when the first {{ singular() }} arrives.
+          </p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            @if (nav()?.canCreate) {
+              @if (nav()?.requests) {
+                <a class="btn btn-primary btn-sm" routerLink="/catalog"><esm-icon name="store" [size]="14" /> Make the first request</a>
+              } @else {
+                <a class="btn btn-primary btn-sm" [routerLink]="['/records', nav()!.entity, 'new']"><esm-icon name="plus" [size]="14" /> Create the first {{ singular() }}</a>
+              }
+            }
+            @if (session.isAdmin()) {
+              <a class="btn btn-sm" routerLink="/admin/people"><esm-icon name="users" [size]="14" /> Invite your team</a>
+            }
+            @if (session.canCustomize()) {
+              <a class="btn btn-sm" routerLink="/admin/configuration"><esm-icon name="sliders" [size]="14" /> Review the configuration</a>
+            }
+          </div>
+        </section>
+      }
       @if (s) {
         <!-- The page header carries the title, so the layout.page node's own heading is not repeated. -->
         @for (c of s.view.layout.children; track c.id) { <esm-node [node]="c" [viewId]="s.view.id" /> }
@@ -47,12 +71,18 @@ const REFRESH_MS = 60_000;
 export class DashboardPage {
   readonly view = input.required<string>();
   private readonly api = inject(Api);
-  private readonly session = inject(Session);
+  protected readonly session = inject(Session);
   protected readonly ctx = inject(RenderContext);
   protected readonly metrics = inject(MetricsContext);
   protected readonly error = signal<string | null>(null);
   private readonly loadedAt = signal<Date | null>(null);
   private seq = 0;
+
+  /** The viewer sees no records yet: figures are labeled previews (REQ-WS-006). */
+  protected readonly empty = signal(false);
+  protected readonly nav = computed(() => (this.ctx.spec() ? this.session.nav(this.ctx.spec()!.view.entity) : undefined));
+  protected readonly plural = computed(() => this.nav()?.pluralLabel.toLowerCase() ?? 'records');
+  protected readonly singular = computed(() => this.nav()?.label.toLowerCase() ?? 'record');
 
   protected readonly asOf = computed(() => this.loadedAt()?.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) ?? null);
 
@@ -92,6 +122,7 @@ export class DashboardPage {
       const data = await this.api.get<DashboardData>(`/api/dashboards/${view}/data`, { tz: viewerTimeZone() });
       if (seq !== this.seq) return;
       this.metrics.results.set(new Map<string, MetricResult>(data.metrics.map((m) => [m.id, m])));
+      this.empty.set(!!data.empty);
       this.loadedAt.set(new Date());
       this.error.set(null);
       // A publish since the spec was cached: reload the bootstrap and the layout so tiles match the figures.

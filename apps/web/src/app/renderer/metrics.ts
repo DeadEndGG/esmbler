@@ -27,7 +27,7 @@ const TONES: Record<string, string> = { info: 'blue', success: 'green', warning:
   template: `
     @let m = metric();
     @let label = node().props['label'] ?? m?.label ?? 'Metric';
-    @if (m?.status === 'ok' && m?.drill && node().props['drill'] !== false) {
+    @if (m?.status === 'ok' && m?.drill && !m?.preview && node().props['drill'] !== false) {
       <a class="tile" [class]="'tone-' + tone()" [routerLink]="link(m!).commands" [queryParams]="link(m!).params" [attr.aria-label]="label + ': ' + value() + '. Open the list'">
         <span class="label">{{ label }}</span>
         <span class="value">{{ value() }}</span>
@@ -43,7 +43,8 @@ const TONES: Record<string, string> = { info: 'blue', success: 'green', warning:
         } @else if (m.status === 'restricted') {
           <span class="value muted">—</span><span class="hint">Not available to you.</span>
         } @else {
-          <span class="value">{{ value() }}</span>
+          <span class="value" [class.sample]="m.preview">{{ value() }}</span>
+          @if (m.preview) { <span class="hint"><span class="badge tone-gray">Preview</span> Sample figure, not your data</span> }
         }
       </div>
     }
@@ -60,6 +61,7 @@ const TONES: Record<string, string> = { info: 'blue', success: 'green', warning:
     .value { font: var(--esm-text-title-xl); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
     .value-skeleton { display: block; height: 28px; width: 40%; margin: 4px 0; }
     .hint { display: inline-flex; align-items: center; gap: 4px; font: var(--esm-text-caption); color: var(--esm-text-muted); }
+    .value.sample { color: var(--esm-text-muted); }
   `,
 })
 export class KpiTile {
@@ -86,9 +88,9 @@ export class KpiTile {
       <tbody>
         @for (b of m.buckets; track b.key) {
           <tr>
-            <th scope="row"><a [routerLink]="['/records', b.drill.entity]" [queryParams]="params(b)">{{ b.label }}</a></th>
+            <th scope="row">@if (b.drill) { <a [routerLink]="['/records', b.drill.entity]" [queryParams]="params(b)">{{ b.label }}</a> } @else { {{ b.label }} }</th>
             @if (m.measure !== 'count') { <td class="num">{{ value(b) }}</td> }
-            <td class="num">{{ b.count.toLocaleString() }}</td>
+            <td class="num">{{ b.count.toLocaleString() }}{{ b.capped ? '+' : '' }}</td>
           </tr>
         }
       </tbody>
@@ -107,11 +109,11 @@ export class MetricBucketTable {
   readonly metric = input.required<MetricResult>();
 
   protected params(b: MetricBucket) {
-    return drillParams(b.drill);
+    return drillParams(b.drill!);
   }
 
   protected value(b: MetricBucket): string {
-    return formatMetric(this.metric(), b.value, b.count);
+    return formatMetric(this.metric(), b.value, b.count, !!b.capped);
   }
 }
 
@@ -127,6 +129,7 @@ export class MetricBucketTable {
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
       <header class="flex items-center gap-2">
         <h3 [id]="node().id + '-t'" class="flex-1">{{ node().props['title'] ?? m?.label ?? 'Chart' }}</h3>
+        @if (m?.preview) { <span class="badge tone-gray">Preview</span> }
         @if (m?.status === 'ok' && max() > 0) {
           <button class="btn btn-ghost btn-sm" [attr.aria-pressed]="table()" (click)="showTable.set(!table())">{{ table() ? 'Hide table' : 'Show table' }}</button>
         }
@@ -138,26 +141,41 @@ export class MetricBucketTable {
       } @else if (!m.buckets.length || max() === 0) {
         <p class="muted state">Nothing to show yet.</p>
       } @else if (vertical()) {
-        <ul class="columns" role="list">
+        <ul class="columns" role="list" [class.sample]="m.preview">
           @for (b of m.buckets; track b.key) {
             <li>
-              <a class="col-bar" [routerLink]="commands(b)" [queryParams]="params(b)" [attr.aria-label]="b.label + ': ' + display(m, b)">
-                <span class="col-value">{{ display(m, b) }}</span>
-                <span class="col-fill" [style.height.%]="pct(b)"></span>
-              </a>
+              @if (b.drill) {
+                <a class="col-bar" [routerLink]="commands(b)" [queryParams]="params(b)" [attr.aria-label]="b.label + ': ' + display(m, b)">
+                  <span class="col-value">{{ display(m, b) }}</span>
+                  <span class="col-fill" [style.height.%]="pct(b)"></span>
+                </a>
+              } @else {
+                <span class="col-bar" [attr.aria-label]="b.label + ': ' + display(m, b) + ' (sample)'" role="img">
+                  <span class="col-value">{{ display(m, b) }}</span>
+                  <span class="col-fill" [style.height.%]="pct(b)"></span>
+                </span>
+              }
               <span class="col-label" aria-hidden="true">{{ b.label.replace('Week of ', '') }}</span>
             </li>
           }
         </ul>
       } @else {
-        <ul class="bars" role="list">
+        <ul class="bars" role="list" [class.sample]="m.preview">
           @for (b of m.buckets; track b.key) {
             <li>
-              <a class="bar" [routerLink]="commands(b)" [queryParams]="params(b)" [attr.aria-label]="b.label + ': ' + display(m, b)">
-                <span class="bar-label">{{ b.label }}</span>
-                <span class="bar-track"><span class="bar-fill" [style.width.%]="pct(b)"></span></span>
-                <span class="bar-value">{{ display(m, b) }}</span>
-              </a>
+              @if (b.drill) {
+                <a class="bar" [routerLink]="commands(b)" [queryParams]="params(b)" [attr.aria-label]="b.label + ': ' + display(m, b)">
+                  <span class="bar-label">{{ b.label }}</span>
+                  <span class="bar-track"><span class="bar-fill" [style.width.%]="pct(b)"></span></span>
+                  <span class="bar-value">{{ display(m, b) }}</span>
+                </a>
+              } @else {
+                <span class="bar">
+                  <span class="bar-label">{{ b.label }}</span>
+                  <span class="bar-track"><span class="bar-fill" [style.width.%]="pct(b)"></span></span>
+                  <span class="bar-value">{{ display(m, b) }}</span>
+                </span>
+              }
             </li>
           }
         </ul>
@@ -191,6 +209,8 @@ export class MetricBucketTable {
     .col-fill { display: block; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--esm-accent-brand); }
     .col-label { margin-top: 6px; text-align: center; font: var(--esm-text-caption); color: var(--esm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .more { margin: var(--esm-space-2) 0 0; font: var(--esm-text-caption); }
+    .sample .bar-fill, .sample .col-fill { background: repeating-linear-gradient(135deg, var(--esm-accent-gray) 0 4px, transparent 4px 8px); }
+    .sample span.bar:hover, .sample span.col-bar:hover { background: transparent; }
   `,
 })
 export class BarChart {
@@ -208,15 +228,15 @@ export class BarChart {
   }
 
   protected display(m: MetricResult, b: MetricBucket): string {
-    return formatMetric(m, b.value, b.count);
+    return formatMetric(m, b.value, b.count, !!b.capped);
   }
 
   protected commands(b: MetricBucket) {
-    return drillCommands(b.drill);
+    return drillCommands(b.drill!);
   }
 
   protected params(b: MetricBucket) {
-    return drillParams(b.drill);
+    return drillParams(b.drill!);
   }
 }
 
@@ -232,7 +252,7 @@ function figure(m: MetricResult, b: MetricBucket): number {
   template: `
     @let m = metric();
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
-      <h3 [id]="node().id + '-t'">{{ node().props['title'] ?? m?.label ?? 'Table' }}</h3>
+      <h3 [id]="node().id + '-t'">{{ node().props['title'] ?? m?.label ?? 'Table' }} @if (m?.preview) { <span class="badge tone-gray">Preview</span> }</h3>
       @if (!m) {
         <p class="muted state">{{ ctx?.loading() ? 'Loading…' : 'No data.' }}</p>
       } @else if (m.status !== 'ok') {

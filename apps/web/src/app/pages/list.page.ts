@@ -172,8 +172,16 @@ interface Drill {
                 <tr><td [attr.colspan]="columns().length" class="empty">
                   <span class="mx-auto mb-3 grid size-11 place-items-center rounded-lg bg-sunken text-muted"><esm-icon name="inbox" [size]="20" /></span>
                   <strong class="text-title-sm">Nothing here</strong>
-                  <p class="muted">{{ drill() ? 'No records match ' + drill()!.label.toLowerCase() + ' right now.' : hasFilters() ? 'No records match these filters.' : 'No records yet.' }}</p>
-                  @if (hasFilters()) { <button class="btn btn-sm" (click)="clearFilters()">Clear filters</button> }
+                  <p class="muted">{{ drill() ? 'No records match ' + drill()!.label.toLowerCase() + ' right now.' : hasFilters() ? 'No records match these filters.' : 'No ' + (s?.entity?.entity?.pluralLabel?.toLowerCase() ?? 'records') + ' yet. They appear here as soon as someone creates one.' }}</p>
+                  @if (hasFilters()) {
+                    <button class="btn btn-sm" (click)="clearFilters()">Clear filters</button>
+                  } @else if (nav()?.canCreate) {
+                    @if (nav()?.requests) {
+                      <a class="btn btn-primary btn-sm" routerLink="/catalog"><esm-icon name="store" [size]="14" /> Make the first request</a>
+                    } @else {
+                      <a class="btn btn-primary btn-sm" [routerLink]="['/records', entity(), 'new']"><esm-icon name="plus" [size]="14" /> Create the first {{ s?.entity?.entity?.label?.toLowerCase() ?? 'record' }}</a>
+                    }
+                  }
                 </td></tr>
               }
             }
@@ -539,8 +547,9 @@ export class ListPage {
     return this.groupKey(r) === '' ? `No ${field?.label.toLowerCase() ?? 'value'}` : this.cell(r, field?.key ?? '');
   }
 
-  protected groupCount(r: RecordView): number | null {
-    return this.groupOf(r)?.count ?? null;
+  protected groupCount(r: RecordView): string | null {
+    const g = this.groupOf(r);
+    return g ? g.count.toLocaleString() + (g.capped ? '+' : '') : null;
   }
 
   protected fieldSpec(key: string): FieldSpec | undefined {

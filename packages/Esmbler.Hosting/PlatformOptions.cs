@@ -20,6 +20,12 @@ public sealed class PlatformOptions
     /// <summary>Dashboard, metric and group-count requests allowed per person per minute.</summary>
     public int MetricRequestsPerMinute { get; set; } = 120;
 
+    /// <summary>Whether signed-in people may create workspaces from a starter (REQ-WS-001).</summary>
+    public bool AllowWorkspaceCreation { get; set; } = true;
+
+    /// <summary>Workspaces one person may create (self-service); operators provision more.</summary>
+    public int MaxWorkspacesPerPerson { get; set; } = 5;
+
     public sealed class DatabaseSettings
     {
         public string App { get; set; } = "";

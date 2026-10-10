@@ -39,6 +39,7 @@ const signedInGuard: CanActivateFn = async () => {
 export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./pages/login.page').then((m) => m.LoginPage) },
   { path: 'workspaces', canActivate: [signedInGuard], loadComponent: () => import('./pages/workspaces.page').then((m) => m.WorkspacesPage) },
+  { path: 'workspaces/new', canActivate: [signedInGuard], loadComponent: () => import('./pages/create-workspace.page').then((m) => m.CreateWorkspacePage) },
   {
     path: '',
     canActivate: [workspaceGuard],

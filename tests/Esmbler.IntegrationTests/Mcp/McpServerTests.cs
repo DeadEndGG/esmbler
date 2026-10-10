@@ -325,6 +325,14 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var badFilter = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_metric", new { entity = "core.tickets.ticket", label = "Reopened", filter = "prior.status == 'resolved'", expected_version = version }));
         Assert.Contains("bad_filter", badFilter.Body);
 
+        // A metric can be changed and, once nothing uses it, removed.
+        version = (await Call(client, "add_metric", new { entity = "core.tickets.ticket", label = "Hardware open", filter = "record.category == 'hardware'", expected_version = version }))["version"]!.GetValue<int>();
+        version = (await Call(client, "update_metric", new { metric = "tenant__metric_hardware_open", label = "Open hardware tickets", options = new { groupBy = "priority" }, expected_version = version }))["version"]!.GetValue<int>();
+        var changed = (await Call(client, "list_metrics"))["metrics"]!.AsArray().Single(m => m!["id"]!.GetValue<string>() == "tenant__metric_hardware_open")!;
+        Assert.Equal(("Open hardware tickets", "priority"), (changed["label"]!.GetValue<string>(), changed["groupBy"]!.GetValue<string>()));
+        version = (await Call(client, "remove_metric", new { metric = "tenant__metric_hardware_open", expected_version = version }))["version"]!.GetValue<int>();
+        Assert.DoesNotContain((await Call(client, "list_metrics"))["metrics"]!.AsArray(), m => m!["id"]!.GetValue<string>() == "tenant__metric_hardware_open");
+
         // One request adds a field and wires it into the list (column, grouping) and a rule: one change, undone together.
         var added = await Call(client, "add_field", new
         {

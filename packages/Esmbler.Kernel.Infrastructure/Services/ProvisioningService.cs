@@ -12,11 +12,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Esmbler.Kernel.Infrastructure.Services;
 
-public sealed record UserSeed(string Key, string Email, string DisplayName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string> Groups);
+/// <summary>A member of a new tenant. <paramref name="Principal"/> names an existing person (no email lookup, no new account).</summary>
+public sealed record UserSeed(string Key, string Email, string DisplayName, string Password, IReadOnlyList<string> Roles, IReadOnlyList<string> Groups, Guid? Principal = null);
 
 public sealed record GroupSeed(string Key, string Name, IReadOnlyList<string> Roles);
 
-public sealed record TenantSeed(string Slug, string Name, IReadOnlyList<UserSeed> Users, IReadOnlyList<GroupSeed> Groups, IReadOnlyList<(string ModuleId, string Version)> Modules, bool SampleData = true);
+/// <summary>
+/// A tenant to provision. With <paramref name="CreatedBy"/> the tenant is a self-service workspace: the database refuses it
+/// when that person already created <paramref name="CreationLimit"/> workspaces (REQ-WS-001, migration 0012).
+/// </summary>
+public sealed record TenantSeed(string Slug, string Name, IReadOnlyList<UserSeed> Users, IReadOnlyList<GroupSeed> Groups, IReadOnlyList<(string ModuleId, string Version)> Modules, bool SampleData = true, Guid? CreatedBy = null, int CreationLimit = 0);
 
 public sealed record ProvisionedTenant(Guid TenantId, IReadOnlyDictionary<string, Guid> Environments, IReadOnlyDictionary<string, Guid> Users, IReadOnlyDictionary<string, Guid> Groups);
 
@@ -31,7 +36,18 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
     public async Task<ProvisionedTenant> ProvisionAsync(TenantSeed seed, CancellationToken ct)
     {
         var tenantId = Guid.NewGuid();
-        await database.AnonymousAsync(db => db.Database.ExecuteSqlInterpolatedAsync($"SELECT kernel.provision_tenant({tenantId}, {seed.Slug}, {seed.Name})", ct), ct);
+        if (seed.CreatedBy is { } creator)
+        {
+            var allowed = await database.AnonymousAsync(db => db.Database.SqlQuery<bool>($"SELECT kernel.create_workspace({tenantId}, {seed.Slug}, {seed.Name}, {creator}, {seed.CreationLimit}) AS \"Value\"").SingleAsync(ct), ct);
+            if (!allowed)
+            {
+                throw new KernelException("workspace_limit", $"You have already created {seed.CreationLimit} workspaces, the most one person may create.", 409, suggestion: "Ask a platform operator to raise the limit or to create the workspace.");
+            }
+        }
+        else
+        {
+            await database.AnonymousAsync(db => db.Database.ExecuteSqlInterpolatedAsync($"SELECT kernel.provision_tenant({tenantId}, {seed.Slug}, {seed.Name})", ct), ct);
+        }
 
         var envs = new Dictionary<string, Guid> { ["prod"] = Guid.NewGuid(), ["sandbox"] = Guid.NewGuid() };
         var users = new Dictionary<string, Guid>(StringComparer.Ordinal);
@@ -39,6 +55,13 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
         var preexisting = new HashSet<Guid>();
         foreach (var u in seed.Users)
         {
+            if (u.Principal is { } known)
+            {
+                users[u.Key] = known;
+                preexisting.Add(known);
+                continue;
+            }
+
             // A person may belong to several tenants (REQ-IAM-002): reuse the global principal when the email exists.
             var existing = await database.AnonymousAsync(db => db.Database.SqlQuery<Guid>($"SELECT id AS \"Value\" FROM kernel.login_lookup({u.Email})").ToListAsync(ct), ct);
             users[u.Key] = existing.Count > 0 ? existing[0] : Guid.NewGuid();

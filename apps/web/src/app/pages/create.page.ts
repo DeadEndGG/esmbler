@@ -2,7 +2,7 @@ import { Component, DestroyRef, effect, inject, input, signal, untracked } from 
 import { Router, RouterLink } from '@angular/router';
 import { BuilderState } from '../builder/builder-state';
 import { Api, ApiError } from '../core/api';
-import { DraftViewSpec, RecordView } from '../core/models';
+import { DraftViewSpec, NodeSpec, RecordView } from '../core/models';
 import { Session } from '../core/session';
 import { Shortcuts } from '../core/shortcuts';
 import { Toasts } from '../core/toast';
@@ -103,9 +103,11 @@ export class CreatePage {
 
   protected async submit(): Promise<void> {
     if (this.saving() || !this.ctx.spec()) return;
+    // Only fields on this form are checked here; the server fills defaults (e.g. the requester) and re-validates the rest.
+    const onForm = new Set(fieldsOf(this.ctx.spec()!.view.layout));
     const missing = this.ctx
       .entity()!
-      .entity.fields.filter((f) => this.ctx.isRequired(f.key) && !this.ctx.isHidden(f.key) && isEmpty(this.ctx.values()[f.key]))
+      .entity.fields.filter((f) => onForm.has(f.key) && f.default === undefined && !f.defaultExpression && this.ctx.isRequired(f.key) && !this.ctx.isHidden(f.key) && isEmpty(this.ctx.values()[f.key]))
       .map((f) => f.key);
     if (missing.length) {
       this.ctx.errors.set(Object.fromEntries(missing.map((k) => [k, `${this.ctx.field(k)?.label ?? k} is required.`])));
@@ -114,12 +116,18 @@ export class CreatePage {
     }
     this.saving.set(true);
     try {
-      const created = await this.api.post<RecordView>(`/api/records/${this.entity()}`, { data: this.ctx.values(), configRevision: this.ctx.spec()!.configRevision }, { 'Idempotency-Key': this.idempotencyKey });
+      // Send what this form shows; the server applies defaults (status, requester, …) and rules to the rest.
+      const data = Object.fromEntries(Object.entries(this.ctx.values()).filter(([k, v]) => onForm.has(k) && !isEmpty(v)));
+      const created = await this.api.post<RecordView>(`/api/records/${this.entity()}`, { data, configRevision: this.ctx.spec()!.configRevision }, { 'Idempotency-Key': this.idempotencyKey });
       this.toasts.show(`${created.number ?? 'Record'} created.`, 'success');
       await this.router.navigate(['/records', created.entity, created.id]);
     } catch (e) {
       if (e instanceof ApiError && e.problem.errors?.length) {
         this.ctx.errors.set(Object.fromEntries(e.problem.errors.map((x) => [x.field, x.message])));
+        // Errors on fields this form does not show would otherwise be invisible.
+        const onForm = new Set(fieldsOf(this.ctx.spec()!.view.layout));
+        const elsewhere = e.problem.errors.filter((x) => !onForm.has(x.field));
+        if (elsewhere.length) this.toasts.show(elsewhere.map((x) => x.message).join(' '), 'warning');
       } else {
         this.toasts.show(e instanceof ApiError ? e.message : 'The record was not created.', 'warning');
       }
@@ -127,6 +135,11 @@ export class CreatePage {
       this.saving.set(false);
     }
   }
+}
+
+/** Field keys placed on a layout. */
+function fieldsOf(node: NodeSpec): string[] {
+  return [...(node.type === 'field' && node.props['field'] ? [node.props['field'] as string] : []), ...node.children.flatMap(fieldsOf)];
 }
 
 function isEmpty(v: unknown): boolean {

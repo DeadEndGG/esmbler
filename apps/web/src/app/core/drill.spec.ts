@@ -31,7 +31,13 @@ describe('drill links', () => {
 describe('formatMetric', () => {
   it('shows counts, with a plus when capped', () => {
     expect(formatMetric(base)).toBe('12');
-    expect(formatMetric({ ...base, count: 100000, capped: true })).toBe((100000).toLocaleString() + '+');
+    expect(formatMetric({ ...base, count: 10000, capped: true })).toBe((10000).toLocaleString() + '+');
+  });
+
+  it('marks a bar capped only when that bar stopped counting', () => {
+    const capped = { ...base, count: 10000, capped: true };
+    expect(formatMetric(capped, 3, 3, false)).toBe('3');
+    expect(formatMetric(capped, 10000, 10000, true)).toBe((10000).toLocaleString() + '+');
   });
 
   it('shows durations with their unit and a dash when nothing was measured', () => {

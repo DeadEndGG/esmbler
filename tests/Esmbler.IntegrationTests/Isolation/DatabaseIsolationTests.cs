@@ -110,7 +110,7 @@ public class DatabaseIsolationTests(PostgresFixture pg)
     [Fact]
     public async Task Only_allow_listed_security_definer_functions_exist()
     {
-        string[] allowed = ["bump_authz_revision", "claim_jobs", "claim_outbox", "find_tenant_by_slug", "login_lookup", "provision_tenant", "purge_outbox", "refresh_lookup"];
+        string[] allowed = ["bump_authz_revision", "claim_jobs", "claim_outbox", "create_workspace", "find_tenant_by_slug", "login_lookup", "provision_tenant", "purge_outbox", "refresh_lookup"];
         await using var conn = new NpgsqlConnection(pg.AppConnectionString);
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand("""

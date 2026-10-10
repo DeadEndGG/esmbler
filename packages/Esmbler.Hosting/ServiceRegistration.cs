@@ -63,6 +63,8 @@ public static class ServiceRegistration
         services.AddSingleton<RecordService>();
         services.AddSingleton<IdentityService>();
         services.AddSingleton<ProvisioningService>();
+        services.AddSingleton(sp => { var o = sp.GetRequiredService<PlatformOptions>(); return new WorkspaceCreationPolicy(o.AllowWorkspaceCreation, o.MaxWorkspacesPerPerson); });
+        services.AddSingleton<WorkspaceService>();
         services.AddSingleton<DemoTenants>();
         services.AddSingleton<ExperienceService>();
         services.AddSingleton<AccessExplainer>();

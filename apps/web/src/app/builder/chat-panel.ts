@@ -83,12 +83,12 @@ const EXAMPLES = [
                 <li [class.undone]="s.undone" [class.part]="part" (mouseenter)="builder.highlight(s.targets)" (focusin)="builder.highlight(s.targets)">
                   <span class="who" [class.agent]="s.byAgent" [title]="s.byAgent ? 'Made by the AI' : 'Made by a person'"><esm-icon [name]="s.byAgent ? 'sparkles' : 'check'" [size]="12" /></span>
                   <span class="summary">{{ s.summary }}</span>
-                  @if (part) {
-                    <!-- Part of the change above: undone and redone with it. -->
-                  } @else if (s.undone) {
-                    <button class="btn btn-ghost btn-sm" (click)="builder.redo(s.seq)">Redo</button>
+                  @if (s.undone) {
+                    <button class="btn btn-ghost btn-sm" (click)="part || batchSize(s) === 1 ? builder.redo(s.seq) : builder.redo(s.seq, true)">{{ !part && batchSize(s) > 1 ? 'Redo change' : 'Redo' }}</button>
+                  } @else if (!part && batchSize(s) > 1) {
+                    <button class="btn btn-ghost btn-sm" (click)="builder.undo(s.seq, true)" [attr.aria-label]="'Undo change: ' + s.summary + ' and ' + (batchSize(s) - 1) + ' related steps'"><esm-icon name="undo" [size]="13" /> Undo change</button>
                   } @else {
-                    <button class="btn btn-ghost btn-sm" (click)="builder.undo(s.seq)" [attr.aria-label]="'Undo: ' + s.summary + (batchSize(s) > 1 ? ' and ' + (batchSize(s) - 1) + ' related steps' : '')"><esm-icon name="undo" [size]="13" /> Undo</button>
+                    <button class="btn btn-ghost btn-sm" (click)="builder.undo(s.seq)" [attr.aria-label]="'Undo: ' + s.summary"><esm-icon name="undo" [size]="13" /> Undo</button>
                   }
                 </li>
               }

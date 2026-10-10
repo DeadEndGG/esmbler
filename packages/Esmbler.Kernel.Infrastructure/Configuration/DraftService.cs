@@ -170,8 +170,11 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             return new BatchResult(draft.Version, batch, steps, state);
         }, ct);
 
-    /// <summary>Undoes one step. Refused when later active steps depend on it (draft.undo_has_dependents).</summary>
-    public Task<DraftState> SetUndoneAsync(RequestContext ctx, int seq, bool undone, int expectedVersion, CancellationToken ct) =>
+    /// <summary>
+    /// Undoes (or redoes) one step, or with <paramref name="wholeChange"/> every step of the change (batch) it belongs to
+    /// (REQ-LIVE-003, REQ-WS-005). Refused when later active steps depend on it (draft.undo_has_dependents).
+    /// </summary>
+    public Task<DraftState> SetUndoneAsync(RequestContext ctx, int seq, bool undone, int expectedVersion, CancellationToken ct, bool wholeChange = false) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             var (_, perms) = await RequireEditAsync(db, ctx, ct);
@@ -184,8 +187,8 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                 return await StateAsync(db, ctx, draft, ct);
             }
 
-            // Steps applied as one change are undone and redone together (REQ-WS-005).
-            var group = command.BatchId is { } batch ? commands.Where(c => c.BatchId == batch).ToList() : [command];
+            // A change (batch) can be undone or redone as a whole (REQ-WS-005); any single step can still be undone alone (REQ-LIVE-003).
+            var group = wholeChange && command.BatchId is { } batch ? commands.Where(c => c.BatchId == batch && c.Undone != undone).ToList() : [command];
             var inGroup = group.Select(c => c.Seq).ToHashSet();
 
             // Undoing or redoing a permission change is itself a permission change (REQ-AUTHZ-008).
@@ -195,6 +198,7 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                     ctx.AgentId is null ? "Undoing or redoing a change to who can see or edit things requires the permission administration right." : "AI agents cannot undo or redo permission changes. Ask an administrator.",
                     suggestion: "Permission changes are a separate administrative action (REQ-AUTHZ-008).");
             }
+
             var current = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             var activeAfter = commands.Where(c => inGroup.Contains(c.Seq) ? !undone : !c.Undone).ToList();
             var ops = current.Overlay.Concat(activeAfter.Select(c => SpecJson.Deserialize<OverlayOp>(c.Op))).ToList();

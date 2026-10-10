@@ -67,3 +67,17 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   });
 }
+
+test('@REQ-DS-003 the workspace creation flow has no serious accessibility violations', async ({ page }) => {
+  await signIn(page, 'quinn@globex.example', 'Globex');
+  await page.goto('/workspaces/new');
+  await expect(page.getByLabel('Workspace name')).toBeVisible();
+  await audit(page, 'create workspace: describe');
+  await page.getByLabel('Workspace name').fill('Audit workspace');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Which team receives new tickets?').fill('Audit team');
+  await audit(page, 'create workspace: questions');
+  await page.getByRole('button', { name: 'Review' }).click();
+  await expect(page.getByRole('button', { name: 'Create workspace' })).toBeVisible();
+  await audit(page, 'create workspace: review');
+});

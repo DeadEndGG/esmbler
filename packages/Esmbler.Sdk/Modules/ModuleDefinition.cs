@@ -18,6 +18,9 @@ public interface IModuleDefinition
     /// <summary>All shipped releases, oldest first.</summary>
     IReadOnlyList<ModuleSpec> Releases { get; }
 
+    /// <summary>Complete workspaces people can create from this module's latest release (REQ-WS-001).</summary>
+    IReadOnlyList<StarterSpec> Starters => [];
+
     void Configure(IModuleBuilder builder)
     {
     }

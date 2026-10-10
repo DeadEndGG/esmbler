@@ -90,6 +90,7 @@ app.MapAppAndConfig();
 app.MapRecords();
 app.MapApprovals();
 app.MapMetrics();
+app.MapWorkspaces();
 app.MapBuilder();
 app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");
