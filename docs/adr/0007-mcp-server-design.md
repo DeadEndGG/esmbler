@@ -3,7 +3,7 @@ title: "ADR 0007: MCP server design"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003]
+requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004]
 ---
 
 # ADR 0007: MCP server design
@@ -78,11 +78,20 @@ Service catalog and workflow tools (G2-M2, [ADR 0015](0015-requests-catalog-fulf
 |---|---|---|---|---|
 | Discovery | `list_catalog_items` | none | none; catalog items in the open draft with variables, tasks, dependencies, conditions and `customized` | config:read |
 | Build | `add_catalog_item` | `label`, `variables`, `tasks`, `description?`, `category?`, `request_entity?`, `expected_version` | `catalog_item.add` (plus `choice_list.add` for choice questions) | config:edit |
-| | `update_catalog_item` | `item`, `label?`, `description?`, `category?`, `active?`, `expected_version` | `catalog_item.update` | config:edit |
+| | `update_catalog_item` | `item`, `label?`, `description?`, `category?`, `active?`, `approval_policy?` (G2-M3), `expected_version` | `catalog_item.update` | config:edit |
 | | `add_workflow_state` | `workflow`, `label`, `category`, `expected_version` | `workflow.add_state` | config:edit |
 | | `add_transition` | `workflow`, `label`, `from`, `to`, `roles?`, `required_fields?`, `guard?`, `guard_message?`, `tone?`, `expected_version` | `workflow.add_transition` | config:edit |
 | | `update_transition` | `workflow`, `transition`, `label?`, `enabled?`, `guard_message?`, `tone?`, `from?`, `to?`, `guard?`, `expected_version` | `workflow.update_transition` | config:edit |
 | | `set_workflow_policy` | `workflow`, `policy` (pin, migrate, cancel), `state_map?`, `cancel_state?`, `expected_version` | `workflow.set_active_instances` | config:edit |
+
+Approval tools (G2-M3, [ADR 0016](0016-approvals.md)). `list_catalog_items` also returns each item's `approvalPolicy`.
+
+| Family | Tool | Input (summary) | Overlay op | Scope |
+|---|---|---|---|---|
+| Discovery | `list_approval_policies` | none | none; policies in the open draft with stages, approvers (`kind:ref`), conditions, expiry, escalation, `customized` and the catalog items that use each | config:read |
+| Build | `add_approval_policy` | `label`, `stages` (each `label`, `mode?`, `roles?`, `groups?`, `fields?`, `when?`, `expiresAfterHours?`, `escalateToGroups?`), `description?`, `request_entity?`, `expected_version` | `approval_policy.add` (`tenant__` ID) | config:edit |
+
+Clearing an item's `approval_policy` is a permission change, so the agent's call is refused (`permissions.admin` is never delegated). There is no tool to approve, reject or delegate: decisions need an interactive human session, and `ApprovalService` refuses agent contexts (REQ-AISAFE-001).
 
 Most build tools append one draft command; composite tools (`add_field` with placement, `add_card` with fields) append one per op and report each step ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 
@@ -149,4 +158,4 @@ Every call (including denied ones) writes `kernel.audit_log` as `mcp.<tool>`: ac
 ## More information
 
 - Revisit triggers: external MCP clients need OAuth 2.1 dynamic registration (Gate 3 partner beta); the SDK lags the MCP spec version we need.
-- Verification: `Mcp.McpServerTests` (`Server_lists_the_builder_tools_and_no_publish_tool`, `Agent_customizes_through_mcp_and_a_person_publishes`, `Api_tokens_are_rejected_by_the_mcp_server`, `Tool_calls_are_rate_limited_per_agent_session`, `Disabling_the_agent_stops_its_next_call`, `Explain_access_tool_says_why_a_field_is_hidden`, `Scopes_limit_the_agent_and_errors_are_structured`, `Embedded_instructions_in_records_cannot_widen_authority`); `Configuration.ConfigLifecycleTests.Agents_request_publish_but_only_humans_publish_and_permissions_need_admin`. A schema check that no tool accepts a tenant argument is not built yet.
+- Verification: `Mcp.McpServerTests` (`Server_lists_the_builder_tools_and_no_publish_tool`, `Agent_customizes_through_mcp_and_a_person_publishes`, `Api_tokens_are_rejected_by_the_mcp_server`, `Tool_calls_are_rate_limited_per_agent_session`, `Disabling_the_agent_stops_its_next_call`, `Explain_access_tool_says_why_a_field_is_hidden`, `Scopes_limit_the_agent_and_errors_are_structured`, `Embedded_instructions_in_records_cannot_widen_authority`, `No_tool_takes_tenant_environment_or_principal_arguments`, `Agent_adds_an_approval_policy_but_cannot_remove_an_items_approval`); `Configuration.ConfigLifecycleTests.Agents_request_publish_but_only_humans_publish_and_permissions_need_admin`; `Requests.ApprovalTests.AI_agents_cannot_decide_and_other_workspaces_see_nothing`.

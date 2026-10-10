@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario) and `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)) and `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -24,10 +24,10 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 | Entity | `core.tickets.ticket` |
 | Record view / list view / quick create | `core.tickets.record`, `core.tickets.list`, `core.tickets.quick_create` |
 | Workflow | `core.tickets.lifecycle` |
-| Roles | `core.tickets.agent`, `core.tickets.requester`, `core.tickets.admin` |
+| Roles | `core.tickets.agent`, `core.tickets.requester`, `core.tickets.admin`; `core.tickets.approver` (1.3.0, `ApproverRole`) |
 | Request entity / task entity / request workflow (1.2.0) | `core.tickets.request`, `core.tickets.request_task`, `core.tickets.request_lifecycle` |
 
-The other IDs added in 1.2.0 (task workflow, views, catalog items) are listed in [Release 1.2.0](#release-120-service-requests).
+The other IDs added in 1.2.0 (task workflow, views, catalog items) are listed in [Release 1.2.0](#release-120-service-requests), and those added in 1.3.0 (approval policies, permission set, notification) in [Release 1.3.0](#release-130-approvals).
 
 ## Entity: Ticket
 
@@ -138,6 +138,7 @@ All base rules are data-scoped, so they are enforced on every write path ([REQ-R
 | `core.tickets.ps_agent` | agent | create; read all; update all; no delete | all writable | none |
 | `core.tickets.ps_requester` | requester | create; read related; update related; no delete | read-only `priority`, `requester`, `assignment_group`, `assignee`, `parent`, `resolution_notes`; hidden `estimated_effort`, `labels`; other non-system fields (`title`, `description`, `contact_email`, `category`, …) writable on related tickets | none |
 | `core.tickets.ps_admin` | admin | create; read all; update all; delete | all writable | `config.edit`, `config.publish`, `audit.read`, `records.export` |
+| `core.tickets.ps_approver` (1.3.0) | approver | requests only: no create; read related (through the `approvers` access field); no update; no delete. No ticket access | no field rules (the request's other permission sets apply) | none |
 | `core.platform.ps_tenant_admin` (platform) | `core.platform.tenant_admin` | all entities, full | all | every platform action, including `permissions.admin` and `modules.manage` |
 
 The Tickets admin can publish configuration but cannot change permissions. That needs `permissions.admin`, which only the tenant admin holds ([REQ-AUTHZ-008](../../spec/traceability.md)).
@@ -249,7 +250,7 @@ Evidence:
 | Request | `submitted` (new), `fulfilling` (active), `fulfilled` (resolved), `closed` (closed), `rejected` (cancelled), `cancelled` (cancelled) | `start_fulfillment` (agents), `complete` (system, sets `fulfilled_at`), `close`, `reject` (agents), `cancel` |
 | Task | `blocked` (pending), `open` (new), `in_progress` (active), `done` (resolved), `skipped` (cancelled) | `release` (system), `start`, `complete` (sets `completed_at`), `skip` (agents), `cancel` (system) |
 
-System transitions are never shown as buttons and are refused from people; only the fulfillment engine fires them.
+System transitions are never shown as buttons and are refused from people; only the fulfillment engine (and, from 1.3.0, the approval engine) fires them.
 
 ### Fulfillment
 
@@ -285,8 +286,45 @@ sequenceDiagram
 
 Tenants and the AI builder add their own items with `catalog_item.add`, and deactivate default ones instead of removing them.
 
+## Release 1.3.0: approvals
+
+1.3.0 puts requests behind approval before fulfillment ([ADR 0016](../../adr/0016-approvals.md)). The release is additive and has no data migrations: requests already in flight keep their state, and only new requests for items with a policy wait for approval.
+
+| Element | IDs and detail |
+| --- | --- |
+| Request field | `approvers` (type `principals`, read-only, maintained by the platform): the users and groups asked to approve. Access field with relation `approver`, `canEdit: false` |
+| Approval binding | On `core.tickets.request`: state `awaiting_approval`, transitions `request_approval`, `approve`, `decline`, approvers field `approvers` |
+| Status option | `awaiting_approval`: Awaiting approval (amber), state category `pending` |
+| Role and permission set | `core.tickets.approver` (Approver, `TicketsIds.ApproverRole`) with `core.tickets.ps_approver`: reads related requests only, cannot create or update them, and has no ticket access |
+| Approval policies | `core.tickets.approval.manager`, `core.tickets.approval.access` |
+| Catalog items | `core.tickets.catalog.new_laptop` uses the manager policy; `core.tickets.catalog.software_access` uses the access policy; `core.tickets.catalog.onboarding` needs no approval |
+| Notification | `core.tickets.notify.request_declined`: on `record.transitioned:rejected`, notifies the requester ("Not approved: …"). Approvers get an `approval.requested` in-app notification from the approval engine |
+| Record page (`core.tickets.request_record`) | `core.tickets.request_record.approval_callout` (info callout in the header, shown while `record.status == 'awaiting_approval'`) and `core.tickets.request_record.approvals` (`activity.approvals` panel in the side column: stages, decisions, delegates, due times, and Approve/Reject for people who may decide) |
+
+### Request workflow changes
+
+| Transition | From → to | Who |
+| --- | --- | --- |
+| `request_approval` (Send for approval) | submitted → awaiting_approval | system (approval engine, when the item names a policy) |
+| `approve` (Approved) | awaiting_approval → fulfilling | system (every stage approved) |
+| `decline` (Declined) | awaiting_approval → rejected | system (a stage rejected, or expired without escalation) |
+| `cancel` | now also from awaiting_approval | as in 1.2.0 (no role restriction) |
+
+`start_fulfillment` is still offered from `submitted` for items without a policy. For items with a policy, `RequestHook` refuses a person's move from `submitted` into fulfillment (`approval_required`), so only the approval engine starts it.
+
+### Approval policies
+
+| Policy | Stages |
+| --- | --- |
+| `core.tickets.approval.manager` (Manager approval) | `manager`: mode `any`, any holder of `core.tickets.approver`; expires after 72 hours and escalates once to the `service_desk` group |
+| `core.tickets.approval.access` (Access approval) | `manager` as above; then `security` (Security sign-off): mode `all`, holders of `core.tickets.admin`, only when `variables.access_level == 'admin'` |
+
+The requester never approves their own request, even if they hold the Approver role. In the Globex demo tenant, Jamie Ortiz (`jamie@globex.example`) holds the Approver role next to Requester, so the laptop flow in `requests.spec.ts` is: Taylor orders, Jamie approves in Approvals, Morgan's team fulfils.
+
+Evidence: `tests/Esmbler.UnitTests/Configuration/ApprovalPolicyTests.cs` (`Release_1_3_0_puts_laptops_and_software_access_behind_approval` and policy validation), `tests/Esmbler.IntegrationTests/Requests/ApprovalTests.cs`, `Api/ApprovalApiTests.cs`, and Playwright `requests.spec.ts`.
+
 ## Related documents
 
 - [Layered configuration](../../explanation/layered-configuration.md): worked example on this module
 - [Architecture overview](../overview.md)
-- [Acceptance plan](../../testing/acceptance-plan.md): REQ-ACC-01, 03, 04
+- [Acceptance plan](../../testing/acceptance-plan.md): REQ-ACC-01, 03, 04, 05

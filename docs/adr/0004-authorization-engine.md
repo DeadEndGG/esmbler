@@ -124,7 +124,7 @@ The kernel PDP (`EffectivePermissions` in `packages/Esmbler.Kernel/Authorization
 
 1. relationship facts from the tenant's store (`AuthorizationFacts`: roles, direct or via nested groups, and transitive group memberships)
 2. the versioned permission-set specs of the pinned configuration (entity, record, field and action levels)
-3. record relations (`requester`, `assignee`, `owner_group`), checked in-process from the record's access fields, or through OpenFGA with contextual tuples (`IsRelatedAsync`)
+3. record relations (`requester`, `assignee`, `owner_group`, and since G2-M3 `approver`), checked in-process from the record's access fields, or through OpenFGA with contextual tuples (`IsRelatedAsync`). An access field is a `user` field (matches the principal), a `group` field (matches any of the principal's groups) or a `principals` field, a platform-maintained list of user and group IDs that matches when it contains the principal or one of their groups (the request approvers list, [ADR 0016](0016-approvals.md))
 4. for agents, the intersection with the agent's delegated scopes; agents never get `permissions.admin`, `config.publish`, `modules.manage` or `records.export`
 
 It also produces an explanation ("why can X see this?", REQ-AUTHZ-009). Package capability and licence checks are planned with the extension runtime (Gate 3).
@@ -137,7 +137,7 @@ It also produces an explanation ("why can X see this?", REQ-AUTHZ-009). Package 
 ### Record attributes and lists
 
 - **Record attributes are never stored as tuples.** The record row is the source of truth.
-- **Lists are compiled into a SQL predicate** (`QueryCompiler.PermissionPredicate`): read scope `all` becomes `true`; scope `related` becomes one clause per entity access field (`data->>'requester' = <principal>`, `data->>'assignment_group' = ANY(<groups>)`). The predicate is part of `WHERE`, so it applies before ordering, paging and counting.
+- **Lists are compiled into a SQL predicate** (`QueryCompiler.PermissionPredicate`): read scope `all` becomes `true`; scope `related` becomes one clause per entity access field (`data->>'requester' = <principal>`, `data->>'assignment_group' = ANY(<groups>)`, and for a `principals` field `data->'approvers' ?| <principal and groups>`). The predicate is part of `WHERE`, so it applies before ordering, paging and counting.
 - **Not built yet:** a conformance test comparing the SQL predicate with `EffectivePermissions`, and the in-memory fake (`InMemoryRelationshipGraph`) with OpenFGA. Today `Records.RecordServiceTests.Requester_sees_only_related_tickets_and_no_hidden_fields` and `Records.QueryBenchmarkTests.List_queries_meet_the_latency_budget_at_100k_tickets` cover the predicate's behavior and cost.
 
 ### Tenancy and system of record

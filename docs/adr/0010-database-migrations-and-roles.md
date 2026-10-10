@@ -3,7 +3,7 @@ title: "ADR 0010: Database migrations and roles"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004]
 ---
 
 # ADR 0010: Database migrations and roles
@@ -36,7 +36,7 @@ Created once by `deploy/postgres/00-roles.sh` on first Postgres start; passwords
 | Role | Attributes | Owns | Grants | Used by |
 |---|---|---|---|---|
 | `esmbler_migrator` | LOGIN, NOSUPERUSER, NOCREATEROLE, NOBYPASSRLS; may `SET ROLE esmbler_definer` (without inheriting it) | database `esmbler`, schema `kernel`, all tables | full DDL | Migration runner only |
-| `esmbler_app` | LOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, not owner | nothing | `SELECT, INSERT, UPDATE, DELETE` on `kernel` tables; `INSERT, SELECT` only on `kernel.audit_log`; no `DELETE` on `kernel.tenants`, `kernel.principals`, `kernel.config_artifacts`; `EXECUTE` on the privileged functions below | API, MCP, Worker |
+| `esmbler_app` | LOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, not owner | nothing | `SELECT, INSERT, UPDATE, DELETE` on `kernel` tables; `INSERT, SELECT` only on `kernel.audit_log`; no `DELETE` on `kernel.tenants`, `kernel.principals`, `kernel.config_artifacts`; `SELECT, INSERT` only on `kernel.workflow_definitions`; `SELECT, INSERT, UPDATE` only on `kernel.approvals`, `kernel.approval_steps`, `kernel.approval_delegations`; `EXECUTE` on the privileged functions below | API, MCP, Worker |
 | `esmbler_definer` | NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, BYPASSRLS | the `SECURITY DEFINER` functions | `USAGE, CREATE` on schema `kernel`; `SELECT` on `kernel.principals`; `SELECT, INSERT` on `kernel.tenants`; `SELECT, UPDATE` on `kernel.outbox`, `kernel.jobs` | Nobody logs in as it; privileged functions run with its rights |
 | `esmbler_openfga` | LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS | database `openfga` | none in `esmbler` | OpenFGA datastore ([ADR 0004](0004-authorization-engine.md)) |
 | `esmbler_backup` (planned, Gate 2) | LOGIN, NOSUPERUSER, BYPASSRLS | nothing | `SELECT` on all tables (`pg_read_all_data`) | `pg_dump` and tenant restore-extract |
@@ -114,6 +114,7 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0004_refresh_session_cap.sql` | `refresh_tokens.session_started_at` for the absolute session lifetime |
 | `0005_durable_jobs.sql` | Durable jobs and timers: `jobs.dedup_key` (one live job per key), `causation_id` and `depth` for automation limits, and a tenant-interleaving `claim_outbox` ([ADR 0005](0005-job-and-workflow-execution.md)) |
 | `0006_workflow_versions.sql` | `kernel.workflow_definitions` (FORCE RLS, `esmbler_app` gets `SELECT`/`INSERT` only) and `records.workflow_version` with its index ([ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md)) |
+| `0007_approvals.sql` | `kernel.approvals` (one per request approval, with a policy snapshot; at most one pending per record), `kernel.approval_steps` and `kernel.approval_delegations`; FORCE RLS on tenant and environment; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`, so decisions stay an audit trail ([ADR 0016](0016-approvals.md)) |
 
 ### Consequences
 

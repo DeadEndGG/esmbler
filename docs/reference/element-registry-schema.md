@@ -196,6 +196,16 @@ Every error carries `code`, `message`, `target` and `suggestion` so the AI can s
 - `feedback.inline_error`: an actionable error next to its field.
 - `feedback.loading`: skeletons, inline indicators or a thin progress bar.
 
+## Gate 2 additions
+
+Six elements so far, `gate: 2`. The generated [element catalog](element-catalog.md) has their props and examples.
+
+- `spec_object.catalog_item` (G2-M2, [ADR 0015](../adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)): a requestable service with typed questions and fulfillment tasks.
+- `field.catalog_item` and `field.variables` (G2-M2): the catalog item a request was raised from, and its typed answers.
+- `spec_object.approval_policy` (G2-M3, [ADR 0016](../adr/0016-approvals.md)): ordered approval stages with approvers, conditions, expiry and escalation.
+- `field.principals` (G2-M3): a platform-maintained list of user and group IDs, such as a request's approvers; usable as an access field.
+- `activity.approvals` (G2-M3): the approvals panel on a request record, with Approve and Reject for people who may decide.
+
 ## Adding an element
 
 A how-to guide (`docs/how-to/add-an-element.md`) is planned but not written yet. In summary:

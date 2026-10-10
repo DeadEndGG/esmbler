@@ -79,7 +79,7 @@ A person delegates their approvals to another member of the workspace for a peri
 | Operation | Effect |
 | --- | --- |
 | `approval_policy.add` | Adds a tenant policy (`tenant__` ID) |
-| `approval_policy.update` | Changes label, description and, for tenant policies, stages; a permission change, because it changes who approves |
+| `approval_policy.update` | Changes label, description and, for tenant policies, stages; changing stages is a permission change, because it changes who approves |
 | `approval_policy.remove` | Removes a tenant policy that no catalog item uses; a permission change |
 | `catalog_item.update` with `approvalPolicy` | Sets the item's policy; clearing it is a permission change |
 
