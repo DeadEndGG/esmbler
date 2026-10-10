@@ -47,6 +47,9 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
         return Hasher.VerifyHashedPassword(HashUser, found.PasswordHash, password) == PasswordVerificationResult.Failed ? null : (found.Id, found.DisplayName);
     }
 
+    public Task<string> DisplayNameAsync(Guid principalId, CancellationToken ct) =>
+        database.AsPrincipalAsync(principalId, db => db.Principals.Where(p => p.Id == principalId).Select(p => p.DisplayName).FirstAsync(ct), ct);
+
     public Task<IReadOnlyList<TenantChoice>> TenantsForAsync(Guid principalId, CancellationToken ct) =>
         database.AsPrincipalAsync<IReadOnlyList<TenantChoice>>(principalId, async db =>
         {

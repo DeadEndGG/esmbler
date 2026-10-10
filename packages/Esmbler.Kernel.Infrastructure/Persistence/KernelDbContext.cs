@@ -59,6 +59,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<NotificationRow> Notifications => Set<NotificationRow>();
 
+    public DbSet<RefreshTokenRow> RefreshTokens => Set<RefreshTokenRow>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.HasDefaultSchema("kernel");
@@ -88,6 +90,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<MigrationRunRow>().ToTable("migration_runs").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<UpgradeRow>().ToTable("upgrades").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<NotificationRow>().ToTable("notifications").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
         string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report"];
         foreach (var entity in b.Model.GetEntityTypes())

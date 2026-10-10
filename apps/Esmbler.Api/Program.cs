@@ -1,7 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
+using Esmbler.Api.Endpoints;
 using Esmbler.Hosting;
+using Esmbler.Hosting.Auth;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 
 if (await HealthCheckCommand.TryRunAsync(args) is { } exitCode)
 {
@@ -10,7 +13,15 @@ if (await HealthCheckCommand.TryRunAsync(args) is { } exitCode)
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEsmblerPlatform(builder.Configuration);
+builder.Services.AddEsmblerAuth(Audiences.Api);
+builder.Services.AddExceptionHandler<KernelExceptionHandler>();
+builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
+});
 
 var app = builder.Build();
 var options = app.Services.GetRequiredService<PlatformOptions>();
@@ -35,8 +46,12 @@ if (args.Contains("seed") || options.SeedDemoData)
     }
 }
 
+app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapOpenApi("/openapi/{documentName}.json");
-app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
 app.MapGet("/health/ready", async (Database db, CancellationToken ct) =>
 {
     await db.AnonymousAsync(async ctx =>
@@ -46,7 +61,14 @@ app.MapGet("/health/ready", async (Database db, CancellationToken ct) =>
         return await cmd.ExecuteScalarAsync(ct);
     }, ct);
     return Results.Ok(new { status = "ready" });
-});
+}).AllowAnonymous();
+
+app.MapAuth();
+app.MapAppAndConfig();
+app.MapRecords();
 
 await app.RunAsync();
 return 0;
+
+/// <summary>Entry point marker for WebApplicationFactory in integration tests.</summary>
+public partial class Program;

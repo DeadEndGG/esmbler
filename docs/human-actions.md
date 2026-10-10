@@ -22,3 +22,9 @@ Things only a human can provide (execution brief, section 1). The platform keeps
 | Register OIDC/SAML identity provider(s) | Per-tenant SSO, SCIM, MFA | Gate 2 | Local password login ([ADR 0011](adr/0011-identity-and-development-authentication.md)) | not needed yet |
 | Provide payment provider sandbox credentials | Marketplace billing and payouts against a sandbox | Gate 5 | Fake payment adapter | not needed yet |
 | Provide payment provider live credentials | Real billing | After Gate 5, before launch | Sandbox only | not needed yet |
+
+## Session-environment note (2026-10-10)
+
+| Action | Why | When needed | Meanwhile | Status |
+| --- | --- | --- | --- | --- |
+| Push the gate tags (`git push origin --tags`) from a normal clone | The build session's git proxy accepts branch pushes but drops tag pushes, so `gate-N-complete` tags exist only in the build container's local repository | Before testing gate by gate from tags | Each gate's commit is named in `docs/progress.md` and its test guide; create the tag on that commit (`git tag gate-0-complete <sha>`) | Open |

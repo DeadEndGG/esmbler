@@ -61,6 +61,8 @@ public static class ServiceRegistration
         services.AddSingleton<RecordService>();
         services.AddSingleton<IdentityService>();
         services.AddSingleton<ProvisioningService>();
+        services.AddSingleton<ExperienceService>();
+        services.AddSingleton<AccessExplainer>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));
