@@ -1,0 +1,71 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.page",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Page",
+  "description": "The root node of every view — record, list, or form. A page holds the view's sections in reading order. On record views the shell renders the page header (record title, number, status badge, transition buttons) from the entity and workflow, so the page itself only needs sections. Every ViewSpec.layout is exactly one layout.page.",
+  "usage": [
+    "Use exactly one layout.page as the root of each view; never place a page inside another node.",
+    "Leave title empty on record views (the header shows the record's title field); set it on list and form views (\"Open tickets\", \"New ticket\").",
+    "Organize content into sections; most record views need one to three."
+  ],
+  "constraints": [
+    "layout.page must be the root of ViewSpec.layout and cannot appear anywhere else in the tree.",
+    "Children must be layout.section nodes.",
+    "title is at most 80 characters."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Page heading for list and form views. Omit on record views." }
+    }
+  },
+  "allowedParents": [],
+  "allowedChildren": ["layout.section"],
+  "maxChildren": 20,
+  "binding": {
+    "kind": "record",
+    "description": "Binds the tree to the view's entity: one record (record view), a query (list view), or a draft record (form)."
+  },
+  "events": [],
+  "ruleHooks": [],
+  "tokens": ["surface.base", "space.4", "space.6", "text.title-lg"],
+  "accessibility": {
+    "role": "main",
+    "keyboard": "A skip link moves focus to the page content; F6 cycles between the app navigation and the page.",
+    "notes": "The page title (or the record title) is the only h1. Section titles are h2, card titles h3."
+  },
+  "responsive": "Content is centered with a maximum width of 1440px; side gutters shrink from space.6 to space.4 below 720px.",
+  "examples": [
+    {
+      "description": "Root of the ticket record view with an 8/4 main and sidebar split",
+      "spec": {
+        "id": "core.tickets.record.page",
+        "type": "layout.page",
+        "props": {},
+        "children": [
+          {
+            "id": "core.tickets.record.section_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.record.row_main",
+                "type": "layout.row",
+                "props": { "gap": "md" },
+                "children": [
+                  { "id": "core.tickets.record.col_main", "type": "layout.column", "props": { "span": 8 }, "children": [] },
+                  { "id": "core.tickets.record.col_side", "type": "layout.column", "props": { "span": 4 }, "children": [] }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

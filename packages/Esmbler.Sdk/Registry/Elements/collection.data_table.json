@@ -1,0 +1,68 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "collection.data_table",
+  "version": "1.0.0",
+  "category": "collection",
+  "gate": 1,
+  "label": "Data table",
+  "description": "A dense, keyboard-navigable list of records of one entity with sortable columns, server-side paging, and inline property editing. Rows only include records the viewer may read; columns the viewer may not see are omitted. Columns are child nodes (collection.column), so they can be inserted, moved, and removed like any other node.",
+  "usage": [
+    "Use as the main element of list pages; keep 4–8 columns.",
+    "Add a column by inserting a collection.column child with an anchor (after the column it follows).",
+    "Combine with collection.filter_bar and collection.saved_views in the same section."
+  ],
+  "constraints": [
+    "Children must be collection.column nodes referencing existing fields of the entity.",
+    "pageSize is 25, 50, or 100; results are always paged on the server.",
+    "Authorization is applied before paging and counting; restricted rows and values never reach the client."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["entity"],
+    "properties": {
+      "entity": { "type": "string", "description": "Entity ID whose records are listed." },
+      "pageSize": { "enum": [25, 50, 100], "default": 50 },
+      "density": { "enum": ["compact", "comfortable"], "default": "compact" },
+      "sort": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field"],
+        "properties": {
+          "field": { "type": "string" },
+          "direction": { "enum": ["asc", "desc"], "default": "desc" }
+        }
+      },
+      "filter": { "type": "string", "maxLength": 500, "description": "Base filter expression (CEL subset over record), e.g. record.status != 'closed'." },
+      "inlineEdit": { "type": "boolean", "default": true }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab"],
+  "allowedChildren": ["collection.column"],
+  "maxChildren": 20,
+  "binding": { "kind": "query", "description": "Runs a typed, permission-filtered record query for the entity." },
+  "events": ["row_open", "sort", "page", "inline_edit"],
+  "ruleHooks": [],
+  "tokens": ["surface.base", "border.subtle", "text.body-sm", "space.2", "state.hover", "state.selected"],
+  "accessibility": {
+    "role": "grid",
+    "keyboard": "Arrow keys move between cells, Enter opens the row, E edits the focused cell, J/K move between rows.",
+    "notes": "Sortable headers expose aria-sort. Row count and paging are announced in a live region."
+  },
+  "responsive": "Below 720px the table becomes a stacked list showing the first three columns per row.",
+  "examples": [
+    {
+      "description": "Open tickets sorted by priority",
+      "spec": {
+        "id": "core.tickets.list.table",
+        "type": "collection.data_table",
+        "props": { "entity": "core.tickets.ticket", "pageSize": 50, "sort": { "field": "priority", "direction": "asc" }, "filter": "record.status != 'closed'" },
+        "children": [
+          { "id": "core.tickets.list.col_number", "type": "collection.column", "props": { "field": "number" }, "children": [] },
+          { "id": "core.tickets.list.col_title", "type": "collection.column", "props": { "field": "title", "width": "lg" }, "children": [] }
+        ]
+      }
+    }
+  ]
+}

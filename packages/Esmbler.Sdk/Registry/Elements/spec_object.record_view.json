@@ -1,0 +1,96 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.record_view",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Record view",
+  "description": "A ViewSpec of kind record: the page for viewing and editing one record of an entity. Its layout is a tree of nodes rooted at layout.page, built from registry elements (sections, rows, columns, cards, fields, activity, actions). Node IDs are stable so overlays can insert, move, and hide nodes across upgrades.",
+  "usage": [
+    "Use an 8/4 split: main card and activity on the left, transitions and assignment on the right.",
+    "Give nodes readable stable IDs (core.tickets.record.card_assignment); tenant nodes start with tenant__.",
+    "Add new elements next to related ones with anchors instead of rebuilding the layout."
+  ],
+  "constraints": [
+    "kind is record; entity must exist; layout must be a layout.page node.",
+    "Node IDs are unique within the view and never reused; every node's type must be a registry element and its props must validate against that element's propsSchema.",
+    "Every parent/child pair must be allowed by the registry; row spans must sum to 12."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/view.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket record view",
+      "spec": {
+        "id": "core.tickets.record",
+        "kind": "record",
+        "entity": "core.tickets.ticket",
+        "label": "Ticket",
+        "layout": {
+          "id": "core.tickets.record.page",
+          "type": "layout.page",
+          "props": {},
+          "children": [
+            {
+              "id": "core.tickets.record.section_main",
+              "type": "layout.section",
+              "props": {},
+              "children": [
+                {
+                  "id": "core.tickets.record.row_main",
+                  "type": "layout.row",
+                  "props": {},
+                  "children": [
+                    {
+                      "id": "core.tickets.record.col_main",
+                      "type": "layout.column",
+                      "props": { "span": 8 },
+                      "children": [
+                        {
+                          "id": "core.tickets.record.card_details",
+                          "type": "layout.card",
+                          "props": { "title": "Details" },
+                          "children": [
+                            { "id": "core.tickets.record.f_description", "type": "field", "props": { "field": "description" }, "children": [] },
+                            { "id": "core.tickets.record.f_category", "type": "field", "props": { "field": "category" }, "children": [] }
+                          ]
+                        },
+                        { "id": "core.tickets.record.feed", "type": "activity.feed", "props": {}, "children": [] }
+                      ]
+                    },
+                    {
+                      "id": "core.tickets.record.col_side",
+                      "type": "layout.column",
+                      "props": { "span": 4 },
+                      "children": [
+                        { "id": "core.tickets.record.transitions", "type": "action.transition_buttons", "props": { "max": 3 }, "children": [] },
+                        {
+                          "id": "core.tickets.record.card_assignment",
+                          "type": "layout.card",
+                          "props": { "title": "Assignment" },
+                          "children": [
+                            { "id": "core.tickets.record.f_assignment_group", "type": "field", "props": { "field": "assignment_group" }, "children": [] },
+                            { "id": "core.tickets.record.f_assignee", "type": "field", "props": { "field": "assignee" }, "children": [] }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

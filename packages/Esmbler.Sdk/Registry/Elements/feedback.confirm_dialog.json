@@ -1,0 +1,56 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "feedback.confirm_dialog",
+  "version": "1.0.0",
+  "category": "feedback",
+  "gate": 1,
+  "label": "Confirm dialog",
+  "description": "A modal dialog that asks the viewer to confirm an action that is destructive or hard to undo, such as cancelling a ticket. Use it sparingly; prefer optimistic actions with an Undo toast for reversible changes.",
+  "usage": [
+    "Title the dialog as a question (\"Cancel this ticket?\").",
+    "Label the confirm button with the action itself (\"Cancel ticket\"), never \"OK\" or \"Yes\".",
+    "Explain the consequence in the text (who is notified, what cannot be undone)."
+  ],
+  "constraints": [
+    "title (at most 80), text (at most 300), and confirmLabel (at most 30) are required.",
+    "tone danger renders a danger confirm button and puts initial focus on Cancel."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title", "text", "confirmLabel"],
+    "properties": {
+      "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+      "text": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "confirmLabel": { "type": "string", "minLength": 1, "maxLength": 30 },
+      "tone": { "enum": ["neutral", "danger"], "default": "neutral" }
+    }
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "App-level pattern raised by the platform and elements, not placed in views." },
+  "events": ["confirm", "cancel"],
+  "ruleHooks": [],
+  "tokens": ["surface.raised", "elevation.overlay", "radius.md", "space.4", "text.title-sm", "text.body", "accent.red"],
+  "accessibility": {
+    "role": "alertdialog",
+    "keyboard": "Tab is trapped in the dialog; Esc cancels; Enter on a button activates it. Focus returns to the invoking control on close.",
+    "notes": "Labelled by the title and described by the text. Initial focus is Confirm for neutral and Cancel for danger."
+  },
+  "responsive": "Centered dialog up to 480px wide; full-width bottom sheet below 720px.",
+  "examples": [
+    {
+      "description": "Confirm cancelling a ticket",
+      "spec": {
+        "type": "feedback.confirm_dialog",
+        "props": {
+          "title": "Cancel this ticket?",
+          "text": "The requester is notified and the ticket can no longer be worked.",
+          "confirmLabel": "Cancel ticket",
+          "tone": "danger"
+        }
+      }
+    }
+  ]
+}

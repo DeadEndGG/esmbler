@@ -1,0 +1,46 @@
+// Esmbler Gate 0 spike: Tickets model in SpiceDB schema language (mirrors ../../authz-openfga/model/tickets.fga).
+caveat not_major_incident(priority int) {
+  priority != 1
+}
+
+definition user {}
+
+definition agent {
+  relation acts_for: user
+}
+
+definition group {
+  relation member: user | group#member
+}
+
+definition role {
+  relation assignee: user | group#member
+}
+
+definition entity_type {
+  relation read_all: role#assignee
+  relation edit_all: role#assignee
+  relation priority_editor: user:* with not_major_incident | role#assignee
+  relation agent_read_scope: agent
+}
+
+definition ticket {
+  relation entity: entity_type
+  relation requester: user
+  relation assignee: user
+  relation watcher: user
+  relation owner_group: group
+
+  permission editor_base = assignee + owner_group->member + entity->edit_all
+  permission can_edit = editor_base & entity->priority_editor
+  permission can_view = requester + assignee + watcher + owner_group->member + entity->read_all + editor_base
+}
+
+definition field {
+  relation reader: role#assignee | user:*
+}
+
+definition tenant {
+  relation config_publish: role#assignee
+  relation permissions_admin: role#assignee
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.single_select",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Single select",
+  "description": "One option chosen from a choice list, such as a category, an impact level, or a channel. The record stores the option's stable ID, so options can be relabeled without touching data. Use multi_select for several options and lookup when the options are themselves records.",
+  "usage": [
+    "Use for 2–30 mutually exclusive options; above that, model the options as an entity and use a lookup.",
+    "Reuse an existing choice list when the meaning is the same.",
+    "Narrow the options by context with a conditional rule's restrict_options action rather than a second field."
+  ],
+  "constraints": [
+    "choiceList is required and must reference an existing choice list in the effective configuration.",
+    "default, when set, must be an option ID of that list.",
+    "The stored value is the option ID, never the label.",
+    "Hidden options remain valid on existing records but cannot be newly selected."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["choiceList"],
+    "properties": {
+      "choiceList": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$", "description": "Choice list ID, e.g. core.tickets.category." },
+      "default": { "type": ["string", "null"], "description": "Option ID." }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "description": "Stable option ID from the field's choice list." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "options", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Alt+Down or Enter opens the list; typing filters; Up/Down move; Enter selects; Esc closes and keeps the previous value.",
+    "notes": "Options are a role=listbox with aria-activedescendant; option tones are shown as a dot plus text, never color alone."
+  },
+  "responsive": "Full width of its grid cell; the list opens as a bottom sheet below 720px.",
+  "examples": [
+    {
+      "description": "Ticket category",
+      "spec": { "key": "category", "type": "single_select", "label": "Category", "choiceList": "core.tickets.category", "required": true }
+    }
+  ]
+}

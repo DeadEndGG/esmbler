@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "feedback.loading",
+  "version": "1.0.0",
+  "category": "feedback",
+  "gate": 1,
+  "label": "Loading",
+  "description": "The loading pattern for content that is not ready yet: skeletons shaped like the final layout for pages and lists, an inline indicator inside a busy control, or a thin progress bar for page navigation. Skeletons are used instead of spinners.",
+  "usage": [
+    "Use skeleton for initial page, card, and list loads.",
+    "Use inline for a button or field that is saving.",
+    "Use bar for navigation between pages."
+  ],
+  "constraints": [
+    "variant is skeleton, inline, or bar (default skeleton).",
+    "Nothing is shown for the first 200 ms, so fast responses do not flash.",
+    "Shimmer animation is disabled under prefers-reduced-motion."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "variant": { "enum": ["skeleton", "inline", "bar"], "default": "skeleton" }
+    }
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "App-level pattern raised by the platform and elements, not placed in views." },
+  "events": [],
+  "ruleHooks": [],
+  "tokens": ["surface.raised", "border.subtle", "radius.sm", "motion.fast", "accent.blue"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not focusable.",
+    "notes": "The loading container sets aria-busy=true; when content arrives it is set to false and a polite live region announces \"Loaded\" only for user-initiated loads."
+  },
+  "responsive": "Skeletons follow the responsive layout of the content they stand in for.",
+  "examples": [
+    {
+      "description": "Skeleton while a record view loads",
+      "spec": { "type": "feedback.loading", "props": { "variant": "skeleton" } }
+    }
+  ]
+}

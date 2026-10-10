@@ -1,0 +1,49 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.heading",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 1,
+  "label": "Heading",
+  "description": "A read-only heading inside a column, tab, or card, either with fixed text (\"Customer impact\") or bound to a field so it shows that field's value (typically the record's title). Use it to introduce a group of loose elements or to show a record value as a title; use card and section titles for ordinary grouping.",
+  "usage": [
+    "Bind to the title field (field: title) when a column needs the record's name as a heading.",
+    "Use fixed text for short labels that introduce a group of elements without a card.",
+    "Prefer levels 2–4; level 1 is normally the page or record title."
+  ],
+  "constraints": [
+    "Exactly one of text or field must be set.",
+    "field must be a key of the view's entity; if the viewer cannot read it, the heading is not rendered.",
+    "text is at most 120 characters; level is 1–4 (default 2)."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "oneOf": [{ "required": ["text"] }, { "required": ["field"] }],
+    "properties": {
+      "text": { "type": "string", "minLength": 1, "maxLength": 120 },
+      "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Field whose display value is the heading text." },
+      "level": { "type": "integer", "minimum": 1, "maximum": 4, "default": 2 }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "field", "description": "Optional read-only binding to one field's display value." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.title-lg", "text.title-sm", "space.2"],
+  "accessibility": {
+    "role": "heading",
+    "keyboard": "Not focusable.",
+    "notes": "aria-level equals level; the visual size follows the level, so the outline and the look always agree."
+  },
+  "responsive": "Wraps onto several lines; never truncated.",
+  "examples": [
+    {
+      "description": "Ticket title as a level-2 heading",
+      "spec": { "id": "core.tickets.record.h_title", "type": "display.heading", "props": { "field": "title", "level": 2 }, "children": [] }
+    }
+  ]
+}

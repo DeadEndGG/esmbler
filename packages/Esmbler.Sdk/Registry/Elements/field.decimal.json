@@ -1,0 +1,50 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.decimal",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Decimal",
+  "description": "A number with a fixed number of digits after the decimal point, such as a cost, hours spent, or a percentage. scale sets the digits kept (0–6, default 2). Values are stored as JSON numbers rounded half away from zero to scale.",
+  "usage": [
+    "Use scale 2 for money and hours; currency itself is not modeled in Gate 1 — put it in the label (\"Cost (EUR)\").",
+    "Set min 0 for quantities that cannot be negative.",
+    "Use integer when fractions are meaningless."
+  ],
+  "constraints": [
+    "scale must be between 0 and 6 (default 2).",
+    "Values are rounded half away from zero to scale on write (2.345 → 2.35, -2.345 → -2.35).",
+    "Precision: stored as a JSON number with at most 15 significant digits; larger values are rejected.",
+    "min must be less than or equal to max."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "min": { "type": "number" },
+      "max": { "type": "number" },
+      "scale": { "type": "integer", "minimum": 0, "maximum": 6, "default": 2 },
+      "default": { "type": ["number", "null"] }
+    }
+  },
+  "valueSchema": { "type": ["number", "null"] },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Standard text input with inputmode=decimal; Up/Down arrows step by one unit of the last digit.",
+    "notes": "Displayed and typed with the viewer's locale decimal separator; always stored with '.'."
+  },
+  "responsive": "Compact width on desktop, right-aligned digits; full width below 720px.",
+  "examples": [
+    {
+      "description": "Vendor cost with two decimals",
+      "spec": { "key": "tenant__cost", "type": "decimal", "label": "Cost (EUR)", "min": 0, "scale": 2 }
+    }
+  ]
+}

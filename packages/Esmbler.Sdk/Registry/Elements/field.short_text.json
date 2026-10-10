@@ -1,0 +1,52 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.short_text",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Short text",
+  "description": "A single line of plain text up to 500 characters, such as a title, a vendor name, a serial number, or an external reference. Use long_text for multi-line notes and rich_text for formatted content.",
+  "usage": [
+    "Use for names, codes, and references that fit on one line.",
+    "Set maxLength to the real-world limit (e.g. 80 for a vendor name).",
+    "Use pattern with a patternMessage for formats like asset tags (\"^AT-[0-9]{6}$\").",
+    "For numbers people will compare or sum, use integer or decimal instead."
+  ],
+  "constraints": [
+    "maxLength must be between 1 and 500 (default 255).",
+    "pattern must be a valid regular expression; it runs with a 50 ms timeout and no backtracking.",
+    "Values are trimmed; an empty string is stored as null."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxLength": { "type": "integer", "minimum": 1, "maximum": 500, "default": 255 },
+      "minLength": { "type": "integer", "minimum": 0, "maximum": 500 },
+      "pattern": { "type": "string", "maxLength": 300 },
+      "patternMessage": { "type": "string", "maxLength": 200 },
+      "unique": { "type": "boolean", "description": "Unique among records of the entity in this tenant environment." },
+      "default": { "type": ["string", "null"] }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "maxLength": 500 },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Standard text input. Esc reverts an inline edit; Enter commits.",
+    "notes": "Label is programmatically associated; required state uses aria-required; errors use aria-describedby."
+  },
+  "responsive": "Full width of its grid cell.",
+  "examples": [
+    {
+      "description": "Vendor field with a length limit",
+      "spec": { "key": "tenant__vendor", "type": "short_text", "label": "Vendor", "maxLength": 80 }
+    }
+  ]
+}

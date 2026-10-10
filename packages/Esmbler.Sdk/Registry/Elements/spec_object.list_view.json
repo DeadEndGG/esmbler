@@ -1,0 +1,85 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.list_view",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "List view",
+  "description": "A ViewSpec of kind list: the page for finding and working many records of an entity, typically saved views, a filter bar, and a data table with columns. Rows, counts, and columns are filtered by the viewer's permissions on the server.",
+  "usage": [
+    "Put saved views, then the filter bar, then the data table in one full-width column.",
+    "Keep 4–8 columns, starting with number and title."
+  ],
+  "constraints": [
+    "kind is list; entity must exist; layout must be a layout.page node.",
+    "The layout must contain at least one collection.data_table for the view's entity.",
+    "Node IDs are unique within the view and stable; props validate against each element's propsSchema."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/view.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket list view",
+      "spec": {
+        "id": "core.tickets.list",
+        "kind": "list",
+        "entity": "core.tickets.ticket",
+        "label": "Tickets",
+        "layout": {
+          "id": "core.tickets.list.page",
+          "type": "layout.page",
+          "props": { "title": "Tickets" },
+          "children": [
+            {
+              "id": "core.tickets.list.section",
+              "type": "layout.section",
+              "props": {},
+              "children": [
+                {
+                  "id": "core.tickets.list.row",
+                  "type": "layout.row",
+                  "props": {},
+                  "children": [
+                    {
+                      "id": "core.tickets.list.col",
+                      "type": "layout.column",
+                      "props": { "span": 12 },
+                      "children": [
+                        {
+                          "id": "core.tickets.list.filters",
+                          "type": "collection.filter_bar",
+                          "props": { "fields": ["status", "priority", "assignment_group", "assignee"] },
+                          "children": []
+                        },
+                        {
+                          "id": "core.tickets.list.table",
+                          "type": "collection.data_table",
+                          "props": { "entity": "core.tickets.ticket", "sort": { "field": "priority", "direction": "asc" } },
+                          "children": [
+                            { "id": "core.tickets.list.col_number", "type": "collection.column", "props": { "field": "number", "width": "sm" }, "children": [] },
+                            { "id": "core.tickets.list.col_title", "type": "collection.column", "props": { "field": "title", "width": "lg" }, "children": [] },
+                            { "id": "core.tickets.list.col_status", "type": "collection.column", "props": { "field": "status" }, "children": [] },
+                            { "id": "core.tickets.list.col_assignee", "type": "collection.column", "props": { "field": "assignee" }, "children": [] }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

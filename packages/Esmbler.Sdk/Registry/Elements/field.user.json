@@ -1,0 +1,44 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.user",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "User",
+  "description": "A reference to one member of the tenant, such as the requester, the assignee, or an approver. The value is the member's user ID. User fields listed in the entity's accessFields make that person related to the record for record-level access.",
+  "usage": [
+    "Use for people with accounts in the tenant; use email for external contacts.",
+    "Add the field to the entity's accessFields when the person should see (or edit) records they are named on.",
+    "Pair an assignee field with a group field so work can be queued before it is picked up."
+  ],
+  "constraints": [
+    "Value must be the ID of a member of the current tenant; members of other tenants are never offered or accepted.",
+    "Deactivated members stay displayed (marked inactive) on existing records but cannot be newly selected.",
+    "No type-specific constraint props."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "uuid", "description": "User ID of a tenant member." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Typing searches members by name and email; Up/Down move; Enter selects; Esc closes.",
+    "notes": "Options announce name and email; the avatar is decorative."
+  },
+  "responsive": "Full width of its grid cell; shows avatar plus name in read mode.",
+  "examples": [
+    {
+      "description": "Ticket assignee",
+      "spec": { "key": "assignee", "type": "user", "label": "Assignee" }
+    }
+  ]
+}

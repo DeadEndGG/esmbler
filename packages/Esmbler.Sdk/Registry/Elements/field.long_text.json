@@ -1,0 +1,54 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.long_text",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Long text",
+  "description": "Multi-line plain text up to 10,000 characters, such as resolution notes, steps to reproduce, or an internal summary. No formatting is stored; line breaks are kept. Use rich_text when people need bold, lists, or links, and short_text for one-line values.",
+  "usage": [
+    "Use for notes and explanations that people write in sentences.",
+    "Set maxLength to what a reader will actually read (2000–4000 is typical).",
+    "Pair with a workflow transition's requiredFields to demand notes at the right moment (e.g. resolution_notes on Resolve)."
+  ],
+  "constraints": [
+    "maxLength must be between 1 and 10000 (default 4000).",
+    "Values are trimmed at both ends; an empty string is stored as null.",
+    "Line breaks are normalized to \\n; no markup is interpreted."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxLength": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 4000 },
+      "minLength": { "type": "integer", "minimum": 0, "maximum": 10000 },
+      "default": { "type": ["string", "null"] }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "maxLength": 10000 },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Multi-line input: Enter inserts a newline, Ctrl/Cmd+Enter commits an inline edit, Esc reverts.",
+    "notes": "aria-multiline=true; the remaining character count is announced politely when under 10% remains."
+  },
+  "responsive": "Full width of its grid cell; grows with content up to 12 lines, then scrolls.",
+  "examples": [
+    {
+      "description": "Resolution notes required on resolve",
+      "spec": {
+        "key": "resolution_notes",
+        "type": "long_text",
+        "label": "Resolution notes",
+        "maxLength": 4000,
+        "help": "What fixed it, so the next agent can repeat it."
+      }
+    }
+  ]
+}

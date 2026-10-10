@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "feedback.inline_error",
+  "version": "1.0.0",
+  "category": "feedback",
+  "gate": 1,
+  "label": "Inline error",
+  "description": "An error message shown next to the field or area it belongs to, written in the viewer's language, saying what is wrong and how to fix it. Validation rule messages, required-field errors, and failed saves use it.",
+  "usage": [
+    "Say what is wrong and the fix in plain words (\"Title is too short. Use at least 5 characters.\").",
+    "Put the suggestion in suggestion so it can be shown or applied separately."
+  ],
+  "constraints": [
+    "text is required (at most 200 characters); suggestion at most 200.",
+    "Messages never expose stack traces, SQL, internal IDs, or values of fields the viewer cannot read."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["text"],
+    "properties": {
+      "text": { "type": "string", "minLength": 1, "maxLength": 200 },
+      "suggestion": { "type": "string", "maxLength": 200 }
+    }
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "App-level pattern raised by the platform and elements, not placed in views." },
+  "events": [],
+  "ruleHooks": [],
+  "tokens": ["text.body-sm", "accent.red", "space.1"],
+  "accessibility": {
+    "role": "alert",
+    "keyboard": "Not focusable; after a failed save focus moves to the first invalid field.",
+    "notes": "Linked to the control with aria-describedby and aria-invalid=true; announced once when it appears after submit, not on every keystroke."
+  },
+  "responsive": "Directly under the field at all widths.",
+  "examples": [
+    {
+      "description": "Title too short",
+      "spec": {
+        "type": "feedback.inline_error",
+        "props": { "text": "Title is too short.", "suggestion": "Use at least 5 characters so agents can triage the ticket." }
+      }
+    }
+  ]
+}

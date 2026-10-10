@@ -1,0 +1,59 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "collection.related_list",
+  "version": "1.0.0",
+  "category": "collection",
+  "gate": 1,
+  "label": "Related list",
+  "description": "A compact list of records that point at the current record through a lookup — the one-to-many side of a relationship, such as a ticket's child tickets. Its title is the relationship's inverse label. Only children the viewer may read are listed and counted.",
+  "usage": [
+    "Place on record views in a tab or a card for each relationship people navigate (\"Child tickets\").",
+    "Show 3–4 columns: number, title, status, and one owner field.",
+    "Enable allowCreate when people create children from the parent."
+  ],
+  "constraints": [
+    "relationship must be a spec_object.relationship whose target is the view's entity; columns (1–6) must be fields of the relationship's entity.",
+    "Only readable child records are listed and counted; linking a record never grants access to it.",
+    "allowCreate shows New only to viewers who may create the child entity; the lookup is prefilled with this record and data rules apply."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["relationship", "columns"],
+    "properties": {
+      "relationship": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+        "description": "Relationship ID, e.g. core.tickets.ticket_parent."
+      },
+      "columns": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "minItems": 1, "maxItems": 6, "uniqueItems": true },
+      "pageSize": { "enum": [5, 10, 25], "default": 10 },
+      "allowCreate": { "type": "boolean", "default": false }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "relationship", "description": "Queries child records whose lookup references the page's record, permission-filtered." },
+  "events": ["row_open", "page", "create"],
+  "ruleHooks": ["visible"],
+  "tokens": ["surface.raised", "border.subtle", "text.body-sm", "state.hover", "space.2"],
+  "accessibility": {
+    "role": "table",
+    "keyboard": "Tab enters the list; Up/Down move between rows; Enter opens the record; N opens the create form when allowed.",
+    "notes": "The inverse label and readable count name the list (\"Child tickets, 3\")."
+  },
+  "responsive": "Below 720px rows show the first column as the title and the rest as a second line.",
+  "examples": [
+    {
+      "description": "Child tickets of a ticket",
+      "spec": {
+        "id": "core.tickets.record.children_list",
+        "type": "collection.related_list",
+        "props": { "relationship": "core.tickets.ticket_parent", "columns": ["number", "title", "status", "assignee"], "pageSize": 10, "allowCreate": true },
+        "children": []
+      }
+    }
+  ]
+}

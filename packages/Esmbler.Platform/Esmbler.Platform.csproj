@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shared platform services (rules, workflow, assignment, notifications, layout). Plug into kernel hooks; never reference modules. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Esmbler.Kernel\Esmbler.Kernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Esmbler.UnitTests" />
+  </ItemGroup>
+</Project>

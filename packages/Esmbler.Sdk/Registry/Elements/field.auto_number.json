@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.auto_number",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Auto number",
+  "description": "A human-friendly, system-assigned record number such as TCK-000123, made of a prefix and a zero-padded sequence. Numbers are unique per tenant environment and entity and are used in titles, notifications, and search. Use it as the entity's reference number, not as a primary key.",
+  "usage": [
+    "Give every work entity one auto number with a 2–6 letter prefix (TCK, INC, VND).",
+    "Show it in list columns and headers; people quote it on the phone.",
+    "Never ask users to type it; it is always read-only."
+  ],
+  "constraints": [
+    "prefix is required: 2–6 uppercase letters or digits, starting with a letter.",
+    "Assigned by the platform on create as <prefix>-<sequence>, zero-padded to 6 digits and growing past 999999.",
+    "The sequence is per tenant environment and entity; numbers are never reused, but gaps can occur.",
+    "Always system and read-only: it cannot be set by the record API, imports, rules, or AI. Changing prefix affects new records only."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["prefix"],
+    "properties": {
+      "prefix": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,5}$", "description": "Number prefix, e.g. TCK." }
+    }
+  },
+  "valueSchema": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,5}-[0-9]{6,}$" },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body", "text.muted"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not editable. In lists and headers the number is part of the record link.",
+    "notes": "Read as plain text exactly as stored (e.g. TCK-000123) so it can be quoted; a copy button is named \"Copy number\"."
+  },
+  "responsive": "Fixed width in monospaced digits at all sizes.",
+  "examples": [
+    {
+      "description": "Ticket number",
+      "spec": { "key": "number", "type": "auto_number", "label": "Number", "prefix": "TCK", "system": true, "readOnly": true }
+    }
+  ]
+}

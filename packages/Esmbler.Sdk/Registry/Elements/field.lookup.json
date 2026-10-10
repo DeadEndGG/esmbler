@@ -1,0 +1,52 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.lookup",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Lookup",
+  "description": "A reference from this record to one record of another (or the same) entity, such as a ticket's parent ticket or an asset's vendor. The value is the target record's ID. The viewer sees the target's title only if they may read the target; otherwise the value shows as \"Restricted record\". Every lookup is described by a relationship spec that sets what happens when the target is deleted.",
+  "usage": [
+    "Use when the options are records with their own data and lifecycle.",
+    "Add a spec_object.relationship for the lookup with a clear inverse label (\"Child tickets\") so it can appear as a related list.",
+    "Use onTargetDelete: clear for optional references and restrict when the reference must stay intact."
+  ],
+  "constraints": [
+    "target is required and must be an existing entity ID.",
+    "Each lookup needs exactly one spec_object.relationship (entity, field, target) declaring onTargetDelete: restrict or clear.",
+    "The picker only offers records the viewer may read; linking a record never grants access to it.",
+    "If the viewer cannot read the referenced record, it renders as \"Restricted record\" with no title, number, or link, and an unrelated save keeps the value unchanged."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["target"],
+    "properties": {
+      "target": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
+        "description": "Target entity ID, e.g. core.tickets.ticket or tenant__vendor."
+      }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "uuid" },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Typing searches target records by title and number; Up/Down move; Enter selects; Esc closes. In read mode Enter opens the target.",
+    "notes": "Options announce title and number; a restricted value is announced as \"Restricted record\"."
+  },
+  "responsive": "Full width of its grid cell; search opens as a full-screen sheet below 720px.",
+  "examples": [
+    {
+      "description": "Parent ticket",
+      "spec": { "key": "parent", "type": "lookup", "label": "Parent ticket", "target": "core.tickets.ticket" }
+    }
+  ]
+}

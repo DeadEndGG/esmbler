@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Adapters for kernel ports: PostgreSQL (EF Core + Npgsql, RLS sessions, migrations, outbox), OpenFGA. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Esmbler.Kernel\Esmbler.Kernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="OpenFga.Sdk" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\*.sql" LogicalName="migrations/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Authorization\*.fga.json" LogicalName="authz/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Esmbler.UnitTests" />
+    <InternalsVisibleTo Include="Esmbler.IntegrationTests" />
+  </ItemGroup>
+</Project>

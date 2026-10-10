@@ -1,0 +1,35 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.role",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Role",
+  "description": "A named job function, such as Agent or Requester, that people hold in a tenant. Roles carry no permissions themselves: permission sets grant access to roles, and workflow transitions can be limited to roles.",
+  "usage": [
+    "Model roles on real job functions, not on individual permissions.",
+    "Reuse module roles where they fit; prefix tenant roles with tenant__."
+  ],
+  "constraints": [
+    "id is unique and stable; tenant roles start with tenant__.",
+    "A role grants nothing until a permission set lists it.",
+    "Roles are assigned to members and groups in tenant administration, not in specs."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/role.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket agent role",
+      "spec": { "id": "core.tickets.agent", "label": "Agent", "description": "Works tickets in assigned queues: triages, updates, and resolves them." }
+    }
+  ]
+}

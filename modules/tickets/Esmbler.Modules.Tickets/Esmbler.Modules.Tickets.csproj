@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Default Tickets module. Built only on the public SDK (dogfooding rule). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\packages\Esmbler.Sdk\Esmbler.Sdk.csproj" />
+    <ProjectReference Include="..\Esmbler.Modules.Tickets.Contracts\Esmbler.Modules.Tickets.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Releases\**\*.json" LogicalName="tickets/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

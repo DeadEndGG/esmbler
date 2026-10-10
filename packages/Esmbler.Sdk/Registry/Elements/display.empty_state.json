@@ -1,0 +1,57 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.empty_state",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 1,
+  "label": "Empty state",
+  "description": "A friendly placeholder that explains why an area has no content and what to do next, such as \"No child tickets yet — split large work into child tickets\". Collections use the same component automatically when they have no rows; place it explicitly with a visibility rule for custom guidance.",
+  "usage": [
+    "Write the title as the situation (\"No child tickets\") and the text as the next step.",
+    "Set actionLabel only when the viewer can act right there.",
+    "Do not use it for errors; use feedback.inline_error."
+  ],
+  "constraints": [
+    "title is required (at most 80 characters); text at most 200; actionLabel at most 40.",
+    "actionLabel fires the action event, which opens the nearest action.quick_create in the same column or tab; the button is omitted when there is none or the viewer may not create."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title"],
+    "properties": {
+      "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+      "text": { "type": "string", "maxLength": 200 },
+      "actionLabel": { "type": "string", "minLength": 1, "maxLength": 40 }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "none", "description": "Static content." },
+  "events": ["action"],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.title-sm", "text.muted", "space.4", "space.6"],
+  "accessibility": {
+    "role": "status",
+    "keyboard": "The action button takes Tab and Enter.",
+    "notes": "Announced politely when it replaces content (e.g. after the last row is removed). Illustration is decorative."
+  },
+  "responsive": "Centered in its container; illustration is hidden below 360px.",
+  "examples": [
+    {
+      "description": "No child tickets yet",
+      "spec": {
+        "id": "core.tickets.record.empty_children",
+        "type": "display.empty_state",
+        "props": {
+          "title": "No child tickets",
+          "text": "Split large work into child tickets so each team can track its part.",
+          "actionLabel": "New child ticket"
+        },
+        "children": []
+      }
+    }
+  ]
+}

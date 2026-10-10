@@ -1,0 +1,53 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.badge",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 1,
+  "label": "Badge",
+  "description": "A small pill showing a short status-like value: a choice field's option (status, priority, category) with its tone, or fixed text such as \"VIP\". Use badges for values people recognize at a glance; never put sentences in a badge.",
+  "usage": [
+    "Bind to status or priority to show the current value with its option tone.",
+    "Use fixed text with a tone for flags (\"Major incident\", tone critical) and pair it with visibility rules.",
+    "Show at most three badges together."
+  ],
+  "constraints": [
+    "Exactly one of field or text must be set; text is at most 24 characters.",
+    "Bound fields must be single_select, status, priority, or toggle; choice badges take their tone from the option's tone token and ignore tone.",
+    "tone applies to text badges (default neutral); color is never the only cue — the text always carries the meaning."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "oneOf": [{ "required": ["text"] }, { "required": ["field"] }],
+    "properties": {
+      "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "text": { "type": "string", "minLength": 1, "maxLength": 24 },
+      "tone": { "enum": ["neutral", "info", "success", "warning", "critical"], "default": "neutral" }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "field", "description": "Optional read-only binding to a choice or toggle field." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "radius.sm", "space.1", "accent.gray", "accent.blue", "accent.green", "accent.amber", "accent.red"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not focusable.",
+    "notes": "Plain text with decorative styling; tones meet 4.5:1 text contrast in both themes."
+  },
+  "responsive": "Fixed size; badges in a row wrap onto the next line.",
+  "examples": [
+    {
+      "description": "Priority badge",
+      "spec": { "id": "core.tickets.record.b_priority", "type": "display.badge", "props": { "field": "priority" }, "children": [] }
+    },
+    {
+      "description": "VIP flag",
+      "spec": { "id": "core.tickets.record.b_vip", "type": "display.badge", "props": { "text": "VIP", "tone": "warning" }, "children": [] }
+    }
+  ]
+}

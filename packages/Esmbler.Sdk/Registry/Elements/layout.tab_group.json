@@ -1,0 +1,77 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.tab_group",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Tab group",
+  "description": "A set of tabs inside a column that shows one panel at a time. Use it to keep secondary content — activity, related records, audit history — one click away without lengthening the page. The selected tab is reflected in the URL so a shared link opens the same tab.",
+  "usage": [
+    "Use 2–5 tabs with short noun titles (\"Activity\", \"Child tickets\", \"History\").",
+    "Put the tab people need most first, or set defaultTab to it.",
+    "Do not hide required fields in a non-default tab; keep them in the main body."
+  ],
+  "constraints": [
+    "Parent must be layout.column; children must be layout.tab nodes (at most 8).",
+    "defaultTab, when set, must be the node ID of one of its child tabs; otherwise the first visible tab opens.",
+    "Tab groups cannot nest: layout.tab does not accept layout.tab_group."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "defaultTab": { "type": "string", "description": "Node ID of the child layout.tab selected on first load." }
+    }
+  },
+  "allowedParents": ["layout.column"],
+  "allowedChildren": ["layout.tab"],
+  "maxChildren": 8,
+  "binding": { "kind": "none", "description": "Structural only; tab contents bind to the page's record." },
+  "events": ["tab_change"],
+  "ruleHooks": ["visible"],
+  "tokens": ["border.subtle", "text.body-sm", "state.hover", "state.selected", "state.focus", "motion.fast", "space.3"],
+  "accessibility": {
+    "role": "tablist",
+    "keyboard": "Left/Right arrows move between tabs, Home/End jump to the first/last tab, Enter or Space activates (manual activation). Tab moves into the panel.",
+    "notes": "Each tab has aria-selected and aria-controls; panels are role tabpanel labelled by their tab. Tabs hidden by rules are removed from the tablist, not disabled."
+  },
+  "responsive": "Below 720px the tab strip scrolls horizontally with edge fades; it never wraps to a second line.",
+  "examples": [
+    {
+      "description": "Activity, child tickets, and history tabs, opening on Activity",
+      "spec": {
+        "id": "core.tickets.record.tabs",
+        "type": "layout.tab_group",
+        "props": { "defaultTab": "core.tickets.record.tab_activity" },
+        "children": [
+          {
+            "id": "core.tickets.record.tab_activity",
+            "type": "layout.tab",
+            "props": { "title": "Activity", "icon": "icon.activity" },
+            "children": [{ "id": "core.tickets.record.feed", "type": "activity.feed", "props": {}, "children": [] }]
+          },
+          {
+            "id": "core.tickets.record.tab_children",
+            "type": "layout.tab",
+            "props": { "title": "Child tickets" },
+            "children": [
+              {
+                "id": "core.tickets.record.children_list",
+                "type": "collection.related_list",
+                "props": { "relationship": "core.tickets.ticket_parent", "columns": ["number", "title", "status"] },
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "core.tickets.record.tab_history",
+            "type": "layout.tab",
+            "props": { "title": "History", "icon": "icon.history" },
+            "children": [{ "id": "core.tickets.record.audit", "type": "activity.audit_history", "props": {}, "children": [] }]
+          }
+        ]
+      }
+    }
+  ]
+}

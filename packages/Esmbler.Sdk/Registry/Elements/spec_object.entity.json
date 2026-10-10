@@ -1,0 +1,51 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.entity",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Entity",
+  "description": "A record type, such as Ticket or Vendor: its labels, the field that names a record (titleField), its fields, and the user/group fields that relate people to records for record-level access (accessFields). Entities are the backbone of every view, rule, workflow, and permission. Modules ship base entities; tenants add their own with IDs starting tenant__.",
+  "usage": [
+    "Create a tenant entity only when the data has its own lifecycle and is referenced from several records; otherwise add fields to an existing entity.",
+    "Choose a short_text titleField people recognize (a name or title).",
+    "Add accessFields for the people who should see records they are named on (requester, owner)."
+  ],
+  "constraints": [
+    "id is unique in the effective configuration; tenant entities use tenant__<name>, module entities <module>.<area>.<name>.",
+    "titleField must be a field of the entity of type short_text or auto_number.",
+    "Field keys are unique within the entity; base keys contain no \"__\" and tenant-added keys start with tenant__.",
+    "accessFields must reference user or group fields of the entity.",
+    "Entities and fields are never physically removed from a published layer; they are hidden or deprecated so data is kept."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/entity.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Tenant entity for vendors",
+      "spec": {
+        "id": "tenant__vendor",
+        "label": "Vendor",
+        "pluralLabel": "Vendors",
+        "description": "Suppliers of hardware, software, and services.",
+        "titleField": "tenant__name",
+        "fields": [
+          { "key": "tenant__name", "type": "short_text", "label": "Name", "required": true, "maxLength": 80, "unique": true },
+          { "key": "tenant__contact_email", "type": "email", "label": "Contact email" },
+          { "key": "tenant__account_manager", "type": "user", "label": "Account manager" },
+          { "key": "tenant__contract_end", "type": "date", "label": "Contract end" }
+        ],
+        "accessFields": [{ "field": "tenant__account_manager", "relation": "owner", "canEdit": true }]
+      }
+    }
+  ]
+}

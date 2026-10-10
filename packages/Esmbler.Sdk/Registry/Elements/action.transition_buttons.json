@@ -1,0 +1,79 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "action.transition_buttons",
+  "version": "1.0.0",
+  "category": "action",
+  "gate": 1,
+  "label": "Transition buttons",
+  "description": "Shows the workflow transitions the viewer can fire on the record right now as buttons, in workflow order, with extra transitions in an overflow menu. It adapts automatically as the record moves through states, so it is the default way to put workflow actions on a record view.",
+  "usage": [
+    "Place once per record view, at the top of the sidebar column or in the header card.",
+    "Keep max at 2–3 so the main next step stands out.",
+    "Use action.button only for a specific transition that needs custom placement."
+  ],
+  "constraints": [
+    "The entity must have a workflow.",
+    "Shows only transitions whose from includes the current state, whose guard passes, and that the viewer may fire (entity update permission plus the transition's roles).",
+    "Button tone comes from the transition; transitions with requiredFields open a dialog for those fields before firing.",
+    "max is 1–6 (default 3); remaining transitions go to an overflow menu."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "max": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "default": 3,
+        "description": "Visible buttons before the overflow menu."
+      }
+    }
+  },
+  "allowedParents": [
+    "layout.column",
+    "layout.card",
+    "layout.tab"
+  ],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": {
+    "kind": "workflow",
+    "description": "Reads the entity's workflow and the record's current state; fires transitions."
+  },
+  "events": [
+    "transition"
+  ],
+  "ruleHooks": [
+    "visible"
+  ],
+  "tokens": [
+    "radius.sm",
+    "space.2",
+    "text.body-sm",
+    "accent.blue",
+    "accent.red",
+    "state.hover",
+    "state.focus"
+  ],
+  "accessibility": {
+    "role": "toolbar",
+    "keyboard": "Tab enters the toolbar; Left/Right move between buttons; Enter or Space fires; the overflow button opens a menu.",
+    "notes": "After a transition, focus stays on the toolbar and the new state is announced (\"Status changed to Resolved\")."
+  },
+  "responsive": "Below 720px buttons are full width and stack; the overflow menu opens as a bottom sheet.",
+  "examples": [
+    {
+      "description": "Up to three transition buttons in the sidebar",
+      "spec": {
+        "id": "core.tickets.record.transitions",
+        "type": "action.transition_buttons",
+        "props": {
+          "max": 3
+        },
+        "children": []
+      }
+    }
+  ]
+}

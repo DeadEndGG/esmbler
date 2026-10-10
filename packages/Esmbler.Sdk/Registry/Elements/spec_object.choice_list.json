@@ -1,0 +1,47 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.choice_list",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Choice list",
+  "description": "A reusable, ordered list of options for single_select, multi_select, status, and priority fields. Each option has a stable ID that records store, a label people see, an optional tone token for badges, and a hidden flag for retiring options without losing data.",
+  "usage": [
+    "Reuse one list for every field with the same meaning.",
+    "Use lowercase IDs that describe the option (network), and relabel rather than rename.",
+    "Assign tones only where color helps scanning (priorities, states)."
+  ],
+  "constraints": [
+    "Option IDs are unique within the list, stable, and never reused; renaming an ID would orphan stored values.",
+    "tone must be a design token (accent.red, accent.amber, ...), never a raw color.",
+    "Retire options with hidden: true; they stay valid on existing records but cannot be newly selected.",
+    "A list holds at most 100 options; order is display and sort order."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/choice_list.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket categories",
+      "spec": {
+        "id": "core.tickets.category",
+        "label": "Ticket category",
+        "options": [
+          { "id": "hardware", "label": "Hardware", "tone": "accent.blue" },
+          { "id": "software", "label": "Software", "tone": "accent.purple" },
+          { "id": "network", "label": "Network", "tone": "accent.amber" },
+          { "id": "access", "label": "Access", "tone": "accent.green" },
+          { "id": "other", "label": "Other", "tone": "accent.gray" }
+        ]
+      }
+    }
+  ]
+}

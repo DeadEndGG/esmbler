@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Public SDK: spec model, module definitions, extension point and event contracts. First-party modules may reference only this. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Esmbler.Expressions\Esmbler.Expressions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Registry\Elements\*.json" LogicalName="registry/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Schemas\*.json" LogicalName="schemas/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

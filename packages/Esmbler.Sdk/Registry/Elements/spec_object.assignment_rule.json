@@ -1,0 +1,44 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.assignment_rule",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Assignment rule",
+  "description": "Routes records to a group when a condition holds, such as sending network tickets to the Network queue. Rules are evaluated in order and the first match sets the entity's assignment group field (assignment_group on tickets). The group is named by key and resolved per tenant.",
+  "usage": [
+    "Write one rule per routing decision with a precise when.",
+    "Use order to put specific rules (category and priority) before general ones.",
+    "Keep a catch-all rule (when \"true\") last to route to the service desk."
+  ],
+  "constraints": [
+    "when is a CEL-subset expression over record; group is a group key that must resolve to a group in the tenant, otherwise the rule is skipped with a warning.",
+    "Evaluated in ascending order (ties by ID); the first matching enabled rule wins.",
+    "Runs on create and when a field used in when changes, and only while the assignment group is empty or was set by an assignment rule — manual assignments are never overwritten."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/assignment_rule.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Route network tickets to the Network group",
+      "spec": {
+        "id": "core.tickets.route_network",
+        "entity": "core.tickets.ticket",
+        "description": "Network tickets go to the Network queue.",
+        "when": "record.category == 'network'",
+        "group": "network",
+        "order": 100,
+        "enabled": true
+      }
+    }
+  ]
+}

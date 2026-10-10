@@ -1,0 +1,75 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.column",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Column",
+  "description": "A vertical slot in a row that spans 1–12 of the grid's 12 columns and stacks its children top to bottom. Columns hold the actual content of a page: cards, tab groups, single fields, display elements, collections, activity, and actions.",
+  "usage": [
+    "Use span 8 for primary content and span 4 for a sidebar of key properties and actions.",
+    "Prefer cards inside columns over loose fields, so related fields read as one block.",
+    "Set spanTablet only when a desktop split would be too narrow on tablets, e.g. 4/4/4 on desktop becomes 12/6/6 on tablet."
+  ],
+  "constraints": [
+    "Parent must be layout.row; span is required (1–12) and spans in a row must sum to 12.",
+    "spanTablet, when set, is 1–12 and follows the row's tablet sum rule.",
+    "Children must be cards, tab groups, field placements, display, collection, or activity elements, action.button, action.action_menu, action.transition_buttons, or action.quick_create."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["span"],
+    "properties": {
+      "span": { "type": "integer", "minimum": 1, "maximum": 12, "description": "Desktop width in grid columns." },
+      "spanTablet": { "type": "integer", "minimum": 1, "maximum": 12, "description": "Tablet width in grid columns; defaults to span." }
+    }
+  },
+  "allowedParents": ["layout.row"],
+  "allowedChildren": [
+    "layout.card",
+    "layout.tab_group",
+    "field",
+    "display.*",
+    "collection.*",
+    "activity.*",
+    "action.button",
+    "action.action_menu",
+    "action.transition_buttons",
+    "action.quick_create"
+  ],
+  "maxChildren": 20,
+  "binding": { "kind": "none", "description": "Structural only; children bind to the page's record." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["space.4"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not focusable. Focus moves through its children top to bottom.",
+    "notes": "Presentational; children provide their own landmarks and names."
+  },
+  "responsive": "Width follows span on desktop and spanTablet (or span) on tablet; full width below 720px. Children keep their order when stacked.",
+  "examples": [
+    {
+      "description": "Sidebar column with transition buttons and an assignment card",
+      "spec": {
+        "id": "core.tickets.record.col_side",
+        "type": "layout.column",
+        "props": { "span": 4, "spanTablet": 12 },
+        "children": [
+          { "id": "core.tickets.record.transitions", "type": "action.transition_buttons", "props": { "max": 3 }, "children": [] },
+          {
+            "id": "core.tickets.record.card_assignment",
+            "type": "layout.card",
+            "props": { "title": "Assignment" },
+            "children": [
+              { "id": "core.tickets.record.f_assignment_group", "type": "field", "props": { "field": "assignment_group" }, "children": [] },
+              { "id": "core.tickets.record.f_assignee", "type": "field", "props": { "field": "assignee" }, "children": [] }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

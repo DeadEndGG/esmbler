@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/apps/">
+    <Project Path="apps/Esmbler.Api/Esmbler.Api.csproj" />
+    <Project Path="apps/Esmbler.Mcp/Esmbler.Mcp.csproj" />
+    <Project Path="apps/Esmbler.Worker/Esmbler.Worker.csproj" />
+  </Folder>
+  <Folder Name="/modules/" />
+  <Folder Name="/modules/tickets/">
+    <Project Path="modules/tickets/Esmbler.Modules.Tickets.Contracts/Esmbler.Modules.Tickets.Contracts.csproj" />
+    <Project Path="modules/tickets/Esmbler.Modules.Tickets/Esmbler.Modules.Tickets.csproj" />
+  </Folder>
+  <Folder Name="/packages/">
+    <Project Path="packages/Esmbler.Expressions/Esmbler.Expressions.csproj" />
+    <Project Path="packages/Esmbler.Hosting/Esmbler.Hosting.csproj" />
+    <Project Path="packages/Esmbler.Kernel.Infrastructure/Esmbler.Kernel.Infrastructure.csproj" />
+    <Project Path="packages/Esmbler.Kernel/Esmbler.Kernel.csproj" />
+    <Project Path="packages/Esmbler.Platform/Esmbler.Platform.csproj" />
+    <Project Path="packages/Esmbler.Sdk/Esmbler.Sdk.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Esmbler.ArchitectureTests/Esmbler.ArchitectureTests.csproj" />
+    <Project Path="tests/Esmbler.IntegrationTests/Esmbler.IntegrationTests.csproj" />
+    <Project Path="tests/Esmbler.UnitTests/Esmbler.UnitTests.csproj" />
+  </Folder>
+</Solution>

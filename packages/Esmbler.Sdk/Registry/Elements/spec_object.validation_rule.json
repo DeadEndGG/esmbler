@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.validation_rule",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Validation rule",
+  "description": "A rule (RuleSpec, kind validation) that blocks a write unless its assert expression is true, with a message shown on a field. With scope data (the default) it runs on every write path — UI, API, imports, automations, and AI. Optional when limits it to records where a condition holds.",
+  "usage": [
+    "Write the assert as the condition that must hold (\"record.title.size() >= 5\"), not the error case.",
+    "Attach the message to the field the user should fix and phrase it as a fix.",
+    "Use scope data for business rules; use scope form only for view-specific checks."
+  ],
+  "constraints": [
+    "kind is validation; assert is required and must be a boolean CEL-subset expression over record and user that type-checks against the entity.",
+    "message is required; field, when set, must be a field of the entity. Validation rules have no actions.",
+    "Expressions are side-effect free with bounded cost; rules run in ascending order, ties broken by ID.",
+    "scope form requires view and applies only in that view; it is never a security control."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/rule.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Ticket titles need at least five characters",
+      "spec": {
+        "id": "core.tickets.title_min_length",
+        "kind": "validation",
+        "scope": "data",
+        "entity": "core.tickets.ticket",
+        "description": "Short titles cannot be triaged.",
+        "assert": "record.title.size() >= 5",
+        "message": "Use at least 5 characters so agents can triage the ticket.",
+        "field": "title",
+        "order": 100,
+        "enabled": true
+      }
+    }
+  ]
+}

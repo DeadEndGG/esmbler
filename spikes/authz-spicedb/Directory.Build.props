@@ -1,0 +1,7 @@
+<Project>
+  <!-- Throwaway spike: isolate from repo-wide build settings and central package management. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryPackagesProps>false</ImportDirectoryPackagesProps>
+  </PropertyGroup>
+</Project>

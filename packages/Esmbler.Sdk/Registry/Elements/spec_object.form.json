@@ -1,0 +1,79 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.form",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Form",
+  "description": "A ViewSpec of kind form: a compact create or edit form for an entity, used for quick create dialogs (action.button with action quick_create:<view id>) and portal request forms. It holds only the fields needed at that moment plus a save button; data rules apply as on every write.",
+  "usage": [
+    "List only the fields needed to start the record (2–6), most important first.",
+    "End with a primary save button.",
+    "Use form-scoped rules for wording or visibility that only matter on this form."
+  ],
+  "constraints": [
+    "kind is form; entity must exist; layout must be a layout.page node.",
+    "Every required entity field without a default must be placed on the form.",
+    "Referenced by quick_create:<id> actions; the viewer needs create permission on the entity."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/view.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Quick create form for tickets",
+      "spec": {
+        "id": "core.tickets.quick_create",
+        "kind": "form",
+        "entity": "core.tickets.ticket",
+        "label": "New ticket",
+        "layout": {
+          "id": "core.tickets.quick_create.page",
+          "type": "layout.page",
+          "props": { "title": "New ticket" },
+          "children": [
+            {
+              "id": "core.tickets.quick_create.section",
+              "type": "layout.section",
+              "props": {},
+              "children": [
+                {
+                  "id": "core.tickets.quick_create.row",
+                  "type": "layout.row",
+                  "props": {},
+                  "children": [
+                    {
+                      "id": "core.tickets.quick_create.col",
+                      "type": "layout.column",
+                      "props": { "span": 12 },
+                      "children": [
+                        { "id": "core.tickets.quick_create.f_title", "type": "field", "props": { "field": "title", "emphasis": "large" }, "children": [] },
+                        { "id": "core.tickets.quick_create.f_category", "type": "field", "props": { "field": "category" }, "children": [] },
+                        { "id": "core.tickets.quick_create.f_priority", "type": "field", "props": { "field": "priority" }, "children": [] },
+                        { "id": "core.tickets.quick_create.f_description", "type": "field", "props": { "field": "description" }, "children": [] },
+                        {
+                          "id": "core.tickets.quick_create.btn_save",
+                          "type": "action.button",
+                          "props": { "label": "Create ticket", "action": "save", "tone": "primary" },
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

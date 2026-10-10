@@ -1,0 +1,83 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "collection.saved_views",
+  "version": "1.0.0",
+  "category": "collection",
+  "gate": 1,
+  "label": "Saved views",
+  "description": "A set of named, predefined filters and sorts for the data table in the same column or tab, shown as tabs above the table — for example \"My open\", \"Unassigned\", \"P1\". The first view is the default.",
+  "usage": [
+    "Offer 3–6 views that match how people work their queue.",
+    "Name views by what they show (\"Unassigned\"), not who uses them.",
+    "Use user.id in filters for personal views (\"My open\")."
+  ],
+  "constraints": [
+    "Must share a column or tab with a collection.data_table; at most 20 views with unique ids.",
+    "filter is a CEL-subset expression over record and user; sort.field must be a sortable field of the table's entity.",
+    "Views only narrow results; they never widen what the viewer may read."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["views"],
+    "properties": {
+      "views": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "label"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+            "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "filter": { "type": "string", "maxLength": 500 },
+            "sort": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["field"],
+              "properties": { "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "direction": { "enum": ["asc", "desc"], "default": "desc" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "query", "description": "Replaces the sibling data table's base filter and sort with the selected view's." },
+  "events": ["view_change"],
+  "ruleHooks": [],
+  "tokens": ["text.body-sm", "border.subtle", "state.selected", "state.hover", "space.3"],
+  "accessibility": {
+    "role": "tablist",
+    "keyboard": "Left/Right arrows move between views; Enter or Space selects.",
+    "notes": "The selected view is aria-selected and reflected in the URL."
+  },
+  "responsive": "Below 720px the views become a single select.",
+  "examples": [
+    {
+      "description": "Agent queue views",
+      "spec": {
+        "id": "core.tickets.list.views",
+        "type": "collection.saved_views",
+        "props": {
+          "views": [
+            {
+              "id": "my_open",
+              "label": "My open",
+              "filter": "record.assignee == user.id && record.status != 'closed'",
+              "sort": { "field": "priority", "direction": "asc" }
+            },
+            { "id": "unassigned", "label": "Unassigned", "filter": "record.assignee == null && record.status == 'new'" },
+            { "id": "p1", "label": "P1", "filter": "record.priority == 'p1' && record.status != 'closed'" },
+            { "id": "all", "label": "All" }
+          ]
+        },
+        "children": []
+      }
+    }
+  ]
+}

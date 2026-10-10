@@ -1,0 +1,46 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.toggle",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Toggle",
+  "description": "A yes/no value, such as \"Confirmed by requester\", \"VIP\", or \"Major incident\". A toggle is never empty: null and missing values read as false. Use a single_select when there is a meaningful third state (e.g. unknown).",
+  "usage": [
+    "Label toggles as a positive statement (\"Confirmed\", not \"Not confirmed\").",
+    "Use a validation rule (record.confirmed == true) to require the toggle to be on; required has no effect because false is a value.",
+    "Use for flags that drive rules or views."
+  ],
+  "constraints": [
+    "Never null: null and missing values are stored and read as false.",
+    "default must be a boolean (default false).",
+    "required is ignored for toggles; the compiler warns when it is set."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "default": { "type": "boolean", "default": false }
+    }
+  },
+  "valueSchema": { "type": "boolean" },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "switch",
+    "keyboard": "Space toggles; Enter commits an inline edit.",
+    "notes": "aria-checked reflects the value; the on/off state is shown as text as well as position."
+  },
+  "responsive": "Inline with its label at all widths.",
+  "examples": [
+    {
+      "description": "Requester confirmed the fix",
+      "spec": { "key": "confirmed", "type": "toggle", "label": "Confirmed by requester", "default": false }
+    }
+  ]
+}

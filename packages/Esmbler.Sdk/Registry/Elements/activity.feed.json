@@ -1,0 +1,54 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "activity.feed",
+  "version": "1.0.0",
+  "category": "activity",
+  "gate": 1,
+  "label": "Activity feed",
+  "description": "The conversation on a record: public replies that the requester sees and internal work notes that only agents see, in one timeline with a composer. Internal notes are never visible to requesters or portal users and are never included in notifications sent to them. Comment bodies are rich text, sanitized on the server.",
+  "usage": [
+    "Place one feed per record view, usually in the first tab of a tab group or the main column.",
+    "Keep defaultComposer internal on agent views so a reply to the requester is a deliberate choice.",
+    "Turn showInternal off only on views meant for requester-facing contexts."
+  ],
+  "constraints": [
+    "Internal notes are never returned to requesters or portal users by any API and never included in their notifications.",
+    "showInternal has no effect for viewers without internal-note access; they only see and post public replies.",
+    "Bodies are rich text sanitized on every write like field.rich_text; entries are append-only and edits are kept in audit history.",
+    "defaultComposer must be a visibility the feed shows."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "showPublic": { "type": "boolean", "default": true },
+      "showInternal": { "type": "boolean", "default": true },
+      "defaultComposer": { "enum": ["public", "internal"], "default": "internal" }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab", "layout.card"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Reads and appends activity entries of the page's record, filtered by the viewer's audience." },
+  "events": ["post", "mention"],
+  "ruleHooks": ["visible"],
+  "tokens": ["surface.raised", "border.subtle", "text.body", "text.muted", "accent.amber", "space.3"],
+  "accessibility": {
+    "role": "feed",
+    "keyboard": "PageUp/PageDown move between entries; C focuses the composer; Alt+I switches public/internal; Ctrl/Cmd+Enter posts.",
+    "notes": "Each entry is an article labelled by author, audience, and time. Internal notes say \"Internal\" in text, not only with the accent.amber edge; the composer states who will see the post."
+  },
+  "responsive": "On phones the composer sticks to the bottom of the screen and expands when focused.",
+  "examples": [
+    {
+      "description": "Agent feed defaulting to internal notes",
+      "spec": {
+        "id": "core.tickets.record.feed",
+        "type": "activity.feed",
+        "props": { "showPublic": true, "showInternal": true, "defaultComposer": "internal" },
+        "children": []
+      }
+    }
+  ]
+}

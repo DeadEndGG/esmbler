@@ -1,0 +1,392 @@
+{
+    "schema_version": "1.1",
+    "type_definitions": [
+        {
+            "type": "user"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "acts_for": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "acts_for": {
+                    "this": {}
+                }
+            },
+            "type": "agent"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "member": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            },
+                            {
+                                "relation": "member",
+                                "type": "group"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "member": {
+                    "this": {}
+                }
+            },
+            "type": "group"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "assignee": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            },
+                            {
+                                "relation": "member",
+                                "type": "group"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "assignee": {
+                    "this": {}
+                }
+            },
+            "type": "role"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "agent_edit_scope": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "agent"
+                            }
+                        ]
+                    },
+                    "agent_read_scope": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "agent"
+                            }
+                        ]
+                    },
+                    "create": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    },
+                    "edit_all": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    },
+                    "priority_editor": {
+                        "directly_related_user_types": [
+                            {
+                                "condition": "not_major_incident",
+                                "type": "user",
+                                "wildcard": {}
+                            },
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    },
+                    "read_all": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "agent_edit_scope": {
+                    "this": {}
+                },
+                "agent_read_scope": {
+                    "this": {}
+                },
+                "create": {
+                    "this": {}
+                },
+                "edit_all": {
+                    "this": {}
+                },
+                "priority_editor": {
+                    "this": {}
+                },
+                "read_all": {
+                    "this": {}
+                }
+            },
+            "type": "entity_type"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "assignee": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "can_edit": {},
+                    "can_view": {},
+                    "editor_base": {},
+                    "entity": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "entity_type"
+                            }
+                        ]
+                    },
+                    "owner_group": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "group"
+                            }
+                        ]
+                    },
+                    "requester": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    },
+                    "watcher": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "assignee": {
+                    "this": {}
+                },
+                "can_edit": {
+                    "intersection": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "editor_base"
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "priority_editor"
+                                    },
+                                    "tupleset": {
+                                        "relation": "entity"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "can_view": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "requester"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "assignee"
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "watcher"
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "member"
+                                    },
+                                    "tupleset": {
+                                        "relation": "owner_group"
+                                    }
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "read_all"
+                                    },
+                                    "tupleset": {
+                                        "relation": "entity"
+                                    }
+                                }
+                            },
+                            {
+                                "computedUserset": {
+                                    "relation": "editor_base"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "editor_base": {
+                    "union": {
+                        "child": [
+                            {
+                                "computedUserset": {
+                                    "relation": "assignee"
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "member"
+                                    },
+                                    "tupleset": {
+                                        "relation": "owner_group"
+                                    }
+                                }
+                            },
+                            {
+                                "tupleToUserset": {
+                                    "computedUserset": {
+                                        "relation": "edit_all"
+                                    },
+                                    "tupleset": {
+                                        "relation": "entity"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "entity": {
+                    "this": {}
+                },
+                "owner_group": {
+                    "this": {}
+                },
+                "requester": {
+                    "this": {}
+                },
+                "watcher": {
+                    "this": {}
+                }
+            },
+            "type": "ticket"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "reader": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            },
+                            {
+                                "type": "user",
+                                "wildcard": {}
+                            }
+                        ]
+                    },
+                    "writer": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            },
+                            {
+                                "type": "user",
+                                "wildcard": {}
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "reader": {
+                    "this": {}
+                },
+                "writer": {
+                    "this": {}
+                }
+            },
+            "type": "field"
+        },
+        {
+            "metadata": {
+                "relations": {
+                    "config_publish": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    },
+                    "permissions_admin": {
+                        "directly_related_user_types": [
+                            {
+                                "relation": "assignee",
+                                "type": "role"
+                            }
+                        ]
+                    }
+                }
+            },
+            "relations": {
+                "config_publish": {
+                    "this": {}
+                },
+                "permissions_admin": {
+                    "this": {}
+                }
+            },
+            "type": "tenant"
+        }
+    ],
+    "conditions": {
+        "not_major_incident": {
+            "expression": "priority != 1",
+            "name": "not_major_incident",
+            "parameters": {
+                "priority": {
+                    "type_name": "TYPE_NAME_INT"
+                }
+            }
+        }
+    }
+}

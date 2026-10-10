@@ -1,0 +1,50 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.conditional_rule",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Conditional rule",
+  "description": "A rule (RuleSpec, kind conditional) that changes how fields behave when a condition is true: require, show, hide, make read-only, set a value, restrict choice options, or show a message. With scope data it applies on every write path and drives the field rule hooks in all views; with scope form it only affects one view's presentation.",
+  "usage": [
+    "Express each business policy as one rule with a clear when (\"record.category == 'access'\").",
+    "Use scope data for anything that must hold everywhere; use scope form only for presentation tweaks.",
+    "Pair require with show so a newly required field is visible."
+  ],
+  "constraints": [
+    "kind is conditional; when is a CEL-subset expression (empty means always); actions has at least one entry.",
+    "Action types: require, show, hide, read_only, set_value (value is an expression), restrict_options (options are IDs of the field's choice list), message (tone info, warning, or critical).",
+    "Rules run in ascending order, ties by ID; a later set_value overwrites an earlier one. A data rule cannot require and hide the same field under overlapping conditions.",
+    "Form-scoped hide and read_only are presentation only and never security controls."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/rule.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Access requests require a justification",
+      "spec": {
+        "id": "tenant__access_requires_justification",
+        "kind": "conditional",
+        "scope": "data",
+        "entity": "core.tickets.ticket",
+        "when": "record.category == 'access'",
+        "actions": [
+          { "type": "show", "field": "tenant__justification" },
+          { "type": "require", "field": "tenant__justification", "message": "Explain why this access is needed." },
+          { "type": "message", "tone": "info", "message": "Access requests are approved by the system owner." }
+        ],
+        "order": 100,
+        "enabled": true
+      }
+    }
+  ]
+}

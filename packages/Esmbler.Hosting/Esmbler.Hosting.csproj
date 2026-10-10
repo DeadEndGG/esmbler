@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Composition root shared by the API, MCP and worker hosts. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Esmbler.Kernel.Infrastructure\Esmbler.Kernel.Infrastructure.csproj" />
+    <ProjectReference Include="..\Esmbler.Platform\Esmbler.Platform.csproj" />
+    <ProjectReference Include="..\..\modules\tickets\Esmbler.Modules.Tickets\Esmbler.Modules.Tickets.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+</Project>

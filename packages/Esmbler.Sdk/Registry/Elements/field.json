@@ -1,0 +1,68 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field",
+  "version": "1.0.0",
+  "category": "field",
+  "gate": 1,
+  "label": "Field",
+  "description": "Places one field of the view's entity on the page and renders it with the component of its field type (a select for single_select, a user picker for user, and so on). The field's definition — type, label, constraints, choice list — comes from the entity; the placement only decides where the field appears and how it is presented on this view. Rule hooks (required, visible, read-only, options, value, message) and field permissions apply automatically.",
+  "usage": [
+    "Bind field to an existing field key of the view's entity; never invent a key — add the field to the entity first.",
+    "Leave label empty to use the field's own label; override only when this view needs different wording.",
+    "Use emphasis: large for the one or two values a reader scans for first (e.g. title on a form).",
+    "Use readOnly for presentation only; to stop people editing, change field permissions or add a data-scoped read_only rule."
+  ],
+  "constraints": [
+    "field must be a key of the view's entity; deprecated fields cannot be newly placed.",
+    "A field may be placed at most once per view.",
+    "readOnly is presentational and never a security control; every write is authorized by field permissions on the server.",
+    "Fields the viewer may not read are not sent to the client at all — not as values, labels, or placeholders.",
+    "System fields (auto_number, platform timestamps) always render read-only."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["field"],
+    "properties": {
+      "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Field key of the view's entity, e.g. assignee or tenant__vendor." },
+      "label": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Form-level label override." },
+      "helpText": { "type": "string", "maxLength": 200, "description": "Helper text under the input; defaults to the field's help." },
+      "readOnly": { "type": "boolean", "default": false, "description": "Form-level read-only. Never a security control." },
+      "emphasis": { "enum": ["normal", "large"], "default": "normal" }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "field", "description": "Two-way binding to record.<field>; the value has the shape of the field type's valueSchema." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "options", "value", "message"],
+  "tokens": ["text.body", "text.body-sm", "text.muted", "space.1", "space.2"],
+  "accessibility": {
+    "role": "group",
+    "keyboard": "Tab moves between fields; type-specific keys apply (see field.<type>). Esc reverts an inline edit, Enter commits.",
+    "notes": "The control's role comes from the field type. The label (or override) is the accessible name; helpText and validation messages are linked with aria-describedby; required state uses aria-required."
+  },
+  "responsive": "Label above the value in narrow cells and below 720px; label beside the value in wide two-column cards on desktop.",
+  "examples": [
+    {
+      "description": "Assignee placement with view-specific help text",
+      "spec": {
+        "id": "core.tickets.record.f_assignee",
+        "type": "field",
+        "props": { "field": "assignee", "helpText": "Leave empty to let the assignment group pick it up." },
+        "children": []
+      }
+    },
+    {
+      "description": "Large title on the quick-create form",
+      "spec": {
+        "id": "core.tickets.quick_create.f_title",
+        "type": "field",
+        "props": { "field": "title", "label": "What do you need help with?", "emphasis": "large" },
+        "children": []
+      }
+    }
+  ]
+}

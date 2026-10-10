@@ -1,0 +1,42 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "action.command_palette",
+  "version": "1.0.0",
+  "category": "action",
+  "gate": 1,
+  "label": "Command palette",
+  "description": "The app-wide Cmd/Ctrl+K palette for keyboard-first work: jump to views and records, run actions on the current record (transitions, quick create), and run builder actions. It lists only what the viewer is allowed to do right now and matches with fuzzy search. It is part of the app shell, not placed on pages.",
+  "usage": [
+    "Rely on it for discoverability instead of adding many buttons.",
+    "Give transitions and views clear labels; they are what the palette searches."
+  ],
+  "constraints": [
+    "Not placeable; one instance per app shell, configured by the platform.",
+    "Lists navigation to views the viewer may open, record actions valid for the current state, and builder actions only with config.edit.",
+    "Record search results never reveal titles or numbers of records the viewer cannot read."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "App-level; reads the viewer's permitted navigation and actions." },
+  "events": ["open", "run"],
+  "ruleHooks": [],
+  "tokens": ["surface.raised", "elevation.overlay", "radius.md", "space.3", "text.body", "state.selected"],
+  "accessibility": {
+    "role": "dialog",
+    "keyboard": "Cmd/Ctrl+K opens; type to search; Up/Down move; Enter runs; Esc closes and returns focus to where it was.",
+    "notes": "The input is a combobox controlling a listbox of results grouped by kind; the result count is announced."
+  },
+  "responsive": "Centered overlay on desktop; full-screen below 720px.",
+  "examples": [
+    {
+      "description": "The palette is app-level and has no props",
+      "spec": { "type": "action.command_palette", "props": {} }
+    }
+  ]
+}

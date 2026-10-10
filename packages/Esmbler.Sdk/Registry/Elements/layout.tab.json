@@ -1,0 +1,64 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.tab",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Tab",
+  "description": "One panel of a tab group, with a short title and optional icon in the tab strip. A tab holds the same kinds of content as a column — cards, fields, display, collection, activity, and action elements — except another tab group.",
+  "usage": [
+    "Title tabs with one or two words; the title is also the panel's accessible name.",
+    "Add an icon token only when every tab in the group has one.",
+    "Use a tab per kind of secondary content rather than mixing activity and related records in one panel."
+  ],
+  "constraints": [
+    "Parent must be layout.tab_group.",
+    "title is required and at most 40 characters; icon must be an icon token (icon.<name>).",
+    "Children follow layout.column's allowed children, except layout.tab_group.",
+    "A tab whose children are all hidden for the viewer is removed from the tab strip."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title"],
+    "properties": {
+      "title": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "icon": { "type": "string", "pattern": "^icon\\.[a-z0-9-]+$", "description": "Icon token, e.g. icon.activity." }
+    }
+  },
+  "allowedParents": ["layout.tab_group"],
+  "allowedChildren": [
+    "layout.card",
+    "field",
+    "display.*",
+    "collection.*",
+    "activity.*",
+    "action.button",
+    "action.action_menu",
+    "action.transition_buttons",
+    "action.quick_create"
+  ],
+  "maxChildren": 20,
+  "binding": { "kind": "none", "description": "Structural only; children bind to the page's record." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["space.4", "text.body-sm"],
+  "accessibility": {
+    "role": "tabpanel",
+    "keyboard": "Reached with Tab from the selected tab; content keys apply inside.",
+    "notes": "Labelled by its tab (aria-labelledby). Inactive panels are not rendered to assistive technology."
+  },
+  "responsive": "Panel fills the column width; content stacks like a column.",
+  "examples": [
+    {
+      "description": "Activity tab with the record feed",
+      "spec": {
+        "id": "core.tickets.record.tab_activity",
+        "type": "layout.tab",
+        "props": { "title": "Activity", "icon": "icon.activity" },
+        "children": [{ "id": "core.tickets.record.feed", "type": "activity.feed", "props": { "defaultComposer": "internal" }, "children": [] }]
+      }
+    }
+  ]
+}

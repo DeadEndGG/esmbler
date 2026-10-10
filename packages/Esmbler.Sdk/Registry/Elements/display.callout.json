@@ -1,0 +1,60 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.callout",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 1,
+  "label": "Callout",
+  "description": "A short, prominent message box with a tone (info, success, warning, critical) that gives readers context about the record, such as \"P1 — follow the major incident process\". visibleWhen shows it only when an expression over the record is true. Callouts are presentation; to enforce or warn on every write path use a data-scoped rule with a message action.",
+  "usage": [
+    "Use for guidance tied to the record's situation, with visibleWhen so it appears only when relevant.",
+    "Keep text to one or two sentences and say what to do next.",
+    "Use critical only for situations that need immediate action."
+  ],
+  "constraints": [
+    "tone and text are required; title is at most 80 characters, text at most 300.",
+    "visibleWhen is a CEL-subset expression over record and user; it must type-check against the entity and may only reference fields the viewer can read.",
+    "visibleWhen is evaluated on the server and re-evaluated after each save; it is never a security control."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["tone", "text"],
+    "properties": {
+      "tone": { "enum": ["info", "success", "warning", "critical"] },
+      "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+      "text": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "visibleWhen": { "type": "string", "maxLength": 500, "description": "CEL subset, e.g. record.priority == 'p1'." }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "visibleWhen reads the page's record." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["surface.raised", "radius.md", "space.3", "text.body", "text.title-sm", "accent.blue", "accent.green", "accent.amber", "accent.red"],
+  "accessibility": {
+    "role": "note",
+    "keyboard": "Not focusable.",
+    "notes": "A critical callout that appears after a save is announced once (role=alert). The tone icon has a text alternative (\"Warning\")."
+  },
+  "responsive": "Full width of its container; the icon moves above the text below 360px.",
+  "examples": [
+    {
+      "description": "Major incident guidance for P1 tickets",
+      "spec": {
+        "id": "core.tickets.record.callout_p1",
+        "type": "display.callout",
+        "props": {
+          "tone": "critical",
+          "title": "Major incident",
+          "text": "Page the on-call manager and post updates every 30 minutes in public replies.",
+          "visibleWhen": "record.priority == 'p1'"
+        },
+        "children": []
+      }
+    }
+  ]
+}

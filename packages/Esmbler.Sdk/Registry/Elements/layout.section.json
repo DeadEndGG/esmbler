@@ -1,0 +1,60 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.section",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Section",
+  "description": "A horizontal band of a page that groups rows under an optional heading, such as \"Overview\" or \"Related work\". Sections define the page outline: each titled section is a landmark the viewer can jump to and, if collapsible, fold away. Content inside a section is arranged with layout.row and layout.column on a 12-column grid.",
+  "usage": [
+    "Use one section per major part of the page; an untitled first section for the main record body is normal.",
+    "Add a description only when the purpose is not obvious from the title.",
+    "Make secondary sections (history, related records) collapsible so the main content stays above the fold."
+  ],
+  "constraints": [
+    "Parent must be layout.page; children must be layout.row nodes.",
+    "title is at most 80 characters; description at most 200.",
+    "collapsible requires a title, because the title is the toggle."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Section heading (h2)." },
+      "description": { "type": "string", "maxLength": 200, "description": "One-line helper text under the title." },
+      "collapsible": { "type": "boolean", "default": false }
+    }
+  },
+  "allowedParents": ["layout.page"],
+  "allowedChildren": ["layout.row"],
+  "maxChildren": 20,
+  "binding": { "kind": "none", "description": "Structural only; children bind to the page's record." },
+  "events": ["toggle"],
+  "ruleHooks": ["visible"],
+  "tokens": ["space.6", "text.title-sm", "text.muted", "border.subtle"],
+  "accessibility": {
+    "role": "region",
+    "keyboard": "Collapsible sections toggle with Enter or Space on the heading button.",
+    "notes": "Titled sections are regions named by their heading (aria-labelledby). Untitled sections render as a plain group, not a landmark. The collapsed state is exposed with aria-expanded."
+  },
+  "responsive": "Always full page width. Spacing between sections shrinks from space.6 to space.4 below 720px.",
+  "examples": [
+    {
+      "description": "Collapsible section for related work under the main ticket body",
+      "spec": {
+        "id": "core.tickets.record.section_related",
+        "type": "layout.section",
+        "props": { "title": "Related work", "description": "Child tickets and audit history.", "collapsible": true },
+        "children": [
+          {
+            "id": "core.tickets.record.row_related",
+            "type": "layout.row",
+            "props": {},
+            "children": [{ "id": "core.tickets.record.col_related", "type": "layout.column", "props": { "span": 12 }, "children": [] }]
+          }
+        ]
+      }
+    }
+  ]
+}

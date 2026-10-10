@@ -1,0 +1,55 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.label_value",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 1,
+  "label": "Label and value",
+  "description": "A compact, always read-only pair of a label and a value — either a field's display value or fixed text. Use it for summary sidebars and headers where values should be scanned, not edited (\"Requester: Ana Ruiz\"). Use a field placement when the value should be editable.",
+  "usage": [
+    "Use in summary cards and sidebars for 3–8 key facts.",
+    "Bind to a field for live values; use text only for fixed explanatory values.",
+    "Keep labels to one or two words."
+  ],
+  "constraints": [
+    "label is required (at most 60 characters); exactly one of field or text must be set.",
+    "field must be a key of the view's entity; values follow field permissions and a value the viewer cannot read is not rendered.",
+    "Lookup values the viewer cannot read show \"Restricted record\"."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["label"],
+    "oneOf": [{ "required": ["text"] }, { "required": ["field"] }],
+    "properties": {
+      "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+      "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "text": { "type": "string", "minLength": 1, "maxLength": 200 }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "field", "description": "Read-only binding to one field's display value, or fixed text." },
+  "events": [],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "text.body", "space.1"],
+  "accessibility": {
+    "role": "group",
+    "keyboard": "Not focusable unless the value is a link (user, lookup, email), which takes Tab and Enter.",
+    "notes": "Rendered as a description-list pair (dt/dd) so the label is announced with the value."
+  },
+  "responsive": "Label beside value when the cell is at least 320px wide, otherwise label above value.",
+  "examples": [
+    {
+      "description": "Requester in a summary sidebar",
+      "spec": {
+        "id": "core.tickets.record.lv_requester",
+        "type": "display.label_value",
+        "props": { "label": "Requester", "field": "requester" },
+        "children": []
+      }
+    }
+  ]
+}

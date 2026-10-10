@@ -1,0 +1,68 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "action.button",
+  "version": "1.0.0",
+  "category": "action",
+  "gate": 1,
+  "label": "Button",
+  "description": "A single labeled button that performs one action on the page's record: fire a workflow transition, save pending edits, or open a quick-create form. Use it for the one or two most important actions in a card or column; group the rest in an action menu.",
+  "usage": [
+    "Use a verb-first label (\"Resolve\", \"Escalate to network\").",
+    "Use tone primary for the single main action in a container and danger for destructive actions.",
+    "Add confirm for actions that are hard to undo (cancel, close).",
+    "Prefer action.transition_buttons for showing all available transitions."
+  ],
+  "constraints": [
+    "transition:<id> must name a transition of the entity's workflow; it is hidden when not valid from the current state or the viewer may not fire it.",
+    "save submits pending edits; validation and data rules run on the server.",
+    "quick_create:<id> must name a form view (ViewSpec kind form); it is hidden when the viewer may not create that view's entity.",
+    "label is at most 40 characters; at most one primary button per card or column.",
+    "tone danger requires confirm."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["label", "action"],
+    "properties": {
+      "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "action": {
+        "type": "string",
+        "pattern": "^(transition:[a-z0-9_.]+|save|quick_create:[a-z0-9_.]+)$",
+        "description": "transition:<transition id>, save, or quick_create:<form view id>."
+      },
+      "tone": { "enum": ["primary", "neutral", "danger"], "default": "neutral" },
+      "icon": { "type": "string", "pattern": "^icon\\.[a-z0-9-]+$" },
+      "confirm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "text"],
+        "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 80 }, "text": { "type": "string", "minLength": 1, "maxLength": 300 } }
+      }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Acts on the page's record; availability follows workflow state and permissions." },
+  "events": ["click"],
+  "ruleHooks": ["visible"],
+  "tokens": ["radius.sm", "space.2", "text.body-sm", "accent.blue", "accent.red", "state.hover", "state.focus"],
+  "accessibility": {
+    "role": "button",
+    "keyboard": "Enter or Space activates. While the action runs the button is aria-disabled and announces busy.",
+    "notes": "Icon-only rendering is not allowed; the label is always the accessible name. Confirmations use feedback.confirm_dialog."
+  },
+  "responsive": "Full width below 720px; inline otherwise.",
+  "examples": [
+    {
+      "description": "Primary Resolve button",
+      "spec": {
+        "id": "core.tickets.record.btn_resolve",
+        "type": "action.button",
+        "props": { "label": "Resolve", "action": "transition:resolve", "tone": "primary", "icon": "icon.check" },
+        "children": []
+      }
+    }
+  ]
+}

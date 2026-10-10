@@ -1,0 +1,49 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "feedback.toast",
+  "version": "1.0.0",
+  "category": "feedback",
+  "gate": 1,
+  "label": "Toast",
+  "description": "A brief, non-blocking message that confirms an action or reports a problem, optionally with one action such as Undo. Optimistic actions (assign, change priority) show a success toast with Undo instead of asking for confirmation first.",
+  "usage": [
+    "Use for results of actions the viewer just took (\"Assigned to Network\").",
+    "Offer Undo for reversible optimistic changes instead of a confirm dialog.",
+    "Keep text under 80 characters; never put the only copy of important information in a toast."
+  ],
+  "constraints": [
+    "tone and text are required; text is at most 140 characters, actionLabel at most 20.",
+    "durationMs is 2000–10000 (default 5000); toasts with an action stay at least 6000 ms; critical toasts stay until dismissed.",
+    "At most three toasts are visible; newer ones queue."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["tone", "text"],
+    "properties": {
+      "tone": { "enum": ["info", "success", "warning", "critical"] },
+      "text": { "type": "string", "minLength": 1, "maxLength": 140 },
+      "actionLabel": { "type": "string", "minLength": 1, "maxLength": 20 },
+      "durationMs": { "type": "integer", "minimum": 2000, "maximum": 10000, "default": 5000 }
+    }
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "App-level pattern raised by the platform and elements, not placed in views." },
+  "events": ["action", "dismiss"],
+  "ruleHooks": [],
+  "tokens": ["surface.raised", "elevation.overlay", "radius.md", "space.3", "text.body-sm", "motion.fast", "accent.green", "accent.red"],
+  "accessibility": {
+    "role": "status",
+    "keyboard": "Toasts never take focus. Alt+T moves focus to the latest toast; Enter runs its action; Esc dismisses.",
+    "notes": "info/success use role=status; warning/critical use role=alert. The timer pauses on hover and focus."
+  },
+  "responsive": "Bottom-right on desktop; full-width at the bottom below 720px, above the composer.",
+  "examples": [
+    {
+      "description": "Assignment with undo",
+      "spec": { "type": "feedback.toast", "props": { "tone": "success", "text": "TCK-000123 assigned to Network.", "actionLabel": "Undo", "durationMs": 6000 } }
+    }
+  ]
+}

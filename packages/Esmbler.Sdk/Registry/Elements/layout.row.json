@@ -1,0 +1,55 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.row",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Row",
+  "description": "A horizontal line of columns on the 12-column grid. Rows exist only to split a section into side-by-side columns, for example 8/4 for main content plus a sidebar, or 4/4/4 for three summary cards. On phones the columns stack vertically in source order.",
+  "usage": [
+    "Use common splits: 12, 8/4, 6/6, 4/4/4, 3/6/3.",
+    "Put the primary content in the left-most, widest column; it stays first when columns stack.",
+    "Start a new row instead of squeezing a fourth narrow column into an existing one."
+  ],
+  "constraints": [
+    "Parent must be layout.section; children must be layout.column nodes (1–4).",
+    "The span values of the child columns must sum to exactly 12.",
+    "If any child column sets spanTablet, the tablet spans of all children (spanTablet, or span when unset) must also sum to 12."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "gap": { "enum": ["sm", "md", "lg"], "default": "md", "description": "Space between columns: sm = space.3, md = space.4, lg = space.6." }
+    }
+  },
+  "allowedParents": ["layout.section"],
+  "allowedChildren": ["layout.column"],
+  "maxChildren": 4,
+  "binding": { "kind": "none", "description": "Structural only." },
+  "events": [],
+  "ruleHooks": [],
+  "tokens": ["space.3", "space.4", "space.6"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not focusable. Focus moves through the columns in source order.",
+    "notes": "Purely presentational. Reading and focus order always follow source order, never the visual order."
+  },
+  "responsive": "Desktop (1024px and up): spans as declared. Tablet (720–1023px): spanTablet when set, otherwise span. Below 720px every column is full width and columns stack in source order.",
+  "examples": [
+    {
+      "description": "Three equal summary columns (4/4/4)",
+      "spec": {
+        "id": "core.tickets.record.row_summary",
+        "type": "layout.row",
+        "props": { "gap": "md" },
+        "children": [
+          { "id": "core.tickets.record.col_summary_1", "type": "layout.column", "props": { "span": 4, "spanTablet": 12 }, "children": [] },
+          { "id": "core.tickets.record.col_summary_2", "type": "layout.column", "props": { "span": 4, "spanTablet": 6 }, "children": [] },
+          { "id": "core.tickets.record.col_summary_3", "type": "layout.column", "props": { "span": 4, "spanTablet": 6 }, "children": [] }
+        ]
+      }
+    }
+  ]
+}

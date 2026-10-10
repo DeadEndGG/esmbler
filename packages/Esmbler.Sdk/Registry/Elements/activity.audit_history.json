@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "activity.audit_history",
+  "version": "1.0.0",
+  "category": "activity",
+  "gate": 1,
+  "label": "Audit history",
+  "description": "A read-only, append-only timeline of every field change on a record: what changed (old → new), when, by which actor — a user, an AI agent acting for a user, or a module/automation — and under which configuration revision. Use it in a History tab so people can see how a record got to its current state.",
+  "usage": [
+    "Place in a dedicated History tab of the record view.",
+    "Keep the default pageSize unless records change very often."
+  ],
+  "constraints": [
+    "Read-only and append-only: entries cannot be edited or deleted through any API.",
+    "Visible to viewers with the audit.read action or read access to the record; values of fields the viewer cannot read are shown as \"Restricted\".",
+    "pageSize is 10–100 (default 25); history is paged on the server, newest first."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pageSize": { "type": "integer", "minimum": 10, "maximum": 100, "default": 25 }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab", "layout.card"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Reads the audit log of the page's record, redacted by field permissions." },
+  "events": ["page"],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "border.subtle", "space.2"],
+  "accessibility": {
+    "role": "log",
+    "keyboard": "Tab enters the list; Up/Down move between entries; Enter expands an entry's full diff.",
+    "notes": "Each entry reads as a sentence: \"Ana Ruiz changed Priority from P3 to P2, 10 Oct 14:30, revision 42\"."
+  },
+  "responsive": "Old and new values stack below 720px.",
+  "examples": [
+    {
+      "description": "History tab content",
+      "spec": { "id": "core.tickets.record.audit", "type": "activity.audit_history", "props": { "pageSize": 25 }, "children": [] }
+    }
+  ]
+}

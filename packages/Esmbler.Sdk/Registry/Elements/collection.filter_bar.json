@@ -1,0 +1,52 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "collection.filter_bar",
+  "version": "1.0.0",
+  "category": "collection",
+  "gate": 1,
+  "label": "Filter bar",
+  "description": "A row of field filters plus a search box above a data table. Each listed field becomes a filter chip with type-appropriate operators (is, is not, before, after, is empty). Search uses Postgres full-text search over the entity's text fields. Filters and search narrow the data table in the same column or tab.",
+  "usage": [
+    "List the 3–6 fields people filter by most (status, priority, assignment group, assignee).",
+    "Keep showSearch on for lists of records people know by title or number.",
+    "Place it directly above the data table, after collection.saved_views."
+  ],
+  "constraints": [
+    "Must share a column or tab with a collection.data_table; it filters that table.",
+    "fields: at most 8 unique keys of the table's entity; rich_text and long_text cannot be filters.",
+    "Results, counts, and filter options are permission-aware: only readable records and values are matched or offered."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "fields": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "maxItems": 8, "uniqueItems": true },
+      "showSearch": { "type": "boolean", "default": true }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "query", "description": "Adds filter and full-text conditions to the sibling data table's query." },
+  "events": ["filter_change", "search"],
+  "ruleHooks": [],
+  "tokens": ["surface.base", "border.input", "radius.sm", "space.2", "text.body-sm", "state.focus"],
+  "accessibility": {
+    "role": "search",
+    "keyboard": "/ focuses search; Tab moves between chips; Enter opens a chip's editor; Backspace in an empty search removes the last chip; Esc clears the search.",
+    "notes": "Result counts are announced in a polite live region after each change."
+  },
+  "responsive": "Below 720px the chips collapse into a Filters button that opens a sheet; search stays visible.",
+  "examples": [
+    {
+      "description": "Ticket list filters",
+      "spec": {
+        "id": "core.tickets.list.filters",
+        "type": "collection.filter_bar",
+        "props": { "fields": ["status", "priority", "assignment_group", "assignee"], "showSearch": true },
+        "children": []
+      }
+    }
+  ]
+}

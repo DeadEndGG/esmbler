@@ -1,0 +1,49 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "collection.column",
+  "version": "1.0.0",
+  "category": "collection",
+  "gate": 1,
+  "label": "Table column",
+  "description": "One column of a data table, showing a field of the table's entity. Columns are child nodes so they can be inserted, reordered, hidden, and removed individually, and each can override its header label and width.",
+  "usage": [
+    "Put the number and title first; keep 4–8 columns per table.",
+    "Use width sm for numbers, badges, and dates and lg for titles.",
+    "Insert a new column with an anchor (after the column it follows)."
+  ],
+  "constraints": [
+    "Parent must be collection.data_table; field must be a field of the table's entity, used at most once per table.",
+    "Columns for fields the viewer cannot read are dropped on the server together with their values.",
+    "rich_text and long_text show a one-line plain-text excerpt and are not sortable; multi_select is not sortable."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["field"],
+    "properties": {
+      "field": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "label": { "type": "string", "minLength": 1, "maxLength": 40, "description": "Header override; defaults to the field label." },
+      "width": { "enum": ["sm", "md", "lg", "auto"], "default": "auto" }
+    }
+  },
+  "allowedParents": ["collection.data_table"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "field", "description": "Reads one field from each row of the table's query." },
+  "events": ["sort"],
+  "ruleHooks": ["visible"],
+  "tokens": ["text.body-sm", "text.muted", "border.subtle", "space.2"],
+  "accessibility": {
+    "role": "columnheader",
+    "keyboard": "Enter on a sortable header cycles ascending, descending, and unsorted.",
+    "notes": "Sorted headers expose aria-sort; cells use the field type's read-mode rendering."
+  },
+  "responsive": "Below 720px only the first three columns are shown in the stacked list.",
+  "examples": [
+    {
+      "description": "Narrow number column",
+      "spec": { "id": "core.tickets.list.col_number", "type": "collection.column", "props": { "field": "number", "label": "#", "width": "sm" }, "children": [] }
+    }
+  ]
+}

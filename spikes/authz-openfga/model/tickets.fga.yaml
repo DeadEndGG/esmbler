@@ -1,0 +1,62 @@
+# Model tests: run with `fga model test --tests tickets.fga.yaml` (or the openfga/cli docker image).
+name: esmbler-tickets
+model_file: ./tickets.fga
+tuples:
+  - { user: user:carol, relation: member, object: group:network-team }
+  - { user: group:network-team#member, relation: member, object: group:l1-support }
+  - { user: user:hank, relation: member, object: group:l1-support }
+  - { user: user:hank, relation: assignee, object: role:major_incident_manager }
+  - { user: user:frank, relation: assignee, object: role:ticket_read_all }
+  - { user: user:gina, relation: assignee, object: role:finance }
+  - { user: user:ivan, relation: assignee, object: role:tenant_admin }
+  - { user: role:ticket_read_all#assignee, relation: read_all, object: entity_type:ticket }
+  - { user: "user:*", relation: priority_editor, object: entity_type:ticket, condition: { name: not_major_incident } }
+  - { user: role:major_incident_manager#assignee, relation: priority_editor, object: entity_type:ticket }
+  - { user: role:finance#assignee, relation: reader, object: field:ticket.internal_cost }
+  - { user: role:tenant_admin#assignee, relation: config_publish, object: tenant:acme-prod }
+  # Record attributes for ticket:1 / ticket:2 (in production these are contextual tuples from the row)
+  - { user: entity_type:ticket, relation: entity, object: ticket:1 }
+  - { user: user:alice, relation: requester, object: ticket:1 }
+  - { user: user:bob, relation: assignee, object: ticket:1 }
+  - { user: group:l1-support, relation: owner_group, object: ticket:1 }
+tests:
+  - name: record-level
+    check:
+      - user: user:carol
+        object: ticket:1
+        context: { priority: 3 }
+        assertions: { can_view: true, can_edit: true }
+      - user: user:frank
+        object: ticket:1
+        context: { priority: 3 }
+        assertions: { can_view: true, can_edit: false }
+      - user: user:alice
+        object: ticket:1
+        context: { priority: 3 }
+        assertions: { can_view: true, can_edit: false }
+  - name: abac-priority
+    check:
+      - user: user:bob
+        object: ticket:1
+        context: { priority: 1 }
+        assertions: { can_view: true, can_edit: false }
+      - user: user:hank
+        object: ticket:1
+        context: { priority: 1 }
+        assertions: { can_edit: true }
+  - name: field-and-action
+    check:
+      - user: user:gina
+        object: field:ticket.internal_cost
+        assertions: { reader: true }
+      - user: user:bob
+        object: field:ticket.internal_cost
+        assertions: { reader: false }
+      - user: user:ivan
+        object: tenant:acme-prod
+        assertions: { config_publish: true, permissions_admin: false }
+  - name: list-groups
+    list_objects:
+      - user: user:carol
+        type: group
+        assertions: { member: [group:network-team, group:l1-support] }

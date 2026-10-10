@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Public: safe, non-Turing-complete CEL-subset expression language (ADR 0009). No dependencies. -->
+</Project>

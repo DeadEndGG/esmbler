@@ -1,0 +1,47 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.status",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Status",
+  "description": "The workflow state of a record, such as New, In progress, or Resolved. A status field is bound to the entity's workflow: its choice list mirrors the workflow states and it changes only when a workflow transition fires. It renders as a badge with the state's tone.",
+  "usage": [
+    "Use exactly one status field per entity that has a workflow, and name it status.",
+    "Change states with transitions (action.transition_buttons), never by placing an editable status field.",
+    "Give every option a tone so the badge is meaningful at a glance."
+  ],
+  "constraints": [
+    "choiceList is required; its option IDs must equal the workflow's state IDs.",
+    "The field must be the stateField of the entity's workflow; an entity has at most one status field.",
+    "Never writable through the record API, inline edit, imports, rule set_value, or AI edits; only workflow transitions change it.",
+    "No default: new records start in the workflow's initialState."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "choiceList": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$", "description": "Choice list ID, e.g. core.tickets.category." }
+    }
+  },
+  "valueSchema": { "type": "string", "description": "Option ID equal to a workflow state ID." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": [],
+  "ruleHooks": ["visible", "message"],
+  "tokens": ["text.body-sm", "radius.sm", "space.1", "accent.blue", "accent.amber", "accent.green", "accent.gray"],
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not editable. Use transition buttons or the command palette to change the state.",
+    "notes": "Rendered as a text badge; the state label is the text and the tone is decorative, so meaning never depends on color."
+  },
+  "responsive": "Badge keeps its size at all widths.",
+  "examples": [
+    {
+      "description": "Ticket status bound to the ticket lifecycle",
+      "spec": { "key": "status", "type": "status", "label": "Status", "choiceList": "core.tickets.status", "required": true }
+    }
+  ]
+}

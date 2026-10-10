@@ -1,0 +1,43 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.field_definition",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Field definition",
+  "description": "The definition of one field of an entity (FieldSpec): a stable key, a field type (one of the field.<type> elements), a label, and the constraint props that apply to that type, plus flags such as required, readOnly, hidden, deprecated, and system. Views place fields with the field element; this spec defines what the field is everywhere.",
+  "usage": [
+    "Pick the most specific type (email, user, lookup) rather than short_text.",
+    "Write a label people say out loud and put guidance in help.",
+    "Prefix tenant-added keys with tenant__; never reuse a key that was deprecated."
+  ],
+  "constraints": [
+    "type must be one of the field types; type-specific props are validated against field.<type>'s propsSchema and props that do not apply to the type are rejected.",
+    "key is unique within the entity and immutable; changing type means adding a new field and migrating with a convert migration (expand, backfill, contract).",
+    "required and readOnly here are data-level and enforced on every write path; system fields are never writable through the record API.",
+    "Fields are hidden or deprecated, never deleted, so existing values are kept."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/field.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Tenant lookup from tickets to vendors",
+      "spec": {
+        "key": "tenant__vendor",
+        "type": "lookup",
+        "label": "Vendor",
+        "help": "The supplier responsible for the affected product.",
+        "target": "tenant__vendor"
+      }
+    }
+  ]
+}

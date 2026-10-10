@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Kernel: tenancy, configuration compile/activate, record engine, authorization decisions, audit, events. Knows no business-module internals. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Esmbler.Sdk\Esmbler.Sdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Esmbler.UnitTests" />
+    <InternalsVisibleTo Include="Esmbler.IntegrationTests" />
+  </ItemGroup>
+</Project>

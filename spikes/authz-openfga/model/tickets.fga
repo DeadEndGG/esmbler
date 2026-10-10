@@ -1,0 +1,67 @@
+model
+  schema 1.1
+
+# ---------------------------------------------------------------------------
+# Esmbler Gate 0 spike: fixed platform model for the Tickets permission model.
+# One OpenFGA store per tenant-environment. Record attributes (requester,
+# assignee, watchers, owner_group, entity) are NOT stored: the kernel derives
+# them from the record row and sends them as contextual tuples on Check.
+# Stored tuples: group memberships, role assignments, tenant policy grants.
+# ---------------------------------------------------------------------------
+
+type user
+
+# AI agent principal. Effective access = user perms AND agent delegated scopes
+# (the PDP composes two checks; see README).
+type agent
+  relations
+    define acts_for: [user]
+
+type group
+  relations
+    define member: [user, group#member]
+
+type role
+  relations
+    define assignee: [user, group#member]
+
+# Entity-level grants and tenant policy for one entity type (e.g. entity_type:ticket).
+type entity_type
+  relations
+    define read_all: [role#assignee]
+    define edit_all: [role#assignee]
+    define create: [role#assignee]
+    # ABAC: who may edit a record given its attributes (CEL condition on priority).
+    # Policy tuples: user:* with not_major_incident, role:major_incident_manager#assignee.
+    define priority_editor: [user:* with not_major_incident, role#assignee]
+    # Delegated scopes for AI agents.
+    define agent_read_scope: [agent]
+    define agent_edit_scope: [agent]
+
+type ticket
+  relations
+    define entity: [entity_type]
+    define requester: [user]
+    define assignee: [user]
+    define watcher: [user]
+    define owner_group: [group]
+    define editor_base: assignee or member from owner_group or edit_all from entity
+    define can_edit: editor_base and priority_editor from entity
+    # Viewing is not priority-guarded: anyone who could edit a lower-priority ticket can still see a P1.
+    define can_view: requester or assignee or watcher or member from owner_group or read_all from entity or editor_base
+
+# Field-level: field:ticket.internal_cost
+type field
+  relations
+    define reader: [role#assignee, user:*]
+    define writer: [role#assignee, user:*]
+
+# Action-level permissions for a tenant-environment.
+type tenant
+  relations
+    define config_publish: [role#assignee]
+    define permissions_admin: [role#assignee]
+
+condition not_major_incident(priority: int) {
+  priority != 1
+}

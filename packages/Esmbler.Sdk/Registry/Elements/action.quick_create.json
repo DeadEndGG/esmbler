@@ -1,0 +1,54 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "action.quick_create",
+  "version": "1.0.0",
+  "category": "action",
+  "gate": 1,
+  "label": "Quick create",
+  "description": "A button that opens a compact create form for an entity in a dialog, with only the listed fields, such as \"New child ticket\" on a ticket. Data rules apply as on any other write. On a record view, a lookup from the new record to the current one is prefilled.",
+  "usage": [
+    "List only the fields needed to start (2–5); people can complete the rest later.",
+    "Use a label that says what is created (\"New child ticket\").",
+    "Use a spec_object.form view with action.button quick_create:<id> when the form needs layout."
+  ],
+  "constraints": [
+    "entity must exist; fields (1–8) must be writable fields of it.",
+    "Every required field of the entity that is not listed must have a default, or compilation fails.",
+    "Shown only to viewers with create permission on the entity; data-scoped rules apply, form-scoped rules of other views do not."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["entity", "label", "fields"],
+    "properties": {
+      "entity": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$" },
+      "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "fields": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "minItems": 1, "maxItems": 8, "uniqueItems": true }
+    }
+  },
+  "allowedParents": ["layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Creates a record of entity; prefills a lookup to the page's record when one exists." },
+  "events": ["open", "create"],
+  "ruleHooks": ["visible"],
+  "tokens": ["surface.raised", "elevation.overlay", "radius.md", "space.4", "text.title-sm"],
+  "accessibility": {
+    "role": "button",
+    "keyboard": "Enter or Space opens the dialog; focus moves to the first field; Ctrl/Cmd+Enter creates; Esc cancels and returns focus.",
+    "notes": "The dialog is role=dialog labelled by label, with a focus trap."
+  },
+  "responsive": "Opens as a centered dialog on desktop and a full-screen sheet below 720px.",
+  "examples": [
+    {
+      "description": "New child ticket",
+      "spec": {
+        "id": "core.tickets.record.qc_child",
+        "type": "action.quick_create",
+        "props": { "entity": "core.tickets.ticket", "label": "New child ticket", "fields": ["title", "category", "priority", "assignment_group"] },
+        "children": []
+      }
+    }
+  ]
+}

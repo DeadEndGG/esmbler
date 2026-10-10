@@ -1,0 +1,44 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.group",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Group",
+  "description": "A reference to one group of the tenant, used for assignment groups and work queues such as \"Service desk\" or \"Network\". The value is the group's ID. Assignment rules set group fields by group key, resolved per tenant.",
+  "usage": [
+    "Use for queues and teams that own work (assignment_group).",
+    "Combine with a user field (assignee) that is filtered to members of the selected group.",
+    "Add the field to the entity's accessFields to let group members see records assigned to their group."
+  ],
+  "constraints": [
+    "Value must be the ID of a group in the current tenant.",
+    "Archived groups stay displayed on existing records but cannot be newly selected.",
+    "No type-specific constraint props."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "uuid", "description": "Group ID of a tenant group." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Typing searches groups by name; Up/Down move; Enter selects; Esc closes.",
+    "notes": "Options announce the group name and member count."
+  },
+  "responsive": "Full width of its grid cell.",
+  "examples": [
+    {
+      "description": "Ticket assignment group",
+      "spec": { "key": "assignment_group", "type": "group", "label": "Assignment group" }
+    }
+  ]
+}

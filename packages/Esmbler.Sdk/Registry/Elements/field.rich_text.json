@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.rich_text",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Rich text",
+  "description": "Formatted text — paragraphs, bold, italics, lists, links, inline code, and quotes — stored as sanitized HTML. Use for ticket descriptions and knowledge-style content where structure helps the reader. The server sanitizes every write to an allow-list of tags, so stored values are always safe to render.",
+  "usage": [
+    "Use for the main description of a record, where people paste structured content.",
+    "Use long_text instead for notes that never need formatting; it is easier to search and export.",
+    "Keep the default maxLength unless content is known to be short."
+  ],
+  "constraints": [
+    "Allowed tags: p, br, strong, em, u, s, code, pre, blockquote, ul, ol, li, h3, h4, a. Links allow only http, https, and mailto and get rel=\"noopener noreferrer\".",
+    "Scripts, styles, iframes, objects, embeds, forms, inline style attributes, and on* event handlers are removed (not escaped).",
+    "Sanitization runs on the server on every write path (UI, API, imports, automations, AI); the client editor is never trusted.",
+    "maxLength counts characters of the sanitized HTML and must be between 1 and 50000 (default 20000)."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxLength": { "type": "integer", "minimum": 1, "maximum": 50000, "default": 20000 },
+      "default": { "type": ["string", "null"], "description": "Sanitized HTML." }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "maxLength": 50000, "contentMediaType": "text/html", "description": "Sanitized HTML (allow-listed tags only)." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Ctrl/Cmd+B bold, Ctrl/Cmd+I italic, Ctrl/Cmd+K link, Ctrl/Cmd+Shift+7/8 numbered/bulleted list. Alt+F10 moves to the toolbar; Esc returns to the text.",
+    "notes": "aria-multiline=true; the formatting toolbar is a role=toolbar with arrow-key navigation and pressed states."
+  },
+  "responsive": "Full width; the toolbar collapses to a single overflow button below 720px.",
+  "examples": [
+    {
+      "description": "Ticket description",
+      "spec": { "key": "description", "type": "rich_text", "label": "Description", "required": true, "maxLength": 20000 }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.priority",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Priority",
+  "description": "How urgent a record is, chosen from an ordered choice list (P1 critical to P4 low) and rendered as a tone badge. Priority drives sorting, views, and notifications. Use single_select for unordered classifications.",
+  "usage": [
+    "Order options from most to least urgent; list order is the sort order.",
+    "Give each option a tone (accent.red for P1, accent.amber for P2, accent.blue for P3, accent.gray for P4).",
+    "Set a sensible default (usually P3) so new records are never unprioritized."
+  ],
+  "constraints": [
+    "choiceList is required; option order defines sort order.",
+    "default, when set, must be an option ID of that list.",
+    "The stored value is the option ID; badges always show the label text as well as the tone."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["choiceList"],
+    "properties": {
+      "choiceList": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$", "description": "Choice list ID, e.g. core.tickets.category." },
+      "default": { "type": ["string", "null"], "description": "Option ID." }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "description": "Stable option ID from the priority choice list." },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "options", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2", "accent.red", "accent.amber", "accent.blue", "accent.gray"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Alt+Down or Enter opens the list; typing filters; Up/Down move; Enter selects; Esc closes and keeps the previous value.",
+    "notes": "Each option announces its label and position (\"P1 Critical, 1 of 4\"); tone is never the only cue."
+  },
+  "responsive": "Badge in read mode; full-width select when editing.",
+  "examples": [
+    {
+      "description": "Ticket priority defaulting to P3",
+      "spec": { "key": "priority", "type": "priority", "label": "Priority", "choiceList": "core.tickets.priority", "default": "p3", "required": true }
+    }
+  ]
+}

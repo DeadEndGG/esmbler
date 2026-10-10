@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.email",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Email",
+  "description": "An email address, such as a contact or a distribution list. The server validates the format, trims whitespace, and lowercases the domain. Use a user field instead when the person is a member of the tenant.",
+  "usage": [
+    "Use for external contacts who are not tenant members.",
+    "Use a user field for agents and requesters with accounts.",
+    "Mark unique only when the address really identifies the record (e.g. a vendor's billing contact)."
+  ],
+  "constraints": [
+    "maxLength must be between 3 and 254 (default 254).",
+    "Values must be a valid addr-spec (local@domain); the domain is lowercased on write and the local part is kept as typed.",
+    "Values are trimmed; an empty string is stored as null."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxLength": { "type": "integer", "minimum": 3, "maximum": 254, "default": 254 },
+      "unique": { "type": "boolean", "description": "Unique (case-insensitive) among records of the entity in this tenant environment." },
+      "default": { "type": ["string", "null"], "format": "email" }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "email", "maxLength": 254 },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Standard text input (type=email). Esc reverts an inline edit; Enter commits.",
+    "notes": "autocomplete=email; in read mode the value is a mailto link named by the address."
+  },
+  "responsive": "Full width of its grid cell.",
+  "examples": [
+    {
+      "description": "Ticket contact email",
+      "spec": { "key": "contact_email", "type": "email", "label": "Contact email", "help": "Where updates go if the requester is not a tenant member." }
+    }
+  ]
+}

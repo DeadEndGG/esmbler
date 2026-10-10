@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.integer",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Integer",
+  "description": "A whole number such as a count, a quantity, or a number of affected users. Use decimal for amounts with fractions and short_text for identifiers that merely look numeric (phone numbers, serials).",
+  "usage": [
+    "Set min (often 0) and max to the real-world range.",
+    "Use for values people sort, compare, or sum.",
+    "Make platform-maintained counters (e.g. reopen_count) read-only and update them from workflow transition set expressions."
+  ],
+  "constraints": [
+    "Values must be whole numbers within ±9007199254740991 (JSON-safe).",
+    "min must be less than or equal to max; default must lie within them.",
+    "Decimal input is rejected, not rounded."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "min": { "type": "integer" },
+      "max": { "type": "integer" },
+      "default": { "type": ["integer", "null"] }
+    }
+  },
+  "valueSchema": { "type": ["integer", "null"] },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "spinbutton",
+    "keyboard": "Up/Down arrows step by 1; PageUp/PageDown step by 10; non-digit characters are rejected.",
+    "notes": "aria-valuemin/aria-valuemax reflect min/max. Numbers display with the viewer's locale grouping."
+  },
+  "responsive": "Compact width (about 12 characters) on desktop; full width below 720px.",
+  "examples": [
+    {
+      "description": "Read-only reopen counter maintained by the workflow",
+      "spec": { "key": "reopen_count", "type": "integer", "label": "Reopen count", "min": 0, "default": 0, "readOnly": true }
+    }
+  ]
+}

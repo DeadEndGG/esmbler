@@ -1,0 +1,89 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "action.action_menu",
+  "version": "1.0.0",
+  "category": "action",
+  "gate": 1,
+  "label": "Action menu",
+  "description": "A button that opens a menu of secondary actions — transitions, save, or quick-create forms — such as a \"More\" menu with Cancel ticket and New child ticket. Items the viewer may not perform in the current state are removed; if none remain the menu is hidden.",
+  "usage": [
+    "Use for 2–8 secondary actions next to a primary button.",
+    "Order items by frequency; put danger items last.",
+    "Label the trigger \"More\" or with a noun group (\"Create\")."
+  ],
+  "constraints": [
+    "transition:<id> must name a transition of the entity's workflow; it is hidden when not valid from the current state or the viewer may not fire it.",
+    "save submits pending edits; validation and data rules run on the server.",
+    "quick_create:<id> must name a form view (ViewSpec kind form); it is hidden when the viewer may not create that view's entity.",
+    "items: 1–12; danger items require confirm. label is at most 40 characters."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["label", "items"],
+    "properties": {
+      "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "action"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "action": {
+              "type": "string",
+              "pattern": "^(transition:[a-z0-9_.]+|save|quick_create:[a-z0-9_.]+)$",
+              "description": "transition:<transition id>, save, or quick_create:<form view id>."
+            },
+            "tone": { "enum": ["primary", "neutral", "danger"], "default": "neutral" },
+            "confirm": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["title", "text"],
+              "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 80 }, "text": { "type": "string", "minLength": 1, "maxLength": 300 } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allowedParents": ["layout.card", "layout.column", "layout.tab"],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": { "kind": "record", "description": "Each item acts on the page's record; items are filtered by state and permissions." },
+  "events": ["open", "select"],
+  "ruleHooks": ["visible"],
+  "tokens": ["surface.raised", "elevation.overlay", "radius.md", "space.2", "text.body-sm", "state.hover", "state.focus", "accent.red"],
+  "accessibility": {
+    "role": "button",
+    "keyboard": "Enter, Space, or Down opens the menu; Up/Down move; Enter activates; Esc closes and returns focus to the trigger.",
+    "notes": "The trigger has aria-haspopup=menu and aria-expanded; the list is role=menu with menuitem children."
+  },
+  "responsive": "Below 720px the menu opens as a bottom sheet.",
+  "examples": [
+    {
+      "description": "More menu with cancel and quick create",
+      "spec": {
+        "id": "core.tickets.record.menu_more",
+        "type": "action.action_menu",
+        "props": {
+          "label": "More",
+          "items": [
+            { "label": "New child ticket", "action": "quick_create:core.tickets.quick_create" },
+            {
+              "label": "Cancel ticket",
+              "action": "transition:cancel",
+              "tone": "danger",
+              "confirm": { "title": "Cancel this ticket?", "text": "The requester is notified and the ticket can no longer be worked." }
+            }
+          ]
+        },
+        "children": []
+      }
+    }
+  ]
+}

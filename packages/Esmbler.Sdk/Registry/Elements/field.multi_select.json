@@ -1,0 +1,50 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.multi_select",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Multi select",
+  "description": "Several options chosen from one choice list, such as labels, affected services, or skills. The record stores an array of unique option IDs. Use single_select when exactly one option applies.",
+  "usage": [
+    "Use for tags and classifications where several apply at once.",
+    "Set maxItems to keep values meaningful (5–10 for labels).",
+    "Do not use a multi select to drive assignment or workflow; use a single_select for that."
+  ],
+  "constraints": [
+    "choiceList is required and must reference an existing choice list.",
+    "maxItems must be between 1 and 50 (default 50).",
+    "Values are unique option IDs; duplicates are removed on write and order is preserved.",
+    "An empty selection is stored as an empty array, never null."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["choiceList"],
+    "properties": {
+      "choiceList": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$", "description": "Choice list ID, e.g. core.tickets.category." },
+      "maxItems": { "type": "integer", "minimum": 1, "maximum": 50, "default": 50 },
+      "default": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+    }
+  },
+  "valueSchema": { "type": "array", "items": { "type": "string", "description": "Option ID." }, "uniqueItems": true, "maxItems": 50 },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "options", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "combobox",
+    "keyboard": "Alt+Down opens the list; Space toggles the focused option; Backspace in the empty input removes the last chip; Esc closes.",
+    "notes": "Uses aria-multiselectable on the listbox; selected options are chips with a remove button named \"Remove <label>\"."
+  },
+  "responsive": "Chips wrap within the cell; the list opens as a bottom sheet below 720px.",
+  "examples": [
+    {
+      "description": "Ticket labels, up to 10",
+      "spec": { "key": "labels", "type": "multi_select", "label": "Labels", "choiceList": "core.tickets.labels", "maxItems": 10 }
+    }
+  ]
+}

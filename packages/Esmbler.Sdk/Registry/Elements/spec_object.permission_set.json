@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.permission_set",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Permission set",
+  "description": "Grants roles access: per entity (create, read and update scopes none/related/all, delete, optional ABAC update condition), per field (hidden, read, write), and platform actions (config.edit, audit.read, records.export, ...). Access is denied by default and grants from several sets combine.",
+  "usage": [
+    "Create one permission set per role and keep it readable: entity grants first, then field exceptions.",
+    "Use read: related for requesters so they only see records they are named on.",
+    "Grant audit.read and records.export only to roles that need them."
+  ],
+  "constraints": [
+    "read and update are none, related, or all; related uses the entity's accessFields.",
+    "Field access is hidden, read, or write; field \"*\" covers all fields and a specific field entry overrides it within the set.",
+    "Across sets grants combine as a union (most permissive wins); hidden fields are never sent to the client.",
+    "actions must be platform actions; updateCondition is a CEL-subset expression over record and user."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/permission_set.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Agents can read and update all tickets",
+      "spec": {
+        "id": "core.tickets.agents",
+        "label": "Ticket agents",
+        "roles": ["core.tickets.agent"],
+        "entities": [{ "entity": "core.tickets.ticket", "create": true, "read": "all", "update": "all", "delete": false }],
+        "fields": [
+          { "entity": "core.tickets.ticket", "field": "*", "access": "write" },
+          { "entity": "core.tickets.ticket", "field": "number", "access": "read" },
+          { "entity": "core.tickets.ticket", "field": "reopen_count", "access": "read" }
+        ],
+        "actions": ["audit.read", "records.export"]
+      }
+    }
+  ]
+}

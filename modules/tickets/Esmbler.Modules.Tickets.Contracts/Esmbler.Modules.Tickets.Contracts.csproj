@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Public contracts of the Tickets module (stable IDs, event names). The only Tickets project other modules may reference. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\packages\Esmbler.Sdk\Esmbler.Sdk.csproj" />
+  </ItemGroup>
+</Project>

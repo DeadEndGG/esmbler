@@ -1,0 +1,129 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "layout.card",
+  "version": "1.0.0",
+  "category": "layout",
+  "gate": 1,
+  "label": "Card",
+  "description": "A titled container that groups related fields and widgets on a page, like a block in a document. Use a card for each coherent topic of a record (Details, Assignment, Resolution). Cards live inside columns or tabs and lay their fields out in a one- or two-column grid.",
+  "usage": [
+    "Group 2–10 related fields; split larger groups into several cards.",
+    "Give every card a short noun-phrase title (\"Assignment\", not \"Assignment information section\").",
+    "Place a new card next to related cards using an anchor (after the card it follows) rather than at the end of the page.",
+    "Use columns: 2 only in wide columns (span 6 or more)."
+  ],
+  "constraints": [
+    "Parent must be layout.column or layout.tab.",
+    "Children must be field placements, display elements, action.button, action.action_menu, or collection.related_list.",
+    "title is required and at most 60 characters."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60,
+        "description": "Card heading."
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "Optional one-line helper text under the title."
+      },
+      "columns": {
+        "enum": [
+          1,
+          2
+        ],
+        "default": 1,
+        "description": "Field grid columns inside the card."
+      },
+      "collapsible": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  },
+  "allowedParents": [
+    "layout.column",
+    "layout.tab"
+  ],
+  "allowedChildren": [
+    "field",
+    "display.*",
+    "action.button",
+    "action.action_menu",
+    "collection.related_list",
+    "activity.*",
+    "action.transition_buttons"
+  ],
+  "maxChildren": 30,
+  "binding": {
+    "kind": "record",
+    "description": "Children bind to fields of the page's record."
+  },
+  "events": [
+    "toggle"
+  ],
+  "ruleHooks": [
+    "visible"
+  ],
+  "tokens": [
+    "surface.raised",
+    "border.subtle",
+    "radius.md",
+    "space.4",
+    "text.title-sm"
+  ],
+  "accessibility": {
+    "role": "region",
+    "keyboard": "Collapsible cards toggle with Enter or Space on the heading button.",
+    "notes": "The title is the region's accessible name (aria-labelledby). Heading level follows the page outline."
+  },
+  "responsive": "Fills its column. A two-column field grid collapses to one column below 720px.",
+  "examples": [
+    {
+      "description": "Assignment card with three fields in a two-column grid",
+      "spec": {
+        "id": "core.tickets.record.card_assignment",
+        "type": "layout.card",
+        "props": {
+          "title": "Assignment",
+          "columns": 2
+        },
+        "children": [
+          {
+            "id": "core.tickets.record.f_assignment_group",
+            "type": "field",
+            "props": {
+              "field": "assignment_group"
+            },
+            "children": []
+          },
+          {
+            "id": "core.tickets.record.f_assignee",
+            "type": "field",
+            "props": {
+              "field": "assignee"
+            },
+            "children": []
+          },
+          {
+            "id": "core.tickets.record.f_priority",
+            "type": "field",
+            "props": {
+              "field": "priority"
+            },
+            "children": []
+          }
+        ]
+      }
+    }
+  ]
+}

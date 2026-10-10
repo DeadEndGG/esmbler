@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.date_time",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Date and time",
+  "description": "An exact instant in time, stored in UTC and displayed in the viewer's own time zone, such as when a ticket was resolved or an outage started. Use date for calendar dates that should not shift between time zones.",
+  "usage": [
+    "Use for event timestamps (resolved_at, outage_started_at).",
+    "Set platform-maintained timestamps from workflow transitions (set: { resolved_at: \"now()\" }) and make them read-only.",
+    "In lists, show relative times only alongside the absolute time."
+  ],
+  "constraints": [
+    "Values are RFC 3339 UTC instants ending in Z with second precision (e.g. 2026-10-10T14:30:00Z); other offsets are converted to UTC on write.",
+    "Displayed in the viewer's time zone with its abbreviation; relative times (\"2 h ago\") always carry the absolute time in a tooltip."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "default": { "type": ["string", "null"], "format": "date-time" }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "date-time" },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Type a date and time in the locale format, or Alt+Down opens the picker (calendar grid plus time input); Enter selects, Esc closes.",
+    "notes": "The viewer's time zone is stated next to the input and in the accessible description."
+  },
+  "responsive": "Date and time inputs sit side by side on desktop and stack below 720px.",
+  "examples": [
+    {
+      "description": "Resolution timestamp set by the Resolve transition",
+      "spec": { "key": "resolved_at", "type": "date_time", "label": "Resolved at", "readOnly": true }
+    }
+  ]
+}

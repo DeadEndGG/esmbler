@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "field.date",
+  "version": "1.0.0",
+  "category": "field_type",
+  "gate": 1,
+  "label": "Date",
+  "description": "A calendar date without a time of day or time zone, such as a due date, a contract end date, or a birthday. Everyone sees the same date regardless of where they are. Use date_time for moments in time (when something happened).",
+  "usage": [
+    "Use for deadlines and calendar facts that are the same day everywhere.",
+    "Use date_time for event timestamps like resolved_at.",
+    "Add a validation rule to compare dates (e.g. contract end after start)."
+  ],
+  "constraints": [
+    "Values are YYYY-MM-DD local calendar dates; no time or offset is stored or applied.",
+    "Input in the viewer's locale format is parsed to YYYY-MM-DD on the client and validated again on the server."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "default": { "type": ["string", "null"], "format": "date" }
+    }
+  },
+  "valueSchema": { "type": ["string", "null"], "format": "date" },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "field", "description": "Rendered by a field placement node bound to a field of this type." },
+  "events": ["change", "blur"],
+  "ruleHooks": ["required", "visible", "read_only", "value", "message"],
+  "tokens": ["text.body", "border.input", "radius.sm", "space.2"],
+  "accessibility": {
+    "role": "textbox",
+    "keyboard": "Type a date in the locale format, or Alt+Down opens the calendar: arrows move by day, PageUp/PageDown by month, Enter selects, Esc closes.",
+    "notes": "The calendar is a dialog containing a role=grid; the selected day uses aria-selected and today is marked with aria-current=date."
+  },
+  "responsive": "Compact width on desktop; the calendar opens as a bottom sheet below 720px.",
+  "examples": [
+    {
+      "description": "Warranty expiry date on an asset",
+      "spec": { "key": "tenant__warranty_expires", "type": "date", "label": "Warranty expires" }
+    }
+  ]
+}

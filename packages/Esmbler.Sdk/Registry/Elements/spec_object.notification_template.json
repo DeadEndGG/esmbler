@@ -1,0 +1,45 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.notification_template",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Notification template",
+  "description": "An email/in-app notification sent when a record event happens (record.created, record.transitioned, ...) to recipients named by user fields of the entity or the watchers. Subject and body are plain text with {{record.<field>}} placeholders, rendered per recipient with that recipient's permissions.",
+  "usage": [
+    "Notify requesters on transitions they care about (resolved, waiting for them), not on every change.",
+    "Start the subject with the record number so threads group well.",
+    "Write bodies in plain language and say what the recipient can do next."
+  ],
+  "constraints": [
+    "Recipients are user field keys of the entity or the literal \"watchers\".",
+    "Subject and body are plain text; HTML is escaped, never rendered. Placeholders must reference fields of the entity.",
+    "Placeholders render with the recipient's field permissions; fields they cannot read render empty.",
+    "Internal work notes are never included in notifications to requesters or portal users."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/notification_template.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Tell the requester when their ticket changes state",
+      "spec": {
+        "id": "core.tickets.requester_transitioned",
+        "event": "record.transitioned",
+        "entity": "core.tickets.ticket",
+        "recipients": ["requester"],
+        "subject": "{{record.number}} is now {{record.status}}",
+        "body": "Hi,\n\nYour ticket \"{{record.title}}\" ({{record.number}}) is now {{record.status}}.\n\nReply to this email to add a comment.",
+        "enabled": true
+      }
+    }
+  ]
+}

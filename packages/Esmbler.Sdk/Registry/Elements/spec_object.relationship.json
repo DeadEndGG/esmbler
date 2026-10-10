@@ -1,0 +1,46 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.relationship",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 1,
+  "label": "Relationship",
+  "description": "Describes a lookup between two entities in both directions: the many-to-one side stored in a lookup field (a ticket's parent) and the one-to-many inverse shown in related lists (a ticket's child tickets). It also states what happens to referencing records when a target is deleted.",
+  "usage": [
+    "Create one relationship for every lookup field.",
+    "Write label for the lookup side (\"Parent ticket\") and inverseLabel for the list side (\"Child tickets\").",
+    "Use onTargetDelete: clear for optional links and restrict when children must keep their reference."
+  ],
+  "constraints": [
+    "field must be a lookup field on entity whose target equals target; each lookup field has exactly one relationship.",
+    "kind is lookup in Gate 1; onTargetDelete is restrict (block deleting targets with children) or clear (null the lookup).",
+    "Self-relationships may not form cycles; a write that makes a record its own ancestor is rejected.",
+    "Relationships never grant access: each side is filtered by the viewer's own permissions."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/relationship.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": { "kind": "none", "description": "Configuration object in a layer's spec catalog; not a layout node." },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly."
+  },
+  "examples": [
+    {
+      "description": "Parent ticket and its child tickets",
+      "spec": {
+        "id": "core.tickets.ticket_parent",
+        "kind": "lookup",
+        "entity": "core.tickets.ticket",
+        "field": "parent",
+        "target": "core.tickets.ticket",
+        "label": "Parent ticket",
+        "inverseLabel": "Child tickets",
+        "onTargetDelete": "clear"
+      }
+    }
+  ]
+}
