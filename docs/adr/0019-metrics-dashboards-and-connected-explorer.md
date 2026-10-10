@@ -1,0 +1,150 @@
+---
+title: "ADR 0019: Metrics, dashboards and the connected explorer"
+status: accepted
+owner: platform-architecture
+last_reviewed: 2026-10-10
+requirements: [REQ-OPS-004, REQ-WS-002, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-BIZ-005]
+---
+
+# ADR 0019: Metrics, dashboards and the connected explorer
+
+## Context and problem statement
+
+The master spec asks for basic reports over standard and custom fields (REQ-OPS-004). The product owner's review ([connected workspace](../spec/connected-workspace.md)) adds more: named metric definitions shared by dashboards and the explorer (REQ-WS-004), figures that open the explorer on exactly their records and an explorer that keeps its place (REQ-WS-003), surfaces generated from one module definition (REQ-WS-002), and a customization request that is one reviewable change (REQ-WS-005). The Tickets dashboard needs open, unassigned, SLA breaches, workload by team and a resolution trend.
+
+The hard part is trust. A dashboard that says "12 unassigned" must list exactly 12 tickets when clicked, for every viewer, and must never reveal records or field values the viewer cannot read.
+
+How are metrics defined, where are they computed, how does a figure become an explorer query, and how do we keep aggregates from leaking data?
+
+## Decision drivers
+
+- A figure and the list it opens agree for the same viewer, by construction rather than by testing two code paths against each other.
+- Aggregates obey record and field permissions; role gating can hide a figure but never widen what someone reads.
+- Metrics are configuration: drafted, validated, published, upgraded and edited by the AI builder like everything else.
+- One slow figure does not break a dashboard or hold database resources for long.
+- Pilot scale (around 100,000 tickets per tenant) with no new infrastructure.
+- Tenant isolation through RLS, as everywhere else.
+
+## Considered options
+
+1. **Metrics as spec objects evaluated live through the explorer's own query compiler; every figure carries its drill query.**
+2. A separate aggregate store or materialized views refreshed in the background.
+3. Client-side aggregation over list API pages.
+4. An OLAP engine or analytics database (columnar store, cube).
+
+## Decision outcome
+
+**Chosen option 1.**
+
+### Model
+
+- `MetricSpec` (`packages/Esmbler.Sdk/Specs/Metrics.cs`): an entity, a `filter` in the list filter language (over `record` and `user`), a `measure` (`count`, `sum`, `avg`, `min`, `max` of a number field, or `duration`: the average time between two date-time fields in minutes, hours or days), an optional `groupBy` (a choice, status, priority, user, group or toggle field, or a date field in `day`, `week` or `month` buckets; `limit` 1–25, default 12; `includeEmpty`), an optional rolling `dateRange` (the last N days, weeks or months on a date field, aligned to a business calendar's time zone, a fixed time zone, or the viewer's), an optional `sla` condition (`policy[/target]`, state `breached`), `roles` and a display `format`.
+- `ViewKinds.Dashboard`: a dashboard is a view whose layout holds only `layout.*` and `display.*` nodes.
+- Elements: `display.kpi_tile` (one ungrouped metric), `display.bar_chart` and `display.metric_table` (grouped metrics), and `spec_object.metric` for the builder. `collection.data_table` 1.1.0 adds `groupBy` and `groupOptions`; `collection.saved_views` 1.1.0 lets an item reference a metric instead of repeating its filter.
+- Overlay operations: `metric.add`, `metric.update` (module or tenant metrics, with expected-value conflict detection) and `metric.remove` (tenant metrics only, refused while a tile or saved view uses one). The SDK now has 37 operations. Changing a metric's `roles` counts as a permission change: it needs `permissions.admin` and agents cannot make it, even though roles never widen record access.
+
+### Validation
+
+`ConfigValidator.ValidateMetric` checks the entity, the measure and its field types, groupable types, date ranges (1–366 units, at most 52 buckets), calendars, time zones, SLA policies and targets, roles and format. A metric filter must compile and must use only what the SQL compiler supports (`Kernel/Records/QueryFilterSupport`), so a published metric never fails at run time. Tiles must match their metric (a KPI tile needs an ungrouped metric, a chart or table a grouped one). A metric that reads a field some permission set hides gets the warning `metric.restricted_field`: people with that permission set see the figure as restricted. `DependencyGraph` adds metric edges (entity, filter fields, measured, grouped and dated fields, calendar, SLA policy, roles, and the tiles and saved views that bind each metric), so removing a field a metric uses is reported. `ConfigDiff` now also covers metrics, SLA policies, calendars, catalog items, approval policies and event types.
+
+### One query compiler for figures and lists
+
+`QueryCompiler.Where` builds the WHERE clause for lists and metrics alike: entity, not deleted, the viewer's permission predicate, filters, SLA conditions and search. `MetricService` wraps it in `count(*)` or the measure's aggregate. Because the same function produces both, a figure equals the explorer total of its drill query for the same viewer. Counts stop at `QueryCompiler.MaxCount` (10,000) for both, shown as "10,000+".
+
+SLA breaches are a query condition too (`RecordQuery.Sla`, written `policy[/target]:breached` in URLs). It compiles to `EXISTS` over `kernel.sla_timers` for a non-cancelled timer with a recorded breach, so a breach counts once recorded, even after the ticket stops its clock (ADR 0018).
+
+### Drill-down is the exact query
+
+Every result carries a `DrillQuery`: the entity, the filters and SLA conditions it counted, and a label. Each bar or table row carries its own drill (the metric's filters plus the group or bucket filter). Group filters compile to the same SQL value the `GROUP BY` uses, so a group's count equals its list. A rolling date window is resolved to absolute instants (or local dates for date fields) at evaluation time, so a drill opened later lists the same records instead of a window that has moved on.
+
+The server re-applies the viewer's permissions to every drill: the URL carries filters, never results or rights.
+
+### Restricted figures are removed, never widened
+
+A figure is restricted, and computed for nobody, when the viewer cannot read the entity, an agent lacks `records:read`, the viewer holds none of the metric's roles (the tenant administrator always passes), or the metric reads a field hidden from the viewer. `ExperienceService` removes restricted tiles and metric saved views from the view it sends, prunes `groupBy` and `groupOptions` on fields hidden from the viewer from data tables, and lists only dashboards with at least one visible figure in the bootstrap. Dashboard data leaves restricted figures out entirely; asking for one metric directly (`GET /api/metrics/{id}`) returns `status: restricted` with no values.
+
+### Evaluation limits
+
+`GET /api/dashboards/{view}/data` evaluates up to 12 metrics in one tenant transaction with `statement_timeout` 5 s. Each figure runs in its own savepoint, so a figure that times out returns `status: timeout` and the others still render. A dashboard request also has an overall budget of 8 s (`MetricService.RequestBudget`; each statement gets what is left, at most 5 s): figures not yet evaluated when it passes report `timeout`. `/api/dashboards`, `/api/metrics` and `/api/records/{entity}/groups` are rate limited per person (`Esmbler:MetricRequestsPerMinute`, 120 a minute by default), and a list or groups request takes at most 20 filters (`too_many_filters`). Date buckets come from `Kernel/Metrics/DateBuckets`: weeks start on Monday, windows include the current partial unit, and local midnights convert to UTC per bucket, so a daylight-saving change makes one day 23 or 25 hours long instead of shifting every later bucket.
+
+### Explorer state lives in the URL
+
+The list page keeps its state in the URL: `view`, `filter[]`, `sla[]`, `label` (the drill chip), `q`, `sort`, `dir`, `offset`, `group` and `f.<field>` filter-bar values. A drill is a link, can be shared, and the browser's back button works. `core/explorer-state.ts` remembers the last explorer URL and scroll position per entity for the session, so returning from a record lands on the same list and row. Group headers count through `GET /api/records/{entity}/groups` (the same WHERE clause, at most 50 groups). Column choices are kept in the browser (`localStorage` key `esm.columns.<tenant>.<env>.<user>.<view>`), keyed by workspace, environment, person and view.
+
+### One request is one change
+
+`DraftService.ApplyBatchAsync` applies several overlay operations as one change: validated together, all recorded or none, one draft version, and undone or redone together (migration `0011_draft_batches.sql` adds `kernel.draft_commands.batch_id`). Every MCP build tool applies its operations as one batch. `add_field` gains `required_when`, `list_column`, `list_filter` and `list_group`, so "add a Vendor field, required for hardware, and let me group by it" is one reviewable step set (REQ-WS-005). A new field is offered to metrics by type through `describe_metric_fields`, which lists only fields the caller can see; a metric that reads it is restricted for viewers the field is hidden from. Undoing or redoing a step, alone or with its batch, that changes permissions needs `permissions.admin`, like applying it. The builder panel shows a batch as one change.
+
+### Read paths
+
+- REST: `GET /api/dashboards/{view}/data?tz`, `GET /api/metrics/{id}?tz`, `GET /api/records/{entity}/groups?field&filter&sla&search`; the list `GET /api/records/{entity}` accepts `sla[]` and `group`.
+- MCP: `list_metrics`, `describe_metric_fields` (config:read); `add_metric`, `update_metric`, `remove_metric`, `add_dashboard_tile` (config:edit); `evaluate_metric` (records:read, output wrapped as untrusted data). See [ADR 0007](0007-mcp-server-design.md).
+- Web: `/dashboards/:view` (`pages/dashboard.page.ts`); home opens the first dashboard the person can see, otherwise their first list. `renderer/metrics.ts` renders KPI tiles, bar charts (each bar a keyboard-reachable link, with a table toggle) and metric tables.
+
+### Tickets 1.6.0
+
+Metrics `open`, `unassigned`, `sla_breached`, `avg_resolution`, `workload_by_team`, `resolved_trend` and `open_by_category` (the last four for agents and admins), the `core.tickets.dashboard` Overview, metric-backed saved views and table grouping options. See the [Tickets module](../architecture/modules/tickets.md#release-160-overview-dashboard).
+
+### Flow
+
+```mermaid
+sequenceDiagram
+    participant W as Web (dashboard)
+    participant A as API
+    participant M as MetricService
+    participant Q as QueryCompiler.Where
+    participant P as PostgreSQL (RLS)
+    W->>A: GET /api/dashboards/{view}/data?tz
+    A->>M: DashboardAsync(viewer)
+    M->>M: restricted? (roles, hidden fields, records:read)
+    M->>Q: metric filter + date window + SLA, viewer permissions
+    Q-->>M: WHERE clause
+    M->>P: SAVEPOINT; count / aggregate / groups (5 s)
+    P-->>M: values
+    M-->>W: value, groups, DrillQuery per figure
+    W->>A: GET /api/records/{entity}?filter[]&sla[] (the drill)
+    A->>Q: same WHERE clause for the same viewer
+    Q-->>W: total equals the figure
+```
+
+### Consequences
+
+- Good: a figure and its list agree by construction, and permissions apply to aggregates exactly as to lists.
+- Good: metrics are configuration the AI builder edits, upgrades preserve, and reviews show.
+- Good: no new infrastructure; figures are live.
+- Good: drill links are plain explorer URLs that can be shared and bookmarked.
+- Bad: every dashboard load runs up to 12 live queries; there is no cache yet, so a large tenant pays per view (an open dashboard refreshes every 60 s while its tab is visible).
+- Bad: rolling windows are evaluated at request time, so two viewers in different time zones can see different daily buckets for the same metric unless it names a calendar or time zone.
+- Bad: totals and figures stop at 10,000 ("10,000+"); explorer group headers stop at 50 groups, and metrics at 25; there is no "Other" bucket yet (G2-M9b).
+- Neutral: heavy analytics (history over years, cross-entity joins) belong to an analytics store (G4-M6), which can reuse the same metric specs.
+
+## Pros and cons of the options
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| 1. Spec metrics through the explorer's query compiler | Exact agreement with lists; permissions inside SQL; no new infrastructure; live | Live query cost per view; bounded by timeouts and limits |
+| 2. Aggregate store or materialized views | Cheap reads | Stale figures that disagree with the list; per-viewer permissions cannot be precomputed without one aggregate per permission shape; refresh jobs per tenant |
+| 3. Client-side aggregation | No server work | Needs every record on the client, capped by paging; hidden-field and scope rules duplicated in the browser |
+| 4. OLAP engine or analytics database | Fast large-scale analytics | Another datastore with its own tenancy and permission model; replication lag; out of scope for the pilot (G4-M6) |
+
+## Security notes
+
+- **Aggregate inference.** A count or average could reveal records a viewer cannot open. Figures count only records the viewer can read, because the permission predicate is inside the same WHERE clause the list uses, and RLS scopes tenant and environment.
+- **Hidden fields.** A metric whose filter, measure, grouping or date range reads a field hidden from the viewer is restricted for that viewer; no value is computed. Drill and list filters on hidden fields are refused (`invalid_filter`), and hidden fields cannot be group keys.
+- **Role gating never widens access.** `roles` only hides a figure from people outside those roles; inside them, the figure still counts only what each person can read. Changing `roles` is still a permission change (`permissions.admin`; agents refused), because it decides who sees a figure.
+- **Agents.** `evaluate_metric` needs `records:read`, which the default builder delegation does not have, and the agent sees only what its user can read; results are wrapped as untrusted data.
+- **Drill URLs are untrusted input.** Filters in a URL are compiled with the same limits as any list filter (64 nodes, 1,000 characters) and evaluated under the viewer's permissions; SLA conditions must name a policy of that entity.
+- **Hidden group keys.** Data-table `groupBy` and `groupOptions` on fields hidden from the viewer are pruned from the view the client receives.
+- **Cost.** At most 12 figures a dashboard, 25 groups a metric, 52 buckets, 50 explorer groups, 20 filters a list or groups request, a 5 s statement timeout per figure, an overall dashboard deadline of about 8 s, a per-person rate limit on the metric endpoints and a 10,000 count cap.
+- Threat model entry: [T-71](../security/threat-model.md#tenant-isolation).
+
+## More information
+
+- Related: [ADR 0002](0002-storage-and-query-model.md) (query model), [ADR 0003](0003-configuration-artifact-and-overlay-format.md) (overlay operations), [ADR 0007](0007-mcp-server-design.md) (MCP tools), [ADR 0018](0018-sla-and-business-hours.md) (SLA timers), [connected workspace](../spec/connected-workspace.md).
+- Assumptions: ASM-058 to ASM-068 in [assumptions](../decisions/assumptions.md).
+- Deferred to G2-M9b: guided workspace creation, labeled preview data on empty workspaces, a dashboard builder UI and new dashboard views (there is no `view.add` operation yet), an "Other" bucket, an at-risk SLA state and CSV export.
+- Verification:
+  - Unit: `Configuration.MetricSpecTests`, `Metrics.DateBucketsTests`.
+  - Integration: `Records.MetricTests` (`Every_figure_equals_the_explorer_total_it_drills_into_for_every_persona`, `Requesters_count_only_their_tickets_and_team_figures_are_restricted_for_them`, `Figures_and_group_counts_over_a_hidden_field_are_refused_and_left_out`, `Changing_who_sees_a_metric_or_undoing_a_permission_change_needs_permission_administration`, `Workload_groups_match_the_explorer_group_counts`, `Sla_breaches_count_recorded_breaches_and_drill_into_them`, `Figures_never_include_another_workspace`, `Averages_and_trends_cover_exactly_the_records_they_drill_into`), `Configuration.UpgradeTests.Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`, `Configuration.ConfigLifecycleTests.A_batch_is_one_change_applied_whole_and_undone_together`, `Mcp.McpServerTests.Agent_defines_a_metric_and_puts_it_on_the_dashboard`.
+  - Web unit: `core/drill.spec.ts`.
+  - Playwright: `dashboard.spec.ts`, dashboard audits in `a11y.spec.ts` (light and dark).

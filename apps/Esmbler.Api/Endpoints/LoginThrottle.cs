@@ -16,6 +16,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
 
     /// <summary>Refresh redeems a 256-bit random token, so it only needs flood protection, not guessing protection.</summary>
     public const string RefreshPolicy = "auth-refresh";
+
+    /// <summary>Per-person limit for dashboards, metrics and explorer group counts.</summary>
+    public const string QueryPolicy = "figures";
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -81,11 +84,18 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.OnRejected = async (context, ct) =>
             {
                 context.HttpContext.Response.ContentType = "application/problem+json";
-                await context.HttpContext.Response.WriteAsJsonAsync(new { status = 429, title = "Too many sign-in attempts from this address. Wait a minute and try again.", code = "rate_limited" }, ct);
+                var title = context.HttpContext.Request.Path.StartsWithSegments("/api/auth")
+                    ? "Too many sign-in attempts from this address. Wait a minute and try again."
+                    : "Too many requests for figures in a short time. Wait a minute and try again.";
+                await context.HttpContext.Response.WriteAsJsonAsync(new { status = 429, title, code = "rate_limited" }, ct);
             };
             o.AddPolicy(Policy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = options.Auth.LoginAttemptsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            // Figures and group counts aggregate many rows: limited per person (threat model, ADR 0019).
+            o.AddPolicy(QueryPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.MetricRequestsPerMinute, 1), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             o.AddPolicy(RefreshPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.Auth.LoginAttemptsPerMinute, 1) * 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

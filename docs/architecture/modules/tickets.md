@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-002, REQ-WS-004]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) and `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043).
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) and `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066).
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -350,6 +350,30 @@ The generated [events reference](../../reference/asyncapi.json) lists the payloa
 | Record pages | `core.tickets.record.sla`, `core.tickets.request_record.sla`, `core.tickets.task_record.sla` (`activity.sla`, titled Service levels) |
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/SlaPolicyTests.cs` (`Release_1_5_0_ships_a_calendar_and_service_levels_for_tickets_requests_and_tasks`), `tests/Esmbler.UnitTests/Sla/SlaEngineTests.cs`, `tests/Esmbler.IntegrationTests/Records/SlaTests.cs`, Playwright `sla.spec.ts`.
+
+## Release 1.6.0: overview dashboard
+
+1.6.0 adds reusable metrics and an Overview dashboard ([ADR 0019](../../adr/0019-metrics-dashboards-and-connected-explorer.md)). Every figure counts only the tickets the viewer can read and opens the ticket list on exactly those tickets. The release is additive with no data migrations; customizations and running SLA clocks are kept on upgrade.
+
+| Metric (`core.tickets.metric.*`) | Label | Definition | Who sees it |
+| --- | --- | --- | --- |
+| `open` | Open | Count of tickets not resolved, closed or cancelled | Everyone who reads tickets |
+| `unassigned` | Unassigned | Open tickets with no assignee | Everyone who reads tickets |
+| `sla_breached` | SLA breached | Open tickets with a recorded breach of `core.tickets.sla.ticket` (any target) | Everyone who reads tickets |
+| `avg_resolution` | Average resolution time | Average hours from `created_at` to `resolved_at`, tickets resolved in the last 30 days (service desk calendar days) | Agents and admins |
+| `workload_by_team` | Workload by team | Open tickets grouped by `assignment_group` (12 largest, including no team) | Agents and admins |
+| `resolved_trend` | Resolved per week | Tickets resolved in the last 8 weeks, in weekly buckets (weeks start Monday, ASM-058) | Agents and admins |
+| `open_by_category` | Open by category | Open tickets grouped by `category` | Agents and admins |
+
+| Element | IDs and detail |
+| --- | --- |
+| Dashboard view | `core.tickets.dashboard` (Overview, kind `dashboard`): KPI tiles for open, unassigned (warning tone), SLA breached (critical tone) and average resolution time; bar charts for workload by team (horizontal) and resolved per week (vertical); a metric table for open by category. It is the home page for people who can see it; requesters see only the first three tiles, counting their own tickets |
+| Saved views | All open (`core.tickets.metric.open`) and Unassigned (`core.tickets.metric.unassigned`) reference metrics, so they list exactly what the tiles count |
+| Ticket list | `collection.data_table` offers grouping by status, priority, category, assignment group and assignee (`groupOptions`) |
+
+**Upgrade note:** the Unassigned saved view now also leaves out resolved tickets. In 1.5.0 it left out only closed and cancelled tickets. This is intended: the view and the Unassigned tile count the same tickets (ASM-068).
+
+Evidence: `tests/Esmbler.UnitTests/Configuration/MetricSpecTests.cs` (`Release_1_6_0_ships_an_overview_dashboard_built_from_shared_metrics`), `tests/Esmbler.IntegrationTests/Records/MetricTests.cs`, `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs` (`Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`), Playwright `dashboard.spec.ts`.
 
 ## Related documents
 

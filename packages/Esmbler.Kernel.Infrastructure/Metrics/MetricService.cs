@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
@@ -55,6 +56,12 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 {
     public const int MaxMetricsPerDashboard = 12;
 
+    /// <summary>
+    /// Database time one request may use across all its figures. Each statement also stops after 5 s; figures that
+    /// do not fit in the budget report <c>timeout</c> instead of holding the connection (threat model, ADR 0019).
+    /// </summary>
+    public static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(8);
+
     public Task<DashboardData> DashboardAsync(RequestContext ctx, string viewId, string? timeZone, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
@@ -71,7 +78,8 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             var results = new List<MetricResult>();
             foreach (var id in ids)
             {
-                if (artifact.Config.FindMetric(id) is { } metric)
+                // Figures the viewer may not see are left out entirely (their tiles are pruned from the view too).
+                if (artifact.Config.FindMetric(id) is { } metric && artifact.Config.FindEntity(metric.Entity) is { } entity && !Restricted(artifact.Config, perms, entity, metric))
                 {
                     results.Add(await EvaluateAsync(session, artifact.Config, artifact.Revision, perms, metric, timeZone, ct));
                 }
@@ -161,6 +169,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             var where = QueryCompiler.Where(query, config, entity, perms, q);
             var aggregate = Aggregate(metric, q);
             long count;
+            await session.LimitAsync(ct);
             await using (var cmd = session.Command($"SELECT count(*) FROM (SELECT 1 FROM kernel.records r WHERE {where} LIMIT {QueryCompiler.MaxCount + 1}) c", q.Parameters))
             {
                 count = (long)(await cmd.ExecuteScalarAsync(ct))!;
@@ -169,6 +178,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             double? value = count;
             if (aggregate is not null)
             {
+                await session.LimitAsync(ct);
                 await using var cmd = session.Command($"SELECT {aggregate} FROM kernel.records r WHERE {where}", q.Parameters);
                 value = await cmd.ExecuteScalarAsync(ct) is { } v and not DBNull ? Convert.ToDouble(v, CultureInfo.InvariantCulture) : null;
             }
@@ -182,6 +192,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 var bwhere = QueryCompiler.Where(query, config, entity, perms, bq);
                 var bucketFilters = parts.Select(p => Between(entity, metric.GroupBy.Field, p.Start, p.End, zone)).ToList();
                 var columns = bucketFilters.Select(f => $"count(*) FILTER (WHERE {bq.Filter(f)})").ToList();
+                await session.LimitAsync(ct);
                 await using var cmd = session.Command($"SELECT {string.Join(", ", columns)} FROM kernel.records r WHERE {bwhere}", bq.Parameters);
                 await using var reader = await cmd.ExecuteReaderAsync(ct);
                 await reader.ReadAsync(ct);
@@ -199,6 +210,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 var groupAggregate = Aggregate(metric, gq);
                 var empty = group.IncludeEmpty ? string.Empty : $" AND {key} IS NOT NULL";
                 var rows = new List<(string? Key, long Count, double? Value)>();
+                await session.LimitAsync(ct);
                 await using (var cmd = session.Command($"SELECT {key} AS k, count(*) AS n{(groupAggregate is null ? string.Empty : ", " + groupAggregate)} FROM kernel.records r WHERE {gwhere}{empty} GROUP BY 1 ORDER BY n DESC, 1 LIMIT {group.Limit + 1}", gq.Parameters))
                 await using (var reader = await cmd.ExecuteReaderAsync(ct))
                 {
@@ -221,7 +233,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             await session.ReleaseAsync(ct);
             return new MetricResult(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, Math.Min(count, QueryCompiler.MaxCount), count > QueryCompiler.MaxCount, buckets, more, drill, now, revision);
         }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.QueryCanceled)
+        catch (Exception ex) when (ex is BudgetExceededException or PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
         {
             await session.RollbackAsync(ct);
             return Empty("timeout");
@@ -340,16 +352,31 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 
     private static async Task<Session> OpenAsync(KernelDbContext db, CancellationToken ct)
     {
-        var session = new Session(db, db.Database.GetDbConnection(), db.Database.CurrentTransaction!.GetDbTransaction());
+        var session = new Session(db, db.Database.GetDbConnection(), db.Database.CurrentTransaction!.GetDbTransaction(), Stopwatch.GetTimestamp() + (long)(RequestBudget.TotalSeconds * Stopwatch.Frequency));
         await using var cmd = session.Command("SET LOCAL statement_timeout = '5s'", []);
         await cmd.ExecuteNonQueryAsync(ct);
         return session;
     }
 
+    private sealed class BudgetExceededException : Exception;
+
     /// <summary>Raw SQL inside the tenant transaction; one savepoint per figure so a timeout fails only that figure.</summary>
-    private sealed class Session(KernelDbContext db, DbConnection conn, DbTransaction tx)
+    private sealed class Session(KernelDbContext db, DbConnection conn, DbTransaction tx, long deadline)
     {
         public KernelDbContext Db { get; } = db;
+
+        /// <summary>Gives the next statement what is left of the request budget (at most 5 s), or stops the figure.</summary>
+        public async Task LimitAsync(CancellationToken ct)
+        {
+            var remaining = (int)((deadline - Stopwatch.GetTimestamp()) * 1000 / Stopwatch.Frequency);
+            if (remaining < 100)
+            {
+                throw new BudgetExceededException();
+            }
+
+            await using var cmd = Command($"SET LOCAL statement_timeout = {Math.Min(remaining, 5000)}", []);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
 
         public DbCommand Command(string sql, IEnumerable<NpgsqlParameter> parameters)
         {

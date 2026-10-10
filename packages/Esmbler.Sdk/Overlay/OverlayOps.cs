@@ -706,6 +706,10 @@ public sealed class UpdateMetric : OverlayOp
 
     public override string Describe() => $"Change metric {Metric}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
 
+    /// <summary>Who sees a figure is an access decision (roles never widen record access, but they gate the figure).</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.Roles is not null;
+
     public override IEnumerable<string> Targets() => [Metric];
 }
 

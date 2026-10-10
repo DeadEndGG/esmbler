@@ -9,6 +9,8 @@ using Esmbler.Kernel.Infrastructure.Records;
 using Esmbler.Kernel.Infrastructure.Services;
 using Esmbler.Kernel.Infrastructure.Sla;
 using Esmbler.Kernel.Tenancy;
+using Esmbler.Sdk.Overlay;
+using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 
 namespace Esmbler.IntegrationTests.Records;
@@ -97,6 +99,53 @@ public class MetricTests(PlatformFixture f)
         Assert.DoesNotContain("core.tickets.metric.workload_by_team", shown);
         var app = await f.Get<ExperienceService>().AppAsync(dana, default);
         Assert.Contains(app.Dashboards!, d => d.View == Dashboard);
+    }
+
+    [Fact]
+    public async Task Figures_and_group_counts_over_a_hidden_field_are_refused_and_left_out()
+    {
+        // Threat model (ADR 0019): a figure never aggregates a field the viewer cannot see, and restricted figures
+        // are not even named in dashboard data.
+        var t = await TenantWithTicketsAsync("meth");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyBatchAsync(admin,
+        [
+            new SetFieldAccess { PermissionSet = "core.tickets.ps_agent", Entity = Ticket, Field = "impact", Access = "hidden" },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_by_impact", Label = "By impact", Entity = Ticket, GroupBy = new MetricGroupSpec { Field = "impact" } } },
+        ], draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+
+        var agent = f.As(t, "agent");
+        var byImpact = await Metrics.EvaluateAsync(agent, "tenant__metric_by_impact", null, default);
+        Assert.Equal(("restricted", (double?)null, 0), (byImpact.Status, byImpact.Value, byImpact.Buckets.Count));
+        Assert.Equal("ok", (await Metrics.EvaluateAsync(admin, "tenant__metric_by_impact", null, default)).Status);
+
+        var group = await Assert.ThrowsAsync<KernelException>(() => Metrics.GroupsAsync(agent, new RecordQuery { Entity = Ticket }, "impact", default));
+        Assert.Equal("invalid_group", group.Code);
+        await Assert.ThrowsAsync<KernelException>(() => Metrics.GroupsAsync(agent, new RecordQuery { Entity = Ticket, Filters = ["record.impact == 'high'"] }, "priority", default));
+
+        // Requesters' dashboard data leaves out the team figures entirely.
+        var data = await Metrics.DashboardAsync(f.As(t, "dana"), Dashboard, null, default);
+        Assert.DoesNotContain(data.Metrics, m => m.Id == "core.tickets.metric.workload_by_team" || m.Status == "restricted");
+    }
+
+    [Fact]
+    public async Task Changing_who_sees_a_metric_or_undoing_a_permission_change_needs_permission_administration()
+    {
+        var t = await TenantWithTicketsAsync("metp");
+        var drafts = f.Get<DraftService>();
+        var admin = f.As(t, "admin");
+        var builder = f.As(t, "builder");
+        var draft = await drafts.OpenAsync(admin, default);
+        var widen = await Assert.ThrowsAsync<KernelException>(() => drafts.ApplyAsync(builder, new UpdateMetric { Metric = "core.tickets.metric.workload_by_team", Set = new MetricPatch { Roles = [] } }, draft.Version, "ui", default));
+        Assert.Equal(403, widen.Status);
+
+        var hidden = await drafts.ApplyAsync(admin, new SetFieldAccess { PermissionSet = "core.tickets.ps_requester", Entity = Ticket, Field = "category", Access = "hidden" }, draft.Version, "ui", default);
+        var undo = await Assert.ThrowsAsync<KernelException>(() => drafts.SetUndoneAsync(builder, hidden.Seq, true, hidden.Version, default));
+        Assert.Equal(403, undo.Status);
+        Assert.True((await drafts.SetUndoneAsync(admin, hidden.Seq, true, hidden.Version, default)).Steps.Single().Undone);
     }
 
     [Fact]

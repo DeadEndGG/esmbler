@@ -119,6 +119,7 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0008_approval_requesters.sql` | `kernel.approvals.requesters`: the separation-of-duties snapshot ([ADR 0016](0016-approvals.md)) |
 | `0009_event_platform.sql` | `kernel.consumer_failures` (per-consumer delivery state, FORCE RLS) and `kernel.purge_outbox` ([ADR 0017](0017-event-audit-alert-notification-services.md)) |
 | `0010_sla.sql` | `kernel.sla_timers` (one row per record, SLA target and cycle with a snapshot of target, goal and calendar; FORCE RLS; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE`, never `DELETE`) ([ADR 0018](0018-sla-and-business-hours.md)) |
+| `0011_draft_batches.sql` | `kernel.draft_commands.batch_id`: steps applied by one request share a batch, applied whole and undone together (REQ-WS-005, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)) |
 
 ### Consequences
 

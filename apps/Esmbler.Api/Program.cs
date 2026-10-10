@@ -67,8 +67,9 @@ if (platformOptions.Auth.TrustForwardedHeaders)
     app.UseForwardedHeaders(forwarded);
 }
 
-app.UseRateLimiter();
 app.UseAuthentication();
+// After authentication, so per-person limits (figures, group counts) see who is calling.
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapOpenApi("/openapi/{documentName}.json");

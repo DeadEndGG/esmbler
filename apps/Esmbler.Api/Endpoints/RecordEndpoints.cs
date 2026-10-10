@@ -21,6 +21,13 @@ public sealed record ActivityRequest(string Kind, string Body);
 /// <summary>Record API (REQ-REC-*). Tenant and environment come from the token; IDs in the path never select a tenant.</summary>
 public static class RecordEndpoints
 {
+    /// <summary>Most filter expressions one list, group or figure request may carry (bounded work per request).</summary>
+    public const int MaxFilters = 20;
+
+    public static IReadOnlyList<string> LimitFilters(string[]? filters) =>
+        filters is null ? [] : filters.Length <= MaxFilters ? filters
+            : throw new KernelException("too_many_filters", $"A list can combine at most {MaxFilters} filters.", 400, "filter", "Combine conditions with && in fewer filters.");
+
     public static void MapRecords(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/records/{entity}").WithTags("Records").RequireAuthorization();
@@ -29,7 +36,7 @@ public static class RecordEndpoints
             records.QueryAsync(Ctx(user), new RecordQuery
             {
                 Entity = entity,
-                Filters = filter ?? [],
+                Filters = LimitFilters(filter),
                 Sla = [.. (sla ?? []).Take(5).Select(SlaFilter.Parse)],
                 Search = search,
                 Sort = sort is null ? null : new SortSpec(sort, dir is "desc"),

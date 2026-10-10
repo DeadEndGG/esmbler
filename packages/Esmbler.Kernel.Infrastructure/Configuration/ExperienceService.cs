@@ -274,6 +274,25 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 }
             }
 
+            if (child.Type == "collection.data_table")
+            {
+                // Grouping on fields the viewer cannot see is dropped (the server refuses it anyway).
+                var tableEntity = child.StringProp("entity") is { } te ? config.FindEntity(te) ?? nodeEntity : nodeEntity;
+                bool Visible(string? key) => key is not null && tableEntity.FindField(key) is { Hidden: false } && perms.FieldAccess(tableEntity, key) != FieldAccessLevels.Hidden;
+                if (child.StringProp("groupBy") is { } groupBy && !Visible(groupBy))
+                {
+                    child.Props.Remove("groupBy");
+                }
+
+                if (child.Props["groupOptions"] is JsonArray options)
+                {
+                    foreach (var option in options.ToList().Where(o => !Visible(o?.GetValue<string>())))
+                    {
+                        options.Remove(option);
+                    }
+                }
+            }
+
             var fieldEntity = child.Type == "collection.column" ? nodeEntity : entity;
             if (child.StringProp("field") is { } field && (fieldEntity.FindField(field) is not { Hidden: false } || perms.FieldAccess(fieldEntity, field) == FieldAccessLevels.Hidden))
             {

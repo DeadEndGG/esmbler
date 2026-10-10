@@ -152,9 +152,10 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
     public Task<CallToolResult> DescribeMetricFields(string entity) =>
         runner.RunAsync("describe_metric_fields", AgentScopes.ConfigRead, entity, async ctx =>
         {
-            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            var (config, perms, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
             var spec = config.FindEntity(entity) ?? throw KernelException.NotFound($"Entity '{entity}'");
-            var visible = spec.Fields.Where(f => !f.Hidden).ToList();
+            // Offered by type and by what the caller may see (REQ-WS-005); a metric over a hidden field is restricted anyway.
+            var visible = spec.Fields.Where(f => !f.Hidden && perms.FieldAccess(spec, f.Key) != FieldAccessLevels.Hidden).ToList();
             return new
             {
                 draftVersion,

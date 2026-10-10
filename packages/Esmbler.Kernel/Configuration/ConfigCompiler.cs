@@ -118,6 +118,11 @@ public sealed class ConfigCompiler(ConfigValidator validator)
 
         changes.AddRange(ApprovalChanges(before, after));
         changes.AddRange(TransitionAccessChanges(before, after));
+
+        // Who sees a figure (ADR 0019): metric roles gate it, though they never widen record access.
+        changes.AddRange(after.Metrics
+            .Where(m => before.FindMetric(m.Id) is { } old && !old.Roles.Order(StringComparer.Ordinal).SequenceEqual(m.Roles.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+            .Select(m => $"Changed who sees metric {m.Id}"));
         return new PermissionImpact { Changed = changes.Count > 0, Changes = changes };
     }
 

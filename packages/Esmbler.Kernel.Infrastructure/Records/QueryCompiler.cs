@@ -62,8 +62,8 @@ public sealed class QueryCompiler
     public const int MaxPageSize = 100;
     public const int MaxOffset = 10_000;
 
-    /// <summary>Totals and metric counts stop counting here ("100,000+"), the same for the explorer and dashboards.</summary>
-    public const int MaxCount = 100_000;
+    /// <summary>Totals and metric counts stop counting here ("10,000+"), the same for the explorer and dashboards (bounded work per request).</summary>
+    public const int MaxCount = 10_000;
     public const int MaxFilterNodes = 64;
     private static readonly ExpressionLimits Limits = new(MaxLength: 1000, MaxDepth: 16, MaxNodes: MaxFilterNodes);
 

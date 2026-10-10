@@ -174,7 +174,7 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
     public Task<DraftState> SetUndoneAsync(RequestContext ctx, int seq, bool undone, int expectedVersion, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            await RequireEditAsync(db, ctx, ct);
+            var (_, perms) = await RequireEditAsync(db, ctx, ct);
             var draft = await LockOpenDraftAsync(db, ct) ?? throw new KernelException("no_draft", "There is no open draft.", 409);
             await CheckVersionAsync(db, draft, expectedVersion, ct);
             var commands = await db.DraftCommands.AsTracking().Where(c => c.DraftId == draft.Id).OrderBy(c => c.Seq).ToListAsync(ct);
@@ -187,6 +187,14 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             // Steps applied as one change are undone and redone together (REQ-WS-005).
             var group = command.BatchId is { } batch ? commands.Where(c => c.BatchId == batch).ToList() : [command];
             var inGroup = group.Select(c => c.Seq).ToHashSet();
+
+            // Undoing or redoing a permission change is itself a permission change (REQ-AUTHZ-008).
+            if (!perms.Can(PlatformActions.PermissionsAdmin) && group.Any(c => SpecJson.Deserialize<OverlayOp>(c.Op).AffectsPermissions))
+            {
+                throw KernelException.Forbidden(
+                    ctx.AgentId is null ? "Undoing or redoing a change to who can see or edit things requires the permission administration right." : "AI agents cannot undo or redo permission changes. Ask an administrator.",
+                    suggestion: "Permission changes are a separate administrative action (REQ-AUTHZ-008).");
+            }
             var current = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             var activeAfter = commands.Where(c => inGroup.Contains(c.Seq) ? !undone : !c.Undone).ToList();
             var ops = current.Overlay.Concat(activeAfter.Select(c => SpecJson.Deserialize<OverlayOp>(c.Op))).ToList();

@@ -17,6 +17,9 @@ public sealed class PlatformOptions
     /// <summary>Provision the demo tenants (acme, globex) when the database is empty.</summary>
     public bool SeedDemoData { get; set; }
 
+    /// <summary>Dashboard, metric and group-count requests allowed per person per minute.</summary>
+    public int MetricRequestsPerMinute { get; set; } = 120;
+
     public sealed class DatabaseSettings
     {
         public string App { get; set; } = "";

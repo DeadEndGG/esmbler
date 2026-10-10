@@ -322,7 +322,7 @@ export class ListPage {
     });
     effect(() => {
       const id = this.spec()?.view.id;
-      untracked(() => this.hiddenColumns.set(id ? readColumns(id) : new Set()));
+      untracked(() => this.hiddenColumns.set(id ? readColumns(this.columnsKey(id)) : new Set()));
     });
     // Keep the explorer's place (URL and scroll) current for the way back from a record.
     effect(() => {
@@ -502,13 +502,19 @@ export class ListPage {
     else next.add(id);
     this.hiddenColumns.set(next);
     const view = this.spec()?.view.id;
-    if (view) writeColumns(view, next);
+    if (view) writeColumns(this.columnsKey(view), next);
   }
 
   protected resetColumns(): void {
     this.hiddenColumns.set(new Set());
     const view = this.spec()?.view.id;
-    if (view) writeColumns(view, new Set());
+    if (view) writeColumns(this.columnsKey(view), new Set());
+  }
+
+  /** Column choices belong to one person in one workspace and environment (a shared browser keeps them apart). */
+  private columnsKey(view: string): string {
+    const app = this.session.app();
+    return `esm.columns.${app?.tenant.id}.${app?.environment.id}.${app?.user.id}.${view}`;
   }
 
   private groupKey(r: RecordView): string {
@@ -647,12 +653,10 @@ function find(node: NodeSpec | null, type: string): NodeSpec | null {
   return null;
 }
 
-const COLUMNS_KEY = 'esm.columns.';
-
 /** Columns a person hid in a list view (a per-browser convenience; storage may be unavailable). */
-function readColumns(view: string): ReadonlySet<string> {
+function readColumns(key: string): ReadonlySet<string> {
   try {
-    const raw = localStorage.getItem(COLUMNS_KEY + view);
+    const raw = localStorage.getItem(key);
     const ids = raw ? JSON.parse(raw) : [];
     return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
   } catch {
@@ -660,10 +664,10 @@ function readColumns(view: string): ReadonlySet<string> {
   }
 }
 
-function writeColumns(view: string, hidden: ReadonlySet<string>): void {
+function writeColumns(key: string, hidden: ReadonlySet<string>): void {
   try {
-    if (hidden.size) localStorage.setItem(COLUMNS_KEY + view, JSON.stringify([...hidden]));
-    else localStorage.removeItem(COLUMNS_KEY + view);
+    if (hidden.size) localStorage.setItem(key, JSON.stringify([...hidden]));
+    else localStorage.removeItem(key);
   } catch {
     // Storage unavailable: the choice lasts until the page reloads.
   }

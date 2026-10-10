@@ -3,7 +3,7 @@ title: "ADR 0007: MCP server design"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008]
+requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008, REQ-WS-004, REQ-WS-005]
 ---
 
 # ADR 0007: MCP server design
@@ -56,11 +56,11 @@ No tool takes a tenant or environment argument. Each call resolves the `RequestC
 | | `get_customizations` | none | elements the workspace customized, with the default to compare | config:read |
 | | `sample_records` | `entity`, `limit ≤ 10` | records the user may read, wrapped as `untrusted_data` | records:read |
 | Build | `open_draft` | none | draft ID and version (opens or resumes the single draft) | config:edit |
-| | `add_field`, `update_field`, `hide_field`, `add_choice_option` | entity, field spec or patch, `expected_version` | steps (`step`, `summary`, `targets`), new version, diagnostics | config:edit |
+| | `add_field`, `update_field`, `hide_field`, `add_choice_option` | entity, field spec or patch, `expected_version`; `add_field` also takes `place_in_view_node?`, `view?`, `after?` and, since G2-M9, `required_when?`, `list_column?`, `list_filter?` (choice, user and group fields), `list_group?` | steps (`step`, `summary`, `targets`), new version, diagnostics | config:edit |
 | | `add_card`, `insert_node`, `update_node`, `move_node`, `remove_node` | view, parent/node, anchor, spec, `expected_version` | same | config:edit |
 | | `add_rule`, `set_rule_enabled`, `remove_rule` | rule spec or ID (actions include `emit_event` with `event` and `payload`, G2-M17), `expected_version` | same + plain-English restatement and scope | config:edit |
 | | `reset_to_default` | `element`, `expected_version` | same; appends `element.reset` ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)) | config:edit |
-| | `undo_step` | `step`, `expected_version` | new version | config:edit |
+| | `undo_step` | `step`, `expected_version` | new version; undoes the step's whole batch; refused for a step or batch with a permission-affecting op (`permissions.admin`, never delegated) | config:edit |
 | Review | `get_draft` | none | steps, version, status | config:read |
 | | `validate_draft` | none | errors/warnings with targets and suggestions | config:read |
 | | `simulate_rule` | entity, sample record values | which rules fire, required/hidden fields; no side effects | config:read |
@@ -110,7 +110,19 @@ SLA tools (G2-M4, [ADR 0018](0018-sla-and-business-hours.md)) edit calendars and
 | Build | `add_sla_policy` | `entity`, `label`, `targets` (each `label`, `stop`, `goals`, `start?`, `pause?`, `calendar?`, `onReopen?`, `warnAtPercent?`), `when?`, `description?`, `expected_version` | `sla_policy.add` (`tenant__` ID) | config:edit |
 | Build | `set_sla_goals` | `policy`, `target`, `goals` (each `minutes`, `when?`, `calendar?`), `calendar?`, `warn_at_percent?`, `expected_version` | `sla_policy.update` (targets) | config:edit |
 
-Most build tools append one draft command; composite tools (`add_field` with placement, `add_card` with fields) append one per op and report each step ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
+Metric and dashboard tools (G2-M9, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)). A metric's `options` object holds `measure`, `field`, `from`, `to`, `unit`, `groupBy`, `groupBucket`, `groupLimit`, `dateField`, `last`, `lastUnit`, `slaPolicy` and `slaTarget`.
+
+| Family | Tool | Input (summary) | Overlay op | Scope |
+| --- | --- | --- | --- | --- |
+| Discovery | `list_metrics` | none | none; metrics in the open draft (filter, measure, grouping, date range, SLA condition, roles, `customized`, `usedBy`) and dashboards with their tiles and containers | config:read |
+| | `describe_metric_fields` | `entity` | none; groupable, date and number fields the caller can see (fields hidden from the caller are left out), SLA policies and targets, buckets and measures | config:read |
+| | `evaluate_metric` | `metric` | none; the published metric's value, groups and drill filters for the current user, wrapped as `untrusted_data` | records:read |
+| Build | `add_metric` | `entity`, `label`, `filter?`, `options?`, `roles?`, `description?`, `expected_version` | `metric.add` (`tenant__` ID) | config:edit |
+| | `update_metric` | `metric`, `label?`, `filter?`, `options?`, `roles?`, `description?`, `expected_version` | `metric.update`; changing `roles` is a permission change, so the agent's call is refused | config:edit |
+| | `remove_metric` | `metric`, `expected_version` | `metric.remove` (tenant metrics only; refused while a tile or saved view uses it) | config:edit |
+| | `add_dashboard_tile` | `view`, `parent`, `metric`, `kind` (`kpi`, `bar`, `table`), `title?`, `tone?`, `orientation?`, `after?`, `expected_version` | `node.insert` of `display.kpi_tile`, `display.bar_chart` or `display.metric_table` | config:edit |
+
+Every build tool applies its operations as one batch through `DraftService.ApplyBatchAsync` (G2-M9, REQ-WS-005): all of them or none, one new draft version, and undoing any step undoes the whole batch. Composite tools (`add_field` with placement, a required-when rule and list settings, `add_card` with fields) report each step with a note that the steps are one change ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 
 Resources: `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph` (the workspace's modules, entities with the fields the user can see, relationships and views, as currently drafted). The graph resource runs through `ToolRunner` like a tool (scope `config:read`, budget, audit) and omits hidden fields.
 
@@ -175,4 +187,4 @@ Every call (including denied ones) writes `kernel.audit_log` as `mcp.<tool>`: ac
 ## More information
 
 - Revisit triggers: external MCP clients need OAuth 2.1 dynamic registration (Gate 3 partner beta); the SDK lags the MCP spec version we need.
-- Verification: `Mcp.McpServerTests` (`Server_lists_the_builder_tools_and_no_publish_tool`, `Agent_customizes_through_mcp_and_a_person_publishes`, `Api_tokens_are_rejected_by_the_mcp_server`, `Tool_calls_are_rate_limited_per_agent_session`, `Disabling_the_agent_stops_its_next_call`, `Explain_access_tool_says_why_a_field_is_hidden`, `Scopes_limit_the_agent_and_errors_are_structured`, `Embedded_instructions_in_records_cannot_widen_authority`, `No_tool_takes_tenant_environment_or_principal_arguments`, `Agent_adds_an_approval_policy_but_only_people_change_which_policy_an_item_uses`); `Configuration.ConfigLifecycleTests.Agents_request_publish_but_only_humans_publish_and_permissions_need_admin`; `Requests.ApprovalTests.AI_agents_cannot_decide_and_other_workspaces_see_nothing`.
+- Verification: `Mcp.McpServerTests` (`Server_lists_the_builder_tools_and_no_publish_tool`, `Agent_customizes_through_mcp_and_a_person_publishes`, `Api_tokens_are_rejected_by_the_mcp_server`, `Tool_calls_are_rate_limited_per_agent_session`, `Disabling_the_agent_stops_its_next_call`, `Explain_access_tool_says_why_a_field_is_hidden`, `Scopes_limit_the_agent_and_errors_are_structured`, `Embedded_instructions_in_records_cannot_widen_authority`, `No_tool_takes_tenant_environment_or_principal_arguments`, `Agent_adds_an_approval_policy_but_only_people_change_which_policy_an_item_uses`, `Agent_defines_a_metric_and_puts_it_on_the_dashboard`); `Configuration.ConfigLifecycleTests.Agents_request_publish_but_only_humans_publish_and_permissions_need_admin`; `Requests.ApprovalTests.AI_agents_cannot_decide_and_other_workspaces_see_nothing`.

@@ -57,7 +57,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 
 - [Architecture overview](architecture/overview.md): one-page summary, C4 levels 1–3, module graph, transaction boundaries, service extraction.
 - [Events, audit, alerts and notifications](architecture/events-audit-alerts-notifications.md): inventory, envelope v2, subscriptions, alerts, channels, profiles, routing, delivery, preview, end-to-end example and phases (ADR 0017).
-- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, 1.2.0 service requests (catalog, fulfillment tasks), 1.3.0 approvals and 1.4.0 ticket events.
+- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, 1.2.0 service requests (catalog, fulfillment tasks), 1.3.0 approvals, 1.4.0 ticket events, 1.5.0 service levels and the 1.6.0 Overview dashboard and metrics.
 
 ## Architecture decision records
 
@@ -79,6 +79,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0016 Approvals](adr/0016-approvals.md): approval policies as spec objects, kernel approval tables, the approval consumer and decision service, separation of duties and delegation.
 - [0017 Event, audit, alert and notification services](adr/0017-event-audit-alert-notification-services.md): event registry and subscriptions on the outbox, synchronous audit, alerts and notifications as separate services, job-based delivery.
 - [0018 SLAs and business hours](adr/0018-sla-and-business-hours.md): calendars and SLA policies as spec objects, timers in the record write transaction with pinned snapshots, durable warning and breach checks.
+- [0019 Metrics, dashboards and the connected explorer](adr/0019-metrics-dashboards-and-connected-explorer.md): metrics as spec objects evaluated through the explorer's query compiler, drill-down as the exact query, restricted figures removed, explorer state in the URL, draft change sets.
 
 ## Decisions
 
