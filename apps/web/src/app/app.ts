@@ -1,12 +1,14 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { ThemeService } from './core/theme';
+import { ToastHost } from './ui/toast-host';
 
 @Component({
-  imports: [RouterOutlet],
   selector: 'app-root',
-  styleUrl: './app.scss',
-  templateUrl: './app.html',
+  imports: [RouterOutlet, ToastHost],
+  template: `<router-outlet /><esm-toast-host />`,
 })
 export class App {
-  protected readonly title = signal('web');
+  // Applies the saved theme before first paint of routed content.
+  protected readonly theme = inject(ThemeService);
 }

@@ -1,0 +1,94 @@
+// Esmbler design tokens (docs/explanation/design-principles.md). Semantic tokens only: specs and components never
+// use raw colors. Token "surface.raised" is the custom property --esm-surface-raised.
+:root {
+  color-scheme: light;
+  --esm-surface-base: #fbfbfc;
+  --esm-surface-raised: #ffffff;
+  --esm-surface-sunken: #f3f3f6;
+  --esm-text-default: #1c1c21;
+  --esm-text-muted: #5f5f6b;
+  --esm-text-on-accent: #ffffff;
+  --esm-border-subtle: #e7e7ec;
+  --esm-border-input: #8c8c98;
+  --esm-accent-brand: #5b4ddb;
+  --esm-accent-blue: #2d64cc;
+  --esm-accent-green: #1d7349;
+  --esm-accent-amber: #9a5b05;
+  --esm-accent-red: #c42f3a;
+  --esm-accent-purple: #7a45c9;
+  --esm-accent-gray: #62626d;
+  --esm-state-hover: rgb(28 28 33 / 6%);
+  --esm-state-selected: rgb(91 77 219 / 10%);
+  --esm-state-focus: #5b4ddb;
+  --esm-state-changed: rgb(91 77 219 / 40%);
+  --esm-shadow-overlay: 0 8px 24px rgb(17 17 20 / 12%), 0 2px 6px rgb(17 17 20 / 8%);
+
+  --esm-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --esm-font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --esm-text-title-lg: 600 1.5rem/2rem var(--esm-font);
+  --esm-text-title-md: 600 1.125rem/1.5rem var(--esm-font);
+  --esm-text-title-sm: 600 0.9375rem/1.375rem var(--esm-font);
+  --esm-text-body: 400 0.875rem/1.25rem var(--esm-font);
+  --esm-text-body-sm: 400 0.8125rem/1.125rem var(--esm-font);
+  --esm-text-mono: 400 0.8125rem/1.125rem var(--esm-font-mono);
+
+  --esm-space-1: 4px;
+  --esm-space-2: 8px;
+  --esm-space-3: 12px;
+  --esm-space-4: 16px;
+  --esm-space-5: 20px;
+  --esm-space-6: 24px;
+  --esm-space-8: 32px;
+  --esm-space-10: 40px;
+  --esm-space-12: 48px;
+  --esm-radius-sm: 4px;
+  --esm-radius-md: 8px;
+  --esm-radius-lg: 12px;
+  --esm-radius-full: 999px;
+  --esm-motion-fast: 120ms;
+  --esm-motion-base: 200ms;
+  --esm-motion-slow: 320ms;
+  --esm-ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@mixin dark {
+  color-scheme: dark;
+  --esm-surface-base: #111114;
+  --esm-surface-raised: #18181d;
+  --esm-surface-sunken: #0c0c0f;
+  --esm-text-default: #ececf1;
+  --esm-text-muted: #a3a3b1;
+  --esm-text-on-accent: #111114;
+  --esm-border-subtle: #26262e;
+  --esm-border-input: #6b6b78;
+  --esm-accent-brand: #958cff;
+  --esm-accent-blue: #72a5ff;
+  --esm-accent-green: #4cc38a;
+  --esm-accent-amber: #e9a23b;
+  --esm-accent-red: #f2676f;
+  --esm-accent-purple: #b992ff;
+  --esm-accent-gray: #9c9ca8;
+  --esm-state-hover: rgb(255 255 255 / 6%);
+  --esm-state-selected: rgb(149 140 255 / 18%);
+  --esm-state-focus: #958cff;
+  --esm-state-changed: rgb(149 140 255 / 50%);
+  --esm-shadow-overlay: 0 8px 24px rgb(0 0 0 / 50%), 0 2px 6px rgb(0 0 0 / 40%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    @include dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  @include dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --esm-motion-fast: 0ms;
+    --esm-motion-base: 0ms;
+    --esm-motion-slow: 0ms;
+  }
+}

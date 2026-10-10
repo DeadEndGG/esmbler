@@ -39,18 +39,18 @@ internal static class Lexer
                 continue;
             }
 
-            if (char.IsDigit(c))
+            if (char.IsAsciiDigit(c))
             {
                 var start = i;
-                while (i < source.Length && char.IsDigit(source[i]))
+                while (i < source.Length && char.IsAsciiDigit(source[i]))
                 {
                     i++;
                 }
 
-                if (i + 1 < source.Length && source[i] == '.' && char.IsDigit(source[i + 1]))
+                if (i + 1 < source.Length && source[i] == '.' && char.IsAsciiDigit(source[i + 1]))
                 {
                     i++;
-                    while (i < source.Length && char.IsDigit(source[i]))
+                    while (i < source.Length && char.IsAsciiDigit(source[i]))
                     {
                         i++;
                     }

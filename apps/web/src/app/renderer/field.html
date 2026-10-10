@@ -1,0 +1,93 @@
+@let f = spec();
+@if (f) {
+  <div class="field" [class.has-error]="!!error()" [attr.data-field]="key()">
+    <label class="label" [attr.for]="node().id + '-input'">
+      {{ label() }}
+      @if (required() && (alwaysEditable() || editing())) { <span class="req" aria-label="required">*</span> }
+    </label>
+
+    @if (alwaysEditable() || editing()) {
+      @switch (f.type) {
+        @case ('long_text') {
+          <textarea #editor class="input" [id]="node().id + '-input'" [attr.aria-required]="required()" [attr.aria-invalid]="!!error()" [attr.aria-describedby]="error() ? node().id + '-err' : null"
+                    [disabled]="!editable()" [value]="alwaysEditable() ? (value() ?? '') : local" (input)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value)"
+                    (blur)="commit()" (keydown)="onEditorKey($event)"></textarea>
+        }
+        @case ('rich_text') {
+          <textarea #editor class="input rich" [id]="node().id + '-input'" [attr.aria-required]="required()" [attr.aria-invalid]="!!error()" [disabled]="!editable()"
+                    [value]="alwaysEditable() ? ((value() ?? '').replace(regexTags, '')) : local" (input)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value)"
+                    (blur)="commit()" (keydown)="onEditorKey($event)"></textarea>
+        }
+        @case ('single_select') { <ng-container *ngTemplateOutlet="selectTpl" /> }
+        @case ('priority') { <ng-container *ngTemplateOutlet="selectTpl" /> }
+        @case ('status') { <span class="badge" [class]="ctx.tone(f, value())">{{ ctx.display(key()) || '—' }}</span> }
+        @case ('multi_select') {
+          <div class="chips" role="group" [attr.aria-label]="label()">
+            @for (o of ctx.allowedOptions(f); track o.id) {
+              <button type="button" class="chip" [class.on]="(value() ?? []).includes(o.id)" [attr.aria-pressed]="(value() ?? []).includes(o.id)" [disabled]="!editable()" (click)="toggleMulti(o.id)">{{ o.label }}</button>
+            }
+          </div>
+        }
+        @case ('toggle') {
+          <input #editor type="checkbox" class="switch" [id]="node().id + '-input'" [disabled]="!editable()" [checked]="alwaysEditable() ? !!value() : local"
+                 (change)="alwaysEditable() ? formChange($any($event.target).checked) : (local = $any($event.target).checked); !alwaysEditable() && commit()" />
+        }
+        @case ('user') {
+          <select #editor class="input" [id]="node().id + '-input'" [disabled]="!editable()" [value]="alwaysEditable() ? (value() ?? '') : local"
+                  (change)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value); !alwaysEditable() && commit()" (keydown)="onEditorKey($event)">
+            <option value="">—</option>
+            @for (p of directory.people(); track p.id) { <option [value]="p.id">{{ p.displayName }}</option> }
+          </select>
+        }
+        @case ('group') {
+          <select #editor class="input" [id]="node().id + '-input'" [disabled]="!editable()" [value]="alwaysEditable() ? (value() ?? '') : local"
+                  (change)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value); !alwaysEditable() && commit()" (keydown)="onEditorKey($event)">
+            <option value="">—</option>
+            @for (g of directory.groups(); track g.id) { <option [value]="g.id">{{ g.name }}</option> }
+          </select>
+        }
+        @case ('lookup') {
+          <div class="lookup">
+            <input #editor class="input" [id]="node().id + '-input'" placeholder="Search…" [disabled]="!editable()" (input)="searchLookup($any($event.target).value)" (keydown)="onEditorKey($event)" />
+            @if (lookupResults().length) {
+              <ul class="results" role="listbox">
+                @for (r of lookupResults(); track r.id) { <li role="option" (mousedown)="pickLookup(r.id)">{{ r.label }}</li> }
+              </ul>
+            }
+          </div>
+        }
+        @case ('auto_number') { <span class="mono">{{ value() || '—' }}</span> }
+        @default {
+          <input #editor class="input" [id]="node().id + '-input'" [type]="f.type === 'integer' || f.type === 'decimal' ? 'number' : f.type === 'email' ? 'email' : f.type === 'date' ? 'date' : f.type === 'date_time' ? 'datetime-local' : 'text'"
+                 [attr.maxlength]="f.maxLength ?? null" [attr.aria-required]="required()" [attr.aria-invalid]="!!error()" [attr.aria-describedby]="error() ? node().id + '-err' : null"
+                 [disabled]="!editable()" [value]="alwaysEditable() ? (value() ?? '') : local" (input)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value)"
+                 (blur)="commit()" (keydown)="onEditorKey($event)" />
+        }
+      }
+      <ng-template #selectTpl>
+        <select #editor class="input" [id]="node().id + '-input'" [attr.aria-required]="required()" [attr.aria-invalid]="!!error()" [disabled]="!editable()"
+                [value]="alwaysEditable() ? (value() ?? '') : local" (change)="alwaysEditable() ? formChange($any($event.target).value) : (local = $any($event.target).value); !alwaysEditable() && commit()" (keydown)="onEditorKey($event)">
+          <option value="">—</option>
+          @for (o of ctx.allowedOptions(f); track o.id) { <option [value]="o.id">{{ o.label }}</option> }
+        </select>
+      </ng-template>
+      @if (f.help && alwaysEditable()) { <p class="help muted">{{ f.help }}</p> }
+    } @else {
+      <div class="value" [class.editable]="editable()" [attr.role]="editable() ? 'button' : null" [attr.tabindex]="editable() ? 0 : null" [attr.aria-label]="editable() ? 'Edit ' + label() : null"
+           (click)="start()" (keydown)="onValueKey($event)">
+        @switch (f.type) {
+          @case ('status') { <span class="badge" [class]="ctx.tone(f, value())">{{ ctx.display(key()) || '—' }}</span> }
+          @case ('priority') { @if (value()) { <span class="badge" [class]="ctx.tone(f, value())">{{ ctx.display(key()) }}</span> } @else { <span class="muted">—</span> } }
+          @case ('rich_text') { @if (value()) { <div class="rich-view" [innerHTML]="value()"></div> } @else { <span class="muted">Empty</span> } }
+          @case ('multi_select') {
+            @if ((value() ?? []).length) { @for (id of value(); track id) { <span class="badge" [class]="ctx.tone(f, id)">{{ ctx.option(f, id)?.label ?? id }}</span> } } @else { <span class="muted">—</span> }
+          }
+          @case ('auto_number') { <span class="mono">{{ value() }}</span> }
+          @default { @if (ctx.display(key())) { <span>{{ ctx.display(key()) }}</span> } @else { <span class="muted">—</span> } }
+        }
+        @if (ctx.saving().has(key())) { <span class="saving muted" aria-live="polite">Saving…</span> }
+      </div>
+    }
+    @if (error()) { <p class="error" [id]="node().id + '-err'" role="alert">{{ error() }}</p> }
+  </div>
+}

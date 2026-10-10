@@ -1,0 +1,120 @@
+@let n = node();
+@if (visible()) {
+  <div
+    class="node"
+    [class]="'t-' + n.type.replace('.', '-')"
+    [class.block]="isBlock() && draft()"
+    [class.selected]="selected()"
+    [class.flash]="flashing()"
+    [class.changed]="changed() && draft()"
+    [attr.data-node]="n.id"
+    [attr.tabindex]="draft() && isBlock() ? 0 : null"
+    [attr.aria-selected]="draft() && isBlock() ? selected() : null"
+    [attr.aria-label]="draft() && isBlock() ? label() + ' block' : null"
+    (click)="select($event)"
+    (keydown)="onKey($event)"
+  >
+    @if (draft() && isBlock()) {
+      <div class="block-bar">
+        <button class="handle" cdkDragHandle aria-label="Drag to move" title="Drag to move (Alt+↑/↓ with the keyboard)">⋮⋮</button>
+        @if (changed()) {
+          <span class="chip">{{ isNew() ? 'New' : 'Changed' }}</span>
+        }
+      </div>
+    }
+
+    @switch (n.type) {
+      @case ('layout.page') {
+        @if (n.props['title']) { <h1 class="sr-only">{{ n.props['title'] }}</h1> }
+        @for (c of n.children; track c.id) { <esm-node [node]="c" [viewId]="viewId()" /> }
+      }
+      @case ('layout.section') {
+        <section class="section" [attr.aria-label]="n.props['title'] || null">
+          @if (n.props['title']) { <h2 class="section-title">{{ n.props['title'] }}</h2> }
+          @for (c of n.children; track c.id) { <esm-node [node]="c" [viewId]="viewId()" /> }
+        </section>
+      }
+      @case ('layout.row') {
+        <div class="row" [class]="'gap-' + (n.props['gap'] ?? 'md')">
+          @for (c of n.children; track c.id) {
+            <div class="col" [class]="spanClass(c)"><esm-node [node]="c" [viewId]="viewId()" /></div>
+          }
+        </div>
+      }
+      @case ('layout.column') {
+        <div class="column" cdkDropList [cdkDropListData]="n" [cdkDropListDisabled]="!dropContainer()" (cdkDropListDropped)="drop($event)">
+          @for (c of n.children; track c.id) {
+            <div cdkDrag [cdkDragData]="c" [cdkDragDisabled]="!draft()"><esm-node [node]="c" [viewId]="viewId()" /></div>
+          }
+        </div>
+      }
+      @case ('layout.card') {
+        <section class="card" [attr.aria-labelledby]="n.id + '-t'">
+          <header>
+            <h3 [id]="n.id + '-t'">{{ n.props['title'] }}</h3>
+            @if (n.props['description']) { <p class="muted">{{ n.props['description'] }}</p> }
+          </header>
+          <div class="card-body" [class.two]="n.props['columns'] === 2" cdkDropList [cdkDropListData]="n" [cdkDropListDisabled]="!dropContainer()" (cdkDropListDropped)="drop($event)">
+            @for (c of n.children; track c.id) {
+              <div cdkDrag [cdkDragData]="c" [cdkDragDisabled]="!draft()"><esm-node [node]="c" [viewId]="viewId()" /></div>
+            } @empty {
+              <p class="muted empty">Empty card</p>
+            }
+          </div>
+        </section>
+      }
+      @case ('layout.tab_group') {
+        <div class="tabs">
+          <div role="tablist" class="tablist">
+            @for (t of n.children; track t.id; let i = $index) {
+              <button role="tab" [id]="t.id + '-tab'" [attr.aria-selected]="activeTab(n) === t.id" [attr.aria-controls]="t.id + '-panel'"
+                      [attr.tabindex]="activeTab(n) === t.id ? 0 : -1" (click)="setTab(n, t.id)" (keydown)="tabKey($event, n, i)">{{ t.props['title'] }}</button>
+            }
+          </div>
+          @for (t of n.children; track t.id) {
+            @if (activeTab(n) === t.id) {
+              <div role="tabpanel" [id]="t.id + '-panel'" [attr.aria-labelledby]="t.id + '-tab'" class="tabpanel">
+                @for (c of t.children; track c.id) { <esm-node [node]="c" [viewId]="viewId()" /> }
+              </div>
+            }
+          }
+        </div>
+      }
+      @case ('field') { <esm-field [node]="n" /> }
+      @case ('display.heading') {
+        <div class="heading" [class]="'h' + (n.props['level'] ?? 2)" role="heading" [attr.aria-level]="n.props['level'] ?? 2">
+          {{ n.props['field'] ? (ctx.display(n.props['field']) || 'Untitled') : n.props['text'] }}
+          @if (n.props['level'] === 1 && ctx.record()?.number) { <span class="number mono muted">{{ ctx.record()?.number }}</span> }
+        </div>
+      }
+      @case ('display.badge') {
+        @if (n.props['field']; as f) {
+          @if (ctx.values()[f]) { <span class="badge" [class]="ctx.tone(ctx.field(f), ctx.values()[f])">{{ ctx.display(f) }}</span> }
+        } @else {
+          <span class="badge" [class]="'tone-' + (n.props['tone'] ?? 'gray')">{{ n.props['text'] }}</span>
+        }
+      }
+      @case ('display.label_value') {
+        <div class="lv"><span class="muted">{{ n.props['label'] }}</span><span>{{ n.props['field'] ? ctx.display(n.props['field']) : n.props['text'] }}</span></div>
+      }
+      @case ('display.callout') {
+        <div class="callout" [class]="'tone-' + toneOf(n.props['tone'])" role="note">
+          @if (n.props['title']) { <strong>{{ n.props['title'] }}</strong> }
+          <span>{{ n.props['text'] }}</span>
+        </div>
+      }
+      @case ('display.empty_state') {
+        <div class="empty-state"><strong>{{ n.props['title'] }}</strong><p class="muted">{{ n.props['text'] }}</p></div>
+      }
+      @case ('activity.feed') { <esm-activity-feed [node]="n" /> }
+      @case ('activity.audit_history') { <esm-audit-history [node]="n" /> }
+      @case ('collection.related_list') { <esm-related-list [node]="n" /> }
+      @case ('action.transition_buttons') { <esm-transition-buttons [node]="n" /> }
+      @case ('action.button') { <esm-action-button [node]="n" /> }
+      @case ('action.action_menu') { <esm-action-menu [node]="n" /> }
+      @default {
+        <div class="unknown muted">{{ n.type }}</div>
+      }
+    }
+  </div>
+}

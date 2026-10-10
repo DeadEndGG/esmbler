@@ -1,1 +1,186 @@
-/* You can add global styles to this file, and also import other style files */
+@use "styles/tokens";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--esm-surface-base);
+  color: var(--esm-text-default);
+  font: var(--esm-text-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--esm-accent-brand);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--esm-state-focus);
+  outline-offset: 2px;
+  border-radius: var(--esm-radius-sm);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.muted {
+  color: var(--esm-text-muted);
+}
+
+.mono {
+  font: var(--esm-text-mono);
+}
+
+// Buttons
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esm-space-2);
+  height: 32px;
+  padding: 0 var(--esm-space-3);
+  border-radius: var(--esm-radius-sm);
+  border: 1px solid var(--esm-border-subtle);
+  background: var(--esm-surface-raised);
+  font: var(--esm-text-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--esm-motion-fast) var(--esm-ease-out);
+}
+
+.btn:hover {
+  background: var(--esm-state-hover);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--esm-accent-brand);
+  border-color: var(--esm-accent-brand);
+  color: var(--esm-text-on-accent);
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--esm-accent-brand) 88%, black);
+}
+
+.btn-danger {
+  color: var(--esm-accent-red);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn-sm {
+  height: 26px;
+  padding: 0 var(--esm-space-2);
+}
+
+kbd {
+  font: var(--esm-text-mono);
+  font-size: 0.75rem;
+  padding: 0 4px;
+  border: 1px solid var(--esm-border-subtle);
+  border-bottom-width: 2px;
+  border-radius: var(--esm-radius-sm);
+  color: var(--esm-text-muted);
+  background: var(--esm-surface-sunken);
+}
+
+// Form controls
+.input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px var(--esm-space-2);
+  border: 1px solid var(--esm-border-input);
+  border-radius: var(--esm-radius-sm);
+  background: var(--esm-surface-raised);
+}
+
+textarea.input {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.input:focus {
+  outline: 2px solid var(--esm-state-focus);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--esm-accent-red);
+}
+
+// Badges: tone at 12% alpha background, full tone text.
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 var(--esm-space-2);
+  border-radius: var(--esm-radius-full);
+  font: var(--esm-text-body-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  --tone: var(--esm-accent-gray);
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+
+.tone-red { --tone: var(--esm-accent-red); }
+.tone-amber { --tone: var(--esm-accent-amber); }
+.tone-green { --tone: var(--esm-accent-green); }
+.tone-blue { --tone: var(--esm-accent-blue); }
+.tone-purple { --tone: var(--esm-accent-purple); }
+.tone-gray { --tone: var(--esm-accent-gray); }
+.tone-brand { --tone: var(--esm-accent-brand); }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--esm-surface-sunken) 0%, var(--esm-state-hover) 50%, var(--esm-surface-sunken) 100%);
+  background-size: 200% 100%;
+  animation: esm-shimmer 1.2s infinite linear;
+  border-radius: var(--esm-radius-sm);
+  min-height: 14px;
+}
+
+@keyframes esm-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}

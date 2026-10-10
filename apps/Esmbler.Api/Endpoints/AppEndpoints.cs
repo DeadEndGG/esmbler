@@ -26,6 +26,7 @@ public static class AppEndpoints
 
         var admin = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
         admin.MapGet("/members", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.MembersAsync(RequestContextFactory.From(user, "api"), ct));
+        admin.MapGet("/roles", (ClaimsPrincipal user, ExperienceService experience, CancellationToken ct) => experience.RolesAsync(RequestContextFactory.From(user, "api"), ct));
         admin.MapGet("/groups", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.GroupsAsync(RequestContextFactory.From(user, "api"), ct));
         admin.MapPost("/roles/assign", async (RoleChangeRequest body, ClaimsPrincipal user, IdentityService identity, CancellationToken ct) =>
         {

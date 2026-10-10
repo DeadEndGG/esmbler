@@ -1,3 +1,47 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { CanActivateFn, Router, Routes } from '@angular/router';
+import { Auth } from './core/auth';
+import { Session } from './core/session';
 
-export const routes: Routes = [];
+/** Restores the session from the refresh cookie, then requires a selected workspace. */
+const workspaceGuard: CanActivateFn = async () => {
+  const auth = inject(Auth);
+  const router = inject(Router);
+  const session = inject(Session);
+  if (!auth.signedIn() && !(await auth.restore())) return router.parseUrl('/login');
+  if (!auth.inWorkspace()) return router.parseUrl('/workspaces');
+  if (!session.app()) {
+    try {
+      await session.load();
+    } catch {
+      return router.parseUrl('/workspaces');
+    }
+  }
+  return true;
+};
+
+const signedInGuard: CanActivateFn = async () => {
+  const auth = inject(Auth);
+  if (auth.signedIn() || (await auth.restore())) return true;
+  return inject(Router).parseUrl('/login');
+};
+
+export const routes: Routes = [
+  { path: 'login', loadComponent: () => import('./pages/login.page').then((m) => m.LoginPage) },
+  { path: 'workspaces', canActivate: [signedInGuard], loadComponent: () => import('./pages/workspaces.page').then((m) => m.WorkspacesPage) },
+  {
+    path: '',
+    canActivate: [workspaceGuard],
+    loadComponent: () => import('./shell/shell').then((m) => m.Shell),
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'records/core.tickets.ticket' },
+      { path: 'records/:entity', loadComponent: () => import('./pages/list.page').then((m) => m.ListPage) },
+      { path: 'records/:entity/new', loadComponent: () => import('./pages/create.page').then((m) => m.CreatePage) },
+      { path: 'records/:entity/preview', loadComponent: () => import('./pages/record.page').then((m) => m.RecordPage), data: { preview: true } },
+      { path: 'records/:entity/:id', loadComponent: () => import('./pages/record.page').then((m) => m.RecordPage) },
+      { path: 'admin/people', loadComponent: () => import('./admin/people.page').then((m) => m.PeoplePage) },
+      { path: 'admin/configuration', loadComponent: () => import('./admin/configuration.page').then((m) => m.ConfigurationPage) },
+    ],
+  },
+  { path: '**', redirectTo: '' },
+];

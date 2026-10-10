@@ -72,6 +72,14 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
         }, ct);
     }
 
+    /// <summary>Roles defined by the active configuration, for role assignment in administration.</summary>
+    public Task<IReadOnlyList<RoleSpec>> RolesAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync<IReadOnlyList<RoleSpec>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            return artifact.Config.Roles.OrderBy(r => r.Label, StringComparer.Ordinal).ToList();
+        }, ct);
+
     public Task<EntityClientSpec> EntityAsync(RequestContext ctx, string entityId, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
