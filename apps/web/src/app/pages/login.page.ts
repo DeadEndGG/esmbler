@@ -62,7 +62,9 @@ import { Icon } from '../ui/icon';
             <p class="callout tone-red text-body-sm" role="alert"><esm-icon name="circle-alert" [size]="14" class="self-center text-red" />{{ error() }}</p>
           }
           <button class="btn btn-primary mt-1 h-10" type="submit" [disabled]="busy()">{{ busy() ? 'Signing in…' : 'Sign in' }}</button>
-          <p class="rounded-md border border-dashed border-strong bg-sunken px-3 py-2 text-body-sm text-muted">Demo: <span class="mono text-fg">alex&#64;acme.example</span> / <span class="mono text-fg">Esmbler!2026</span></p>
+@if (demo(); as d) {
+            <p class="rounded-md border border-dashed border-strong bg-sunken px-3 py-2 text-body-sm text-muted">Demo: <span class="mono text-fg">{{ d.email }}</span> / <span class="mono text-fg">{{ d.password }}</span></p>
+          }
         </form>
       </div>
     </main>
@@ -90,6 +92,12 @@ export class LoginPage {
   protected password = '';
   protected readonly error = signal('');
   protected readonly busy = signal(false);
+  /** Shown only when the server seeded demo data (KI-011). */
+  protected readonly demo = signal<{ email: string; password: string } | null>(null);
+
+  constructor() {
+    void this.auth.signInOptions().then((o) => this.demo.set(o.demoAccount ?? null)).catch(() => this.demo.set(null));
+  }
 
   protected async submit(): Promise<void> {
     this.busy.set(true);

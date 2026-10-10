@@ -62,6 +62,7 @@
   --esm-text-caption: 500 0.6875rem/1rem var(--esm-font);
   --esm-text-mono: 400 0.8125rem/1.125rem var(--esm-font-mono);
 
+  --esm-space-0: 0;
   --esm-space-1: 4px;
   --esm-space-2: 8px;
   --esm-space-3: 12px;
@@ -76,10 +77,13 @@
   --esm-radius-lg: 14px;
   --esm-radius-xl: 20px;
   --esm-radius-full: 999px;
+  --esm-motion-instant: 0ms;
   --esm-motion-fast: 120ms;
   --esm-motion-base: 200ms;
   --esm-motion-slow: 320ms;
-  --esm-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --esm-motion-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  /* Short alias used by component styles. */
+  --esm-ease-out: var(--esm-motion-ease-out);
 }
 
 /* Dark values: system preference unless the person picked light; or an explicit dark choice. */

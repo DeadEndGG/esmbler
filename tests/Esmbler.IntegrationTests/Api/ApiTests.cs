@@ -49,6 +49,14 @@ public class ApiTests(PlatformFixture platform) : IClassFixture<ApiTestsFactoryH
     }
 
     [Fact]
+    public async Task Sign_in_page_shows_no_demo_account_unless_demo_data_is_seeded()
+    {
+        var options = await Factory.CreateClient().GetFromJsonAsync<JsonObject>("/api/auth/sign-in-options", ApiFactory.Json);
+        Assert.NotNull(options);
+        Assert.Null(options["demoAccount"]);
+    }
+
+    [Fact]
     public async Task Wrong_password_gets_a_plain_error()
     {
         var res = await Factory.CreateClient().PostAsJsonAsync("/api/auth/login", new { email = "sam@acme.example", password = "nope" });

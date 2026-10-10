@@ -23,6 +23,12 @@ public static class AuthEndpoints
     {
         var g = app.MapGroup("/api/auth").WithTags("Auth");
 
+        // What the sign-in page may show. The demo account hint exists only where demo data is seeded (KI-011).
+        g.MapGet("/sign-in-options", (PlatformOptions options) => Results.Ok(new
+        {
+            demoAccount = options.SeedDemoData ? new { email = "alex@acme.example", password = Kernel.Infrastructure.Services.ProvisioningService.DemoPassword } : null,
+        })).AllowAnonymous();
+
         g.MapPost("/login", async (LoginRequest body, IdentityService identity, TokenService tokens, LoginThrottle throttle, HttpContext http, CancellationToken ct) =>
         {
             var email = (body.Email ?? string.Empty).Trim();

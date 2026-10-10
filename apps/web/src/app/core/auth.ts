@@ -29,6 +29,11 @@ export class Auth {
   readonly inWorkspace = computed(() => this.signedIn() && this.workspace() !== null && this.tenantScoped());
   private readonly tenantScoped = signal(false);
 
+  /** Public sign-in page options; the demo account is present only where demo data is seeded. */
+  signInOptions(): Promise<{ demoAccount?: { email: string; password: string } | null }> {
+    return firstValueFrom(this.http.get<{ demoAccount?: { email: string; password: string } | null }>('/api/auth/sign-in-options'));
+  }
+
   async login(email: string, password: string): Promise<void> {
     const res = await firstValueFrom(this.http.post<TokenResponse>('/api/auth/login', { email, password }));
     this.token.set(res.accessToken);
