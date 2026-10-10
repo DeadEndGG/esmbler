@@ -35,6 +35,29 @@ public sealed class PlatformFixture : IAsyncLifetime
         Scopes = scopes,
     };
 
+    /// <summary>Provisions a fresh tenant with the demo shape so a test can change its configuration freely.</summary>
+    public async Task<ProvisionedTenant> NewTenantAsync(string prefix, string ticketsVersion = "1.0.0")
+    {
+        var slug = $"{prefix}-{Guid.NewGuid().ToString("N")[..6]}";
+        string Email(string user) => $"{user}@{slug}.example";
+        var tenant = await Get<ProvisioningService>().ProvisionAsync(new TenantSeed(
+            slug,
+            slug,
+            [
+                new UserSeed("admin", Email("admin"), "Admin " + slug, ProvisioningService.DemoPassword, [Kernel.Configuration.PlatformModule.TenantAdminRole], ["service_desk"]),
+                new UserSeed("builder", Email("builder"), "Builder " + slug, ProvisioningService.DemoPassword, ["core.tickets.admin"], []),
+                new UserSeed("agent", Email("agent"), "Agent " + slug, ProvisioningService.DemoPassword, [], ["service_desk", "network"]),
+                new UserSeed("dana", Email("dana"), "Dana " + slug, ProvisioningService.DemoPassword, ["core.tickets.requester"], []),
+                new UserSeed("jordan", Email("jordan"), "Jordan " + slug, ProvisioningService.DemoPassword, ["core.tickets.requester"], []),
+                new UserSeed("riley", Email("riley"), "Riley " + slug, ProvisioningService.DemoPassword, ["core.tickets.requester"], []),
+                new UserSeed("sam", Email("sam"), "Sam " + slug, ProvisioningService.DemoPassword, [], ["service_desk"]),
+                new UserSeed("alex", Email("alex"), "Alex " + slug, ProvisioningService.DemoPassword, [], ["service_desk"]),
+            ],
+            [new GroupSeed("service_desk", "Service Desk", ["core.tickets.agent"]), new GroupSeed("network", "Network", ["core.tickets.agent"])],
+            [("core.tickets", ticketsVersion)]), default);
+        return tenant;
+    }
+
     public async Task InitializeAsync()
     {
         await _pg.InitializeAsync();

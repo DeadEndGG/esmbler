@@ -66,6 +66,12 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.RecordStateProjection>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.NotificationConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
+        services.AddSingleton<DraftService>();
+        services.AddSingleton<PublishService>();
+        services.AddSingleton<IMigrationFaultInjector>(_ => new ConfiguredFaultInjector(configuration["Esmbler:FaultInjection:Migration"]));
+        services.AddSingleton<MigrationExecutor>();
+        services.AddSingleton<UpgradeService>();
+        services.AddSingleton<Kernel.Infrastructure.Events.JobRunner>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));
