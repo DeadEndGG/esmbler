@@ -12,6 +12,7 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\apps\Esmbler.Api\Esmbler.Api.csproj" />

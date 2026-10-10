@@ -17,6 +17,8 @@ builder.Services.AddEsmblerAuth(Audiences.Api);
 builder.Services.AddExceptionHandler<KernelExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+builder.Services.AddSignalR();
+builder.Services.AddHostedService<DraftNotificationListener>();
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -66,6 +68,8 @@ app.MapGet("/health/ready", async (Database db, CancellationToken ct) =>
 app.MapAuth();
 app.MapAppAndConfig();
 app.MapRecords();
+app.MapBuilder();
+app.MapHub<LiveHub>("/hubs/live");
 
 await app.RunAsync();
 return 0;

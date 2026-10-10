@@ -68,6 +68,7 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
         services.AddSingleton<DraftService>();
         services.AddSingleton<PublishService>();
+        services.AddSingleton<PreviewService>();
         services.AddSingleton<IMigrationFaultInjector>(_ => new ConfiguredFaultInjector(configuration["Esmbler:FaultInjection:Migration"]));
         services.AddSingleton<MigrationExecutor>();
         services.AddSingleton<UpgradeService>();

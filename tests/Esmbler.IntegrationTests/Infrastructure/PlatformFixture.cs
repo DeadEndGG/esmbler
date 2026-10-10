@@ -23,6 +23,9 @@ public sealed class PlatformFixture : IAsyncLifetime
 
     public PostgresFixture Postgres => _pg;
 
+    /// <summary>Slug of each tenant created with <see cref="NewTenantAsync"/>.</summary>
+    public static Dictionary<Guid, string> Slugs { get; } = [];
+
     public T Get<T>()
         where T : notnull => Services.GetRequiredService<T>();
 
@@ -55,6 +58,7 @@ public sealed class PlatformFixture : IAsyncLifetime
             ],
             [new GroupSeed("service_desk", "Service Desk", ["core.tickets.agent"]), new GroupSeed("network", "Network", ["core.tickets.agent"])],
             [("core.tickets", ticketsVersion)]), default);
+        Slugs[tenant.TenantId] = slug;
         return tenant;
     }
 
