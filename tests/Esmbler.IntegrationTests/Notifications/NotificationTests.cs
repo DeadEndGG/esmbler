@@ -224,7 +224,7 @@ public class NotificationTests(PlatformFixture f)
 
         async Task<NotificationDeliveryRow> Deliver(INotificationChannel channel)
         {
-            var handler = new NotifyDeliverJobHandler([channel], f.Get<ISecretStore>(), f.Get<IClock>());
+            var handler = new NotifyDeliverJobHandler([channel], f.Get<ISecretStore>(), f.Get<ConfigStore>(), f.Get<AccessService>(), f.Get<IClock>());
             try
             {
                 await handler.RunAsync(new JobContext(db, Guid.NewGuid(), t.TenantId, t.Environments["prod"], "notify.deliver", 1, null, new JsonObject { ["delivery"] = email.Id.ToString() }, null, "test"), default);
@@ -241,12 +241,101 @@ public class NotificationTests(PlatformFixture f)
         var ambiguous = await Deliver(new FakeEmail(ChannelResult.Unknown("connection_lost"), idempotent: false));
         Assert.Equal(DeliveryStatuses.Ambiguous, ambiguous.Status);
         Assert.Equal(2, ambiguous.Attempts);
-        var replay = await Service.ReplayAsync(admin, email.Id, force: false, default);
+        // SMTP has no idempotency: sending an ambiguous message again needs an explicit force.
+        Assert.Equal("ambiguous_delivery", (await Assert.ThrowsAsync<KernelException>(() => Service.ReplayAsync(admin, email.Id, force: false, default))).Code);
+        var replay = await Service.ReplayAsync(admin, email.Id, force: true, default);
         Assert.Equal(email.Id, replay);
         var sent = await Deliver(new FakeEmail(ChannelResult.Sent("msg-1"), idempotent: false));
         Assert.Equal((DeliveryStatuses.Sent, "msg-1"), (sent.Status, sent.ProviderMessageId));
         var attempts = await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.NotificationDeliveryAttempts.CountAsync(a => a.DeliveryId == email.Id), default);
         Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public async Task Deliveries_check_the_recipient_again_and_never_override_a_mute_or_reach_other_workspaces()
+    {
+        var t = await TenantAsync("ntre", ResolvedRoute(profile: PlatformModule.InAppProfile));
+        var records = f.Get<RecordService>();
+        var agent = f.As(t, "agent");
+        var db = f.Get<Database>();
+        var ticket = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Moved on", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "low" }, null, null, default);
+        var started = await records.TransitionAsync(agent, Ticket, ticket.Id, ticket.Revision, "start", [], null, null, default);
+        var resolved = await records.TransitionAsync(agent, Ticket, ticket.Id, started.Revision, "resolve", new JsonObject { ["resolution_notes"] = "Done" }, null, null, default);
+        while (await f.Get<OutboxDispatcher>().DispatchOnceAsync(default) > 0)
+        {
+        }
+
+        // Resolved for Dana; before delivery the ticket becomes Jordan's, which Dana (a requester) may no longer read.
+        var resolve = f.Get<IEnumerable<IJobHandler>>().OfType<NotifyResolveJobHandler>().Single();
+        foreach (var job in await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.Jobs.AsNoTracking().Where(j => j.Kind == "notify.resolve").ToListAsync(), default))
+        {
+            await resolve.RunAsync(new JobContext(db, job.Id, t.TenantId, t.Environments["prod"], job.Kind, 1, null, JsonNode.Parse(job.Payload)!.AsObject(), null, "test"), default);
+        }
+
+        await records.UpdateAsync(agent, Ticket, ticket.Id, resolved.Revision, new JsonObject { ["requester"] = t.Users["jordan"].ToString() }, null, null, default);
+        await PumpAsync();
+        var stale = Assert.Single(await DeliveriesAsync(t), d => d.Subject == "Closed out: Moved on" && d.RecipientPrincipal == t.Users["dana"]);
+        Assert.Equal((DeliveryStatuses.Suppressed, "no_longer_authorized"), (stale.Status, stale.StatusReason));
+        Assert.DoesNotContain((await Service.InboxAsync(f.As(t, "dana"), false, null, default)).Items, i => i.Subject == "Closed out: Moved on");
+
+        // Lost access and mutes are decisions: no replay overrides them, forced or not.
+        var admin = f.As(t, "admin");
+        Assert.Equal("not_replayable", (await Assert.ThrowsAsync<KernelException>(() => Service.ReplayAsync(admin, stale.Id, force: true, default))).Code);
+        await Service.SetPreferenceAsync(f.As(t, "dana"), "tenant__route_resolved", "*", true, default);
+        await ResolveTicketAsync(t, "Quiet please");
+        var muted = Assert.Single(await DeliveriesAsync(t), d => d.Subject == "Closed out: Quiet please");
+        Assert.Equal("muted", muted.StatusReason);
+        Assert.Equal("not_replayable", (await Assert.ThrowsAsync<KernelException>(() => Service.ReplayAsync(admin, muted.Id, force: true, default))).Code);
+
+        // Channels and deliveries belong to one workspace environment.
+        await Service.SaveChannelAsync(admin, new SaveChannelRequest("email", "email", "E", "capture", new JsonObject { ["host"] = "smtp.example.com" }, null, null), default);
+        var other = f.As(f.Globex, "morgan");
+        Assert.DoesNotContain(await Service.DeliveriesAsync(other, null, null, default), d => d.Id == muted.Id);
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Service.ReplayAsync(other, muted.Id, true, default))).Status);
+        var sandbox = f.As(t, "admin", env: "sandbox");
+        Assert.Empty(await Service.ChannelsAsync(sandbox, default));
+        Assert.Empty(await Service.DeliveriesAsync(sandbox, null, null, default));
+    }
+
+    [Fact]
+    public async Task A_mandatory_route_reaches_a_person_who_muted_another_route_for_the_same_event()
+    {
+        var t = await f.NewTenantAsync("ntmx", "1.7.0");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyBatchAsync(admin,
+        [
+            new AddSubscription { Subscription = new SubscriptionSpec { Id = "tenant__sub_p1", Label = "P1 heads-up", Event = "core.tickets.ticket.priority_raised" } },
+            new AddNotificationTemplate { Template = new NotificationTemplateSpec { Id = "tenant__tpl_p1", Entity = Ticket, Subject = "Heads up: {{record.title}}", Body = "{{link}}" } },
+            new AddNotificationRoute { Route = new NotificationRouteSpec { Id = "tenant__route_p1", Label = "P1 heads-up", Subscription = "tenant__sub_p1", Profile = PlatformModule.InAppProfile, Template = "tenant__tpl_p1", Recipients = [new RecipientSpec { Kind = RecipientKinds.Field, Ref = "assignee" }] } },
+        ], draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+        var agent = f.As(t, "agent");
+        await Service.SetPreferenceAsync(agent, "tenant__route_p1", "*", true, default);
+
+        var records = f.Get<RecordService>();
+        var ticket = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Storage full", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "high", ["priority"] = "p3", ["assignee"] = t.Users["agent"].ToString() }, null, null, default);
+        await records.UpdateAsync(agent, Ticket, ticket.Id, ticket.Revision, new JsonObject { ["priority"] = "p1" }, null, null, default);
+        while (await f.Get<OutboxDispatcher>().DispatchOnceAsync(default) > 0)
+        {
+        }
+
+        // The muted optional route resolves first and reaches the agent's in-app key before the mandatory one.
+        var db = f.Get<Database>();
+        var resolve = f.Get<IEnumerable<IJobHandler>>().OfType<NotifyResolveJobHandler>().Single();
+        var optional = (await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.Jobs.AsNoTracking().Where(j => j.Kind == "notify.resolve").ToListAsync(), default))
+            .Where(j => j.Payload.Contains("tenant__sub_p1", StringComparison.Ordinal));
+        foreach (var first in optional)
+        {
+            await resolve.RunAsync(new JobContext(db, first.Id, t.TenantId, t.Environments["prod"], first.Kind, 1, null, JsonNode.Parse(first.Payload)!.AsObject(), null, "test"), default);
+        }
+
+        Assert.Contains(await DeliveriesAsync(t), d => d.RecordId == ticket.Id && d.RecipientPrincipal == t.Users["agent"] && d.StatusReason == "muted");
+        await PumpAsync();
+
+        var key = Assert.Single(await DeliveriesAsync(t), d => d.RecordId == ticket.Id && d.RecipientPrincipal == t.Users["agent"] && d.ChannelType == "in_app");
+        Assert.Equal(("core.tickets.route.p1_raised", DeliveryStatuses.Sent, true), (key.RouteId, key.Status, key.Mandatory));
     }
 
     [Fact]

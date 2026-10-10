@@ -81,7 +81,7 @@ public sealed class SubscriptionRouter(ConfigStore configs) : IEventConsumer
         }
     }
 
-    private static bool Matches(SubscriptionSpec sub, EffectiveConfig config, string? entityId, EventTypeSpec? type, EventEnvelope envelope, JsonObject? record)
+    internal static bool Matches(SubscriptionSpec sub, EffectiveConfig config, string? entityId, EventTypeSpec? type, EventEnvelope envelope, JsonObject? record)
     {
         try
         {
@@ -154,9 +154,13 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
             }
 
             var severity = envelope.Severity ?? type?.Severity ?? EventSeverities.Info;
-            var publicEvent = (envelope.Sensitivity ?? type?.Sensitivity) == EventSensitivities.Public;
+            // A missing sensitivity counts as restricted (ASM-053).
+            var sensitivity = envelope.Sensitivity ?? type?.Sensitivity ?? EventSensitivities.Restricted;
             var link = entity is not null && envelope.RecordId is { } rid ? $"{options.WebUrl.TrimEnd('/')}/records/{entity.Id}/{rid}" : options.WebUrl;
-            var existing = (await db.NotificationDeliveries.Where(d => d.EventId == eventId).Select(d => d.IdempotencyKey).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+            // Other subscriptions of the same event may already have reached someone (one job per subscription).
+            var existing = await db.NotificationDeliveries.Where(d => d.EventId == eventId)
+                .Select(d => new { d.IdempotencyKey, d.Id, d.Status, d.StatusReason })
+                .ToDictionaryAsync(d => d.IdempotencyKey, d => (Guid?)(d.Status == DeliveryStatuses.Suppressed && d.StatusReason == "muted" ? d.Id : null), StringComparer.Ordinal, ct);
             var instances = await db.NotificationChannels.AsNoTracking().OrderBy(c => c.Key).ToListAsync(ct);
             var permissionCache = new Dictionary<Guid, EffectivePermissions?>();
             var created = new List<NotificationDeliveryRow>();
@@ -180,7 +184,15 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
                 }
 
                 var mutes = await db.NotificationPreferences.AsNoTracking().Where(p => p.RouteId == route.Id && p.Muted).ToListAsync(ct);
-                foreach (var target in await TargetsAsync(db, route, entity, record, envelope, ct))
+                var targets = await TargetsAsync(db, route, entity, record, envelope, ct);
+                if (targets.Count > options.MaxRecipientsPerEvent)
+                {
+                    // Bound the permission checks too, not only the deliveries.
+                    AuditWriter.AddSystem(db, job.TenantId, job.EnvironmentId, "notification.recipients_capped", "event", eventId.ToString(), new { route = route.Id, limit = options.MaxRecipientsPerEvent }, outcome: "failed");
+                    targets = targets.Take(options.MaxRecipientsPerEvent).ToList();
+                }
+
+                foreach (var target in targets)
                 {
                     EffectivePermissions? perms = null;
                     if (target.Principal is { } principal)
@@ -216,9 +228,22 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
                     {
                         var who = target.Principal?.ToString() ?? target.Address!.ToLowerInvariant();
                         var key = $"{eventId}:{who}:{channel}";
-                        if (!existing.Add(key))
+                        NotificationDeliveryRow? replacing = null;
+                        if (existing.TryGetValue(key, out var mutedRow))
                         {
-                            continue;
+                            // A mandatory route reaches the person even if a muted optional route of another
+                            // subscription got there first (REQ-NOT-004); every other duplicate is skipped.
+                            if (!route.Mandatory || mutedRow is null)
+                            {
+                                continue;
+                            }
+
+                            replacing = await db.NotificationDeliveries.AsTracking().FirstAsync(d => d.Id == mutedRow, ct);
+                            existing[key] = null;
+                        }
+                        else
+                        {
+                            existing[key] = null;
                         }
 
                         if (++reached > options.MaxRecipientsPerEvent)
@@ -230,10 +255,28 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
 
                         var muted = !route.Mandatory && target.Principal is { } p && mutes.Any(m => m.PrincipalId == p && (m.ChannelType == "*" || m.ChannelType == channel));
                         var instance = channel == NotificationChannels.InApp ? null : instances.FirstOrDefault(i => i.Type == channel);
-                        var (subject, body) = NotificationRenderer.Render(template, channel, entity, record, number, envelope.Payload, publicEvent, link, new RenderScope(perms, target.External, target.Name));
+                        var (subject, body) = NotificationRenderer.Render(template, channel, entity, record, number, envelope.Payload, sensitivity, link, new RenderScope(perms, target.External, target.Name));
                         var (status, reason) = muted ? (DeliveryStatuses.Suppressed, "muted")
                             : channel != NotificationChannels.InApp && instance is null ? (DeliveryStatuses.Suppressed, "channel_not_configured")
                             : (DeliveryStatuses.Queued, (string?)null);
+                        if (replacing is not null)
+                        {
+                            replacing.SubscriptionId = sub.Id;
+                            replacing.RouteId = route.Id;
+                            replacing.TemplateId = template.Id;
+                            replacing.ProfileId = profile.Id;
+                            replacing.ChannelKey = instance?.Key;
+                            replacing.Mandatory = true;
+                            replacing.Status = status;
+                            replacing.StatusReason = reason;
+                            replacing.Subject = subject;
+                            replacing.Body = body;
+                            replacing.ConfigRevision = artifact.Revision;
+                            replacing.UpdatedAt = DateTimeOffset.UtcNow;
+                            created.Add(replacing);
+                            continue;
+                        }
+
                         var delivery = new NotificationDeliveryRow
                         {
                             TenantId = job.TenantId,
@@ -410,13 +453,13 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
 /// instance of the environment (capture and disabled modes never send), with a per-instance rate limit, attempts
 /// recorded, retries on transient failures and an honest <c>ambiguous</c> when a send may or may not have happened.
 /// </summary>
-public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> channels, ISecretStore secrets, IClock clock) : IJobHandler
+public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> channels, ISecretStore secrets, ConfigStore configs, AccessService access, IClock clock) : IJobHandler
 {
     public string Kind => NotifyResolveJobHandler.DeliverKind;
 
     public string? RequiredAction => null;
 
-    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug);
+    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug, string EnvironmentKey);
 
     public async Task RunAsync(JobContext job, CancellationToken ct)
     {
@@ -436,6 +479,41 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
                 Finish(db, d, DeliveryStatuses.Ambiguous, "interrupted", "unknown");
                 await db.SaveChangesAsync(ct);
                 return null;
+            }
+
+            // Text was rendered when the event was resolved; by now the person may have left, been disabled or lost
+            // access to the record (retries, rate waits, replays). Check again, and use their current address.
+            if (d.RecipientPrincipal is { } person)
+            {
+                var current = await db.Principals.AsNoTracking().Where(p => p.Id == person && p.Kind == "user" && !p.Disabled).Select(p => new { p.Email }).FirstOrDefaultAsync(ct);
+                var member = current is not null && await db.Memberships.AnyAsync(m => m.PrincipalId == person, ct);
+                var allowed = member;
+                if (allowed && d.RecordId is { } recordId && d.EntityId is { } entityId)
+                {
+                    var artifact = await configs.GetActiveAsync(db, job.TenantId, job.EnvironmentId, ct);
+                    var row = await db.Records.AsNoTracking().FirstOrDefaultAsync(r => r.Id == recordId && r.DeletedAt == null, ct);
+                    try
+                    {
+                        var perms = await access.ForAsync(db, new RequestContext { TenantId = job.TenantId, EnvironmentId = job.EnvironmentId, PrincipalId = person, Channel = "worker" }, artifact.Config, ct, fresh: true);
+                        allowed = row is not null && artifact.Config.FindEntity(entityId) is { } entity && perms.CanRead(entity, JsonNode.Parse(row.Data)!.AsObject());
+                    }
+                    catch (KernelException)
+                    {
+                        allowed = false;
+                    }
+                }
+
+                if (!allowed)
+                {
+                    Finish(db, d, DeliveryStatuses.Suppressed, "no_longer_authorized", "suppressed");
+                    await db.SaveChangesAsync(ct);
+                    return null;
+                }
+
+                if (d.ChannelType == NotificationChannels.Email)
+                {
+                    d.RecipientAddress = current!.Email;
+                }
             }
 
             if (d.ChannelType == NotificationChannels.InApp)
@@ -479,8 +557,11 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
                 return null;
             }
 
+            // One deliverer per instance at a time decides on the rate (the lock lasts until this transaction marks the
+            // delivery as sending), and messages being sent count too.
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"notify:" + job.TenantId + ":" + job.EnvironmentId + ":" + instance.Key}, 0))", ct);
             var since = clock.UtcNow.AddMinutes(-1);
-            var sentRecently = await db.NotificationDeliveries.CountAsync(x => x.ChannelKey == instance.Key && x.SentAt != null && x.SentAt > since, ct);
+            var sentRecently = await db.NotificationDeliveries.CountAsync(x => x.ChannelKey == instance.Key && x.Id != d.Id && ((x.SentAt != null && x.SentAt > since) || (x.Status == DeliveryStatuses.Sending && x.UpdatedAt > since)), ct);
             if (sentRecently >= instance.RatePerMinute)
             {
                 // Over the instance's rate: try again shortly without spending an attempt.
@@ -494,7 +575,8 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
             d.UpdatedAt = clock.UtcNow;
             await db.SaveChangesAsync(ct);
             var slug = await db.Tenants.Where(t => t.Id == job.TenantId).Select(t => t.Slug).FirstAsync(ct);
-            return new Send(d, JsonNode.Parse(instance.Settings) as JsonObject ?? [], slug);
+            var environment = await db.Environments.Where(e => e.Id == job.EnvironmentId).Select(e => e.Key).FirstAsync(ct);
+            return new Send(d, JsonNode.Parse(instance.Settings) as JsonObject ?? [], slug, environment);
         }, ct);
 
         if (send is null)
@@ -507,7 +589,7 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
         ChannelResult result;
         try
         {
-            result = await adapter.SendAsync(new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null), send.Settings, secrets.For(send.TenantSlug), delivery.IdempotencyKey, ct);
+            result = await adapter.SendAsync(new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null), send.Settings, secrets.For(send.TenantSlug, send.EnvironmentKey), delivery.IdempotencyKey, ct);
         }
         catch (Exception)
         {
@@ -537,12 +619,17 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
         }
     }
 
-    /// <summary>When retries run out, the delivery is failed (not left queued).</summary>
+    /// <summary>
+    /// When retries run out, a queued delivery is failed; one caught mid-send is ambiguous, since the provider may have
+    /// it (so a replay needs an explicit force on channels without idempotency).
+    /// </summary>
     public Task OnAbandonedAsync(JobContext job, string reason, CancellationToken ct) =>
         job.Database.InTenantAsync(job.TenantId, job.EnvironmentId, null, async db =>
         {
             var id = Guid.Parse(job.Payload["delivery"]!.GetValue<string>());
-            return await db.NotificationDeliveries.Where(d => d.Id == id && (d.Status == DeliveryStatuses.Queued || d.Status == DeliveryStatuses.Sending))
+            await db.NotificationDeliveries.Where(d => d.Id == id && d.Status == DeliveryStatuses.Sending)
+                .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, DeliveryStatuses.Ambiguous).SetProperty(d => d.StatusReason, "interrupted").SetProperty(d => d.UpdatedAt, DateTimeOffset.UtcNow), ct);
+            return await db.NotificationDeliveries.Where(d => d.Id == id && d.Status == DeliveryStatuses.Queued)
                 .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, DeliveryStatuses.Failed).SetProperty(d => d.StatusReason, "retries_exhausted").SetProperty(d => d.UpdatedAt, DateTimeOffset.UtcNow), ct);
         }, ct);
 

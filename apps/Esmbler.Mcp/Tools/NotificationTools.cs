@@ -95,6 +95,11 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
         [Description("Optional record ID to render with.")] Guid? record = null) =>
         runner.RunAsync("preview_notification", AgentScopes.ConfigRead, route, async ctx =>
         {
+            if (record is not null && !ctx.HasScope(AgentScopes.RecordsRead))
+            {
+                throw new KernelException("scope_missing", "Previewing with a record needs the records:read scope.", 403, "record", "Preview without a record, or ask the user to grant records:read.");
+            }
+
             var result = await notifications.PreviewAsync(ctx, route, record, default);
             return ToolRunner.Untrusted(result);
         });

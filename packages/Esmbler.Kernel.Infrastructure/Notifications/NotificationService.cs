@@ -7,6 +7,7 @@ using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Services;
 using Esmbler.Kernel.Tenancy;
+using Esmbler.Sdk.Notifications;
 using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,7 +37,7 @@ public sealed record NotificationPreview(string Route, string Template, string P
 /// channel instances of the environment (settings and secret names only), delivery inspection and replay, test sends,
 /// and previews that resolve and render without sending or writing anything.
 /// </summary>
-public sealed class NotificationService(Database database, ConfigStore configs, AccessService access, PreviewService preview, ISecretStore secrets, NotificationOptions options, IClock clock)
+public sealed class NotificationService(Database database, ConfigStore configs, AccessService access, PreviewService preview, ISecretStore secrets, NotificationOptions options, IEnumerable<INotificationChannel> adapters, IClock clock)
 {
     private const int PageSize = 30;
     private static readonly string[] SecretLikeKeys = ["password", "secret", "token", "apikey", "api_key", "credential"];
@@ -136,8 +137,7 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
         database.InTenantAsync<IReadOnlyList<ChannelView>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             await RequireManageAsync(db, ctx, ct);
-            var slug = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.Slug).FirstAsync(ct);
-            var accessor = secrets.For(slug);
+            var accessor = await AccessorAsync(db, ctx, ct);
             var rows = await db.NotificationChannels.AsNoTracking().OrderBy(c => c.Key).ToListAsync(ct);
             return [.. rows.Select(r => View(r, accessor))];
         }, ct);
@@ -156,8 +156,7 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
                 throw KernelException.Forbidden("Listing notification channels needs configuration or notification management rights.");
             }
 
-            var slug = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.Slug).FirstAsync(ct);
-            var accessor = secrets.For(slug);
+            var accessor = await AccessorAsync(db, ctx, ct);
             var rows = await db.NotificationChannels.AsNoTracking().OrderBy(c => c.Key).ToListAsync(ct);
             return [.. rows.Select(r => View(r, accessor)).Select(v => new ChannelSummary(v.Type, v.Mode, v.HostAllowed, v.Secrets.Values.All(x => x)))];
         }, ct);
@@ -189,7 +188,16 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
             var refs = request.SecretRefs ?? [];
             if (refs.FirstOrDefault(r => !EnvironmentSecretStore.IsValidName(r)) is { } badRef)
             {
-                throw new KernelException("invalid_secret_ref", $"'{badRef}' is not a secret name.", 400, "secretRefs", "Use upper-case names like SMTP_PASSWORD.");
+                throw new KernelException("invalid_secret_ref", $"'{badRef}' is not a secret name.", 400, "secretRefs", "Use upper-case names like SMTP_PASSWORD (letters, digits and single underscores).");
+            }
+
+            // The settings that name secrets must name declared ones, so what the page shows is what the adapter reads.
+            foreach (var refKey in SecretRefSettings)
+            {
+                if (settings[refKey] is { } named && (named.GetValueKind() != System.Text.Json.JsonValueKind.String || !refs.Contains(named.GetValue<string>())))
+                {
+                    throw new KernelException("invalid_secret_ref", $"Setting '{refKey}' must name one of the secret names listed for this channel.", 400, $"settings.{refKey}", "Add the name to secretRefs.");
+                }
             }
 
             var host = settings["host"]?.GetValue<string>() ?? (request.Type == NotificationChannels.Sms ? "api.twilio.com" : null);
@@ -226,8 +234,7 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
             // Audit names what changed, never values of secrets (there are none here) or addresses.
             AuditWriter.Add(db, ctx, "notification.channel.save", "notification_channel", row.Key, null, new { row.Type, row.Mode, secretRefs = refs, row.RatePerMinute });
             await db.SaveChangesAsync(ct);
-            var slug = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.Slug).FirstAsync(ct);
-            return View(row, secrets.For(slug));
+            return View(row, await AccessorAsync(db, ctx, ct));
         }, ct);
 
     // ------------------------------------------------------------------ deliveries: inspection, replay, test send
@@ -238,6 +245,9 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
             var manage = CanManage(perms);
+            // Text was rendered for the recipient, who may see more than the caller: only permission administrators,
+            // who can see every field anyway, read it here (ASM-080).
+            var text = perms.Can(PlatformActions.PermissionsAdmin);
             if (!manage && !perms.Can(PlatformActions.AuditRead))
             {
                 throw KernelException.Forbidden("Delivery history needs notification management or audit access.");
@@ -256,11 +266,10 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
 
             var rows = await q.OrderByDescending(d => d.CreatedAt).Take(100).ToListAsync(ct);
             var names = await db.Principals.AsNoTracking().Where(p => rows.Select(r => r.RecipientPrincipal).Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
-            // Text (rendered for the recipient, who may see more than the caller) only for people who manage notifications;
-            // addresses are masked for everyone.
+            // Addresses are masked for everyone.
             return [.. rows.Select(d => new DeliveryView(d.Id, d.EventId, d.EventType, d.RouteId, d.ChannelType,
                 d.RecipientPrincipal is { } p ? names.GetValueOrDefault(p, "a person") : Mask(d.RecipientAddress),
-                d.External, d.Mandatory, d.Status, d.StatusReason, d.Attempts, manage ? d.Subject : null, manage ? d.Body : null, d.CreatedAt, d.SentAt, d.ReplayOf))];
+                d.External, d.Mandatory, d.Status, d.StatusReason, d.Attempts, text ? d.Subject : null, text ? d.Body : null, d.CreatedAt, d.SentAt, d.ReplayOf))];
         }, ct);
 
     /// <summary>
@@ -273,6 +282,17 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
             await RequireManageAsync(db, ctx, ct);
             var d = await db.NotificationDeliveries.AsTracking().FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw KernelException.NotFound("Delivery");
             Guid target;
+            if (d.Status == DeliveryStatuses.Suppressed && d.StatusReason is "muted" or "no_longer_authorized")
+            {
+                // A person's mute and lost access are decisions, not failures: never override them.
+                throw new KernelException("not_replayable", d.StatusReason == "muted" ? "The recipient muted this notification." : "The recipient may no longer receive it.", 409, id.ToString(), "Leave it, or ask the person.");
+            }
+
+            if (d.Status == DeliveryStatuses.Ambiguous && !force && adapters.FirstOrDefault(a => a.Type == d.ChannelType) is { SupportsIdempotency: false })
+            {
+                throw new KernelException("ambiguous_delivery", "The provider may already have this message; sending it again can deliver it twice.", 409, id.ToString(), "Pass force if a second copy is acceptable.");
+            }
+
             if (d.Status is DeliveryStatuses.Failed or DeliveryStatuses.Ambiguous)
             {
                 d.Status = DeliveryStatuses.Queued;
@@ -374,32 +394,37 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
 
     /// <summary>
     /// Resolves and renders a route of the working configuration (the open draft, if any) for a record, without sending
-    /// or writing anything (REQ-NOT-006). Text shows only what both the recipient and the previewing person may see.
+    /// or writing anything (REQ-NOT-006). Access is always judged on the published configuration with the caller's real
+    /// context (an agent keeps its scopes): the record must be readable by the caller, recipients are checked as the
+    /// delivery job checks them, and text shows only what both the recipient and the caller may see.
     /// </summary>
     public async Task<NotificationPreview> PreviewAsync(RequestContext ctx, string routeId, Guid? recordId, CancellationToken ct)
     {
-        var (config, viewer, _, _) = await preview.WorkingConfigAsync(ctx, ct);
-        if (!viewer.Can(PlatformActions.ConfigEdit) && !CanManage(viewer))
-        {
-            throw KernelException.Forbidden("Previewing notifications needs configuration or notification management rights.");
-        }
-
-        var route = config.FindNotificationRoute(routeId) ?? throw KernelException.NotFound($"Notification route '{routeId}'");
-        var sub = config.FindSubscription(route.Subscription) ?? throw KernelException.NotFound($"Subscription '{route.Subscription}'");
-        var template = config.FindNotificationTemplate(route.Template) ?? throw KernelException.NotFound($"Template '{route.Template}'");
-        var profile = config.FindNotificationProfile(route.Profile) ?? throw KernelException.NotFound($"Profile '{route.Profile}'");
-        var type = config.FindEventType(sub.Event);
-        var entityId = sub.Entity ?? type?.SubjectEntity;
-        var entity = entityId is null ? null : config.FindEntity(entityId);
+        var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, ct);
         return await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            var published = (await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct)).Config;
+            var viewer = await access.ForAsync(db, ctx, published, ct);
+            if (!viewer.Can(PlatformActions.ConfigEdit) && !CanManage(viewer))
+            {
+                throw KernelException.Forbidden("Previewing notifications needs configuration or notification management rights.");
+            }
+
+            var route = config.FindNotificationRoute(routeId) ?? throw KernelException.NotFound($"Notification route '{routeId}'");
+            var sub = config.FindSubscription(route.Subscription) ?? throw KernelException.NotFound($"Subscription '{route.Subscription}'");
+            var template = config.FindNotificationTemplate(route.Template) ?? throw KernelException.NotFound($"Template '{route.Template}'");
+            var profile = config.FindNotificationProfile(route.Profile) ?? throw KernelException.NotFound($"Profile '{route.Profile}'");
+            var type = config.FindEventType(sub.Event);
+            var entityId = sub.Entity ?? type?.SubjectEntity;
+            var entity = entityId is null ? null : config.FindEntity(entityId);
+            var readable = entityId is null ? null : published.FindEntity(entityId);
             JsonObject? record = null;
             string? number = null;
             if (recordId is { } rid && entity is not null)
             {
                 var row = await db.Records.AsNoTracking().FirstOrDefaultAsync(r => r.Id == rid && r.EntityId == entity.Id && r.DeletedAt == null, ct) ?? throw KernelException.NotFound("Record");
                 record = JsonNode.Parse(row.Data)!.AsObject();
-                if (!viewer.CanRead(entity, record))
+                if (readable is null || !viewer.CanRead(readable, record))
                 {
                     throw KernelException.NotFound("Record");
                 }
@@ -420,9 +445,36 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
                 Actor = "preview",
                 Payload = SamplePayload(type),
             };
-            var targets = await NotifyResolveJobHandler.TargetsAsync(db, route, entity, record, envelope, ct);
+
+            var notes = new List<string>();
+            if (record is null)
+            {
+                notes.Add("No record chosen: record fields render empty and recipients from record fields are not shown.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(sub.When) && record is not null && !SubscriptionRouter.Matches(sub, config, entityId, type, envelope, record))
+            {
+                notes.Add("The subscription's condition does not match this record (with sample event values): nobody would be told.");
+            }
+
+            var severity = type?.Severity ?? EventSeverities.Info;
+            if (profile.MinSeverity is { } min && EventSeverities.Rank(severity) < EventSeverities.Rank(min))
+            {
+                notes.Add($"The profile only sends {min} events or worse; this event type is {severity}: nobody would be told.");
+            }
+
+            // Recipient rules naming fields the caller may not see are left out, so a preview reveals no hidden value.
+            var visibleRoute = SpecJson.Clone(route);
+            visibleRoute.Recipients = [.. route.Recipients.Where(r => r.Kind != RecipientKinds.Field || entity is null || viewer.FieldAccess(entity, r.Ref) != FieldAccessLevels.Hidden)];
+            if (visibleRoute.Recipients.Count < route.Recipients.Count)
+            {
+                notes.Add("Recipients from fields you cannot see are not shown.");
+            }
+
+            var targets = await NotifyResolveJobHandler.TargetsAsync(db, visibleRoute, entity, record, envelope, ct);
             var mutes = await db.NotificationPreferences.AsNoTracking().Where(p => p.RouteId == route.Id && p.Muted).ToListAsync(ct);
             var link = entity is not null && recordId is { } id ? $"{options.WebUrl.TrimEnd('/')}/records/{entity.Id}/{id}" : options.WebUrl;
+            var sensitivity = type?.Sensitivity ?? EventSensitivities.Restricted;
             var results = new List<PreviewRecipient>();
             foreach (var t in targets.Take(20))
             {
@@ -432,17 +484,12 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
                 {
                     try
                     {
-                        perms = await access.ForAsync(db, new RequestContext { TenantId = ctx.TenantId, EnvironmentId = ctx.EnvironmentId, PrincipalId = p, Channel = "worker" }, config, ct);
-                        suppressed = entity is not null && record is not null && !perms.CanRead(entity, record) ? "cannot read the record" : null;
+                        perms = await access.ForAsync(db, new RequestContext { TenantId = ctx.TenantId, EnvironmentId = ctx.EnvironmentId, PrincipalId = p, Channel = "worker" }, published, ct);
+                        suppressed = readable is not null && record is not null && !perms.CanRead(readable, record) ? "not sent" : null;
                     }
                     catch (KernelException)
                     {
-                        suppressed = "not a member";
-                    }
-
-                    if (suppressed is null && !route.Mandatory && mutes.Any(m => m.PrincipalId == p && m.ChannelType == "*"))
-                    {
-                        suppressed = "muted";
+                        suppressed = "not sent";
                     }
                 }
 
@@ -452,13 +499,22 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
                     channels = channels.Take(1).ToList();
                 }
 
+                if (suppressed is null && !route.Mandatory && t.Principal is { } person)
+                {
+                    channels = channels.Where(c => !mutes.Any(m => m.PrincipalId == person && (m.ChannelType == "*" || m.ChannelType == c))).ToList();
+                }
+
                 var (subject, body) = NotificationRenderer.Render(template, channels.FirstOrDefault() ?? NotificationChannels.InApp, entity, record, number, envelope.Payload,
-                    (type?.Sensitivity) == EventSensitivities.Public, link, new RenderScope(perms, t.External, t.Name) { Viewer = viewer });
-                results.Add(new PreviewRecipient(t.Name ?? Mask(t.Address) ?? "someone", t.External, channels, suppressed ?? (channels.Count == 0 ? "no reachable channel" : null), subject, body));
+                    sensitivity, link, new RenderScope(perms, t.External, t.Name) { Viewer = viewer });
+                results.Add(new PreviewRecipient(t.Name ?? Mask(t.Address) ?? "someone", t.External, channels, suppressed ?? (channels.Count == 0 ? "no channel" : null), suppressed is null ? subject : string.Empty, suppressed is null ? body : string.Empty));
             }
 
-            return new NotificationPreview(route.Id, template.Id, profile.Id, route.Mandatory, results,
-                record is null ? "No record chosen: record fields render empty and recipients from record fields are not shown." : targets.Count > 20 ? $"Showing 20 of {targets.Count} recipients." : null);
+            if (targets.Count > 20)
+            {
+                notes.Add($"Showing 20 of {targets.Count} recipients.");
+            }
+
+            return new NotificationPreview(route.Id, template.Id, profile.Id, route.Mandatory, results, notes.Count == 0 ? null : string.Join(" ", notes));
         }, ct);
     }
 
@@ -480,6 +536,15 @@ public sealed class NotificationService(Database database, ConfigStore configs, 
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private static readonly string[] SecretRefSettings = ["usernameRef", "passwordRef", "tokenRef"];
+
+    private async Task<ISecretAccessor> AccessorAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
+    {
+        var slug = await db.Tenants.Where(t => t.Id == ctx.TenantId).Select(t => t.Slug).FirstAsync(ct);
+        var environment = await db.Environments.Where(e => e.Id == ctx.EnvironmentId).Select(e => e.Key).FirstAsync(ct);
+        return secrets.For(slug, environment);
+    }
 
     private static bool CanManage(EffectivePermissions perms) => perms.Can(PlatformActions.NotificationsManage) || perms.Can(PlatformActions.PermissionsAdmin);
 

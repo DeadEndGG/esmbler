@@ -23,16 +23,16 @@ public static partial class NotificationRenderer
     public const int MaxBody = 4000;
     public const int MaxSms = 480;
 
-    public static (string Subject, string Body) Render(NotificationTemplateSpec template, string channel, EntitySpec? entity, JsonObject? record, string? number, JsonObject eventPayload, bool publicEvent, string? link, RenderScope scope)
+    public static (string Subject, string Body) Render(NotificationTemplateSpec template, string channel, EntitySpec? entity, JsonObject? record, string? number, JsonObject eventPayload, string sensitivity, string? link, RenderScope scope)
     {
         var variant = template.Variants.GetValueOrDefault(channel);
-        var subject = Fill(variant?.Subject ?? template.Subject, template, entity, record, number, eventPayload, publicEvent, link, scope);
-        var body = Fill(variant?.Body ?? template.Body, template, entity, record, number, eventPayload, publicEvent, link, scope);
+        var subject = Fill(variant?.Subject ?? template.Subject, template, entity, record, number, eventPayload, sensitivity, link, scope);
+        var body = Fill(variant?.Body ?? template.Body, template, entity, record, number, eventPayload, sensitivity, link, scope);
         var bodyLimit = channel == NotificationChannels.Sms ? MaxSms : MaxBody;
         return (Truncate(OneLine(subject), MaxSubject), Truncate(body, bodyLimit));
     }
 
-    private static string Fill(string text, NotificationTemplateSpec template, EntitySpec? entity, JsonObject? record, string? number, JsonObject payload, bool publicEvent, string? link, RenderScope scope) =>
+    private static string Fill(string text, NotificationTemplateSpec template, EntitySpec? entity, JsonObject? record, string? number, JsonObject payload, string sensitivity, string? link, RenderScope scope) =>
         Placeholder().Replace(text, m =>
         {
             var name = m.Groups[1].Value;
@@ -48,13 +48,20 @@ public static partial class NotificationRenderer
 
             if (name == "record.number")
             {
+                // External recipients see the number only if the template lists the auto-number field as external.
+                if (scope.External && (entity?.Fields.Find(f => f.Type == FieldTypes.AutoNumber)?.Key is not { } numberField || !template.ExternalFields.Contains(numberField)))
+                {
+                    return string.Empty;
+                }
+
                 return number ?? string.Empty;
             }
 
             if (name.StartsWith("event.", StringComparison.Ordinal))
             {
+                // Restricted payloads may carry hidden fields: never text (the validator refuses such templates too).
                 // External recipients only get values of public events (ADR 0017 sensitivity).
-                return scope.External && !publicEvent ? string.Empty : Text(payload[name["event.".Length..]]);
+                return sensitivity == EventSensitivities.Restricted || (scope.External && sensitivity != EventSensitivities.Public) ? string.Empty : Text(payload[name["event.".Length..]]);
             }
 
             if (name.StartsWith("record.", StringComparison.Ordinal) && entity is not null && record is not null)

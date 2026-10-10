@@ -396,6 +396,10 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var previewed = await Call(client, "preview_notification", new { route = "tenant__escalations_to_the_assignee" });
         Assert.Contains("No record chosen", previewed["untrusted_data"]!["note"]!.GetValue<string>());
 
+        // Rendering with a real record reads it: that needs records:read, which the builder delegation lacks (T-23).
+        var recordPreview = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "preview_notification", new { route = "tenant__escalations_to_the_assignee", record = Guid.NewGuid() }));
+        Assert.Contains("scope_missing", recordPreview.Body);
+
         version = (await Call(client, "update_notification_template", new
         {
             template = "tenant__escalations_to_the_assignee_text",

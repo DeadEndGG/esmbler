@@ -328,7 +328,10 @@ export class NotificationsAdminPage {
 
   protected async save(): Promise<void> {
     const f = this.form;
-    const settings: Record<string, unknown> = { from: f.from || undefined, host: f.host || undefined };
+    // Keep settings this form does not edit (usernameRef, auth, security, …); the form owns only these four.
+    const kept = { ...(this.channels().find((c) => c.key === f.key && this.editing())?.settings ?? {}) };
+    for (const k of ['from', 'host', 'port', 'accountSid']) delete kept[k];
+    const settings: Record<string, unknown> = { ...kept, from: f.from || undefined, host: f.host || undefined };
     if (f.type === 'email' && f.port) settings['port'] = Number(f.port);
     if (f.type === 'sms' && f.accountSid) settings['accountSid'] = f.accountSid;
     const body = {

@@ -45,8 +45,15 @@ public sealed class SmtpEmailChannel(NotificationOptions options) : INotificatio
             var port = settings["port"]?.GetValue<int>() ?? 587;
             var security = settings["security"]?.GetValue<string>() == "ssl" ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
             await client.ConnectAsync(host!, port, security, ct);
-            if (secrets.Get(settings["usernameRef"]?.GetValue<string>() ?? "SMTP_USERNAME") is { } user && secrets.Get(settings["passwordRef"]?.GetValue<string>() ?? "SMTP_PASSWORD") is { } password)
+            // Authenticate unless the instance says the relay needs none; missing credentials never fall back to an
+            // unauthenticated send.
+            if (settings["auth"]?.GetValue<string>() != "none")
             {
+                if (secrets.Get(settings["usernameRef"]?.GetValue<string>() ?? "SMTP_USERNAME") is not { } user || secrets.Get(settings["passwordRef"]?.GetValue<string>() ?? "SMTP_PASSWORD") is not { } password)
+                {
+                    return ChannelResult.Permanent("credentials_missing");
+                }
+
                 await client.AuthenticateAsync(user, password, ct);
             }
         }

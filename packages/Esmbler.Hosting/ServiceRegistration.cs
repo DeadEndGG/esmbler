@@ -106,7 +106,8 @@ public static class ServiceRegistration
             };
         });
         services.AddSingleton<Kernel.Infrastructure.Notifications.ISecretStore, Kernel.Infrastructure.Notifications.EnvironmentSecretStore>();
-        services.AddHttpClient("notifications.sms");
+        // No redirects: the allow-listed host is the only one the SMS adapter ever talks to (T-54, T-73).
+        services.AddHttpClient("notifications.sms").ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddSingleton<Sdk.Notifications.INotificationChannel, Kernel.Infrastructure.Notifications.Channels.SmtpEmailChannel>();
         services.AddSingleton<Sdk.Notifications.INotificationChannel, Kernel.Infrastructure.Notifications.Channels.HttpSmsChannel>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Notifications.SubscriptionRouter>();
