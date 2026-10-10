@@ -20,10 +20,26 @@ public sealed partial class ScriptedPlanner : IPlanner
         var session = new Session(request, tools, sink, ct);
         var clauses = SplitClauses(request.Text);
         var done = new List<string>();
+        if (clauses.Count > 1)
+        {
+            // Several changes in one message: say what will happen, in order, before touching the draft (REQ-AI-007).
+            await session.EmitAsync(AssistantEvent.Types.Plan, "Plan: " + string.Join(" ", clauses.Select((c, i) => $"{i + 1}. {Capitalize(c)}.")) + " Each step is undoable on its own.");
+        }
+
         foreach (var clause in clauses)
         {
             ct.ThrowIfCancellationRequested();
-            var outcome = await HandleAsync(session, clause);
+            string? outcome;
+            try
+            {
+                outcome = await HandleAsync(session, clause);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // A read the planner depends on failed (for example the person lost builder rights mid-way).
+                outcome = "!" + ex.Message;
+            }
+
             if (outcome is null)
             {
                 if (done.Count == 0)
@@ -927,7 +943,7 @@ public sealed partial class ScriptedPlanner : IPlanner
     [GeneratedRegex(@"\b(?:here|this|selected|it)\b", RegexOptions.IgnoreCase)]
     private static partial Regex HerePattern();
 
-    [GeneratedRegex("""^(?:please\s+)?(?:can you\s+)?(?:add|create)\s+(?:(?:a|an|new|another)\s+)*(?<req>(?:required|mandatory|optional)\s+)?(?<type>(?:[\w/-]+\s+){0,2}?)field\s+(?:called\s+|named\s+|for\s+)?(?<label>"[^"]+"|“[^”]+”|'[^']+'|[\w][\w\s-]*?)(?:\s+(?:to|on|for)\s+(?:the\s+)?(?:tickets?|ticket\s+(?:form|page)))?(?:\s+with\s+(?:the\s+)?(?:options|choices|values)\s+(?<opts>.+?))?(?:,?\s*(?:and\s+)?(?:put|place|show|add|display)\s+it\s+(?:in|into|on|to|under)\s+(?:the\s+)?(?<card>.+?)(?:\s+card)?|\s+(?<card>here|(?:in|to|into)\s+(?:this|the selected)\s+card))?$""", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("""^(?:please\s+)?(?:can you\s+)?(?:add|create)\s+(?:(?:a|an|new|another)\s+)*(?<req>(?:required|mandatory|optional)\s+)?(?<type>(?:[\w/-]+\s+){0,2}?)field\s+(?:called\s+|named\s+|for\s+)?(?<label>"[^"]+"|“[^”]+”|'[^']+'|[\w][\w\s-]*?)(?:\s+(?:to|on|for)\s+(?:the\s+)?(?:tickets?|ticket\s+(?:form|page)))?(?:\s+with\s+(?:the\s+)?(?:options|choices|values)\s+(?<opts>.+?))?(?:,?\s*(?:and\s+)?(?:put|place|show|add|display)\s+it\s+(?:in|into|on|to|under)\s+(?:the\s+)?(?<card>.+?)(?:\s+card)?|\s+(?<card>here|(?:in|to|into)\s+(?:this|the selected)\s+card)|\s+(?:to|in|into|on|under)\s+(?:the\s+)?(?<card>[\w][\w\s-]*?)\s+card)?$""", RegexOptions.IgnoreCase)]
     private static partial Regex AddFieldPattern();
 
     [GeneratedRegex(@"^(?:when|if|whenever)\s+(?<cond>.+?),?\s+(?:then\s+)?(?:(?<verb>require|hide|show|lock)|make)\s+(?:the\s+)?(?<target>.+?)(?:\s+(?:required|mandatory|read[- ]only))?(?:\s+field)?$", RegexOptions.IgnoreCase)]

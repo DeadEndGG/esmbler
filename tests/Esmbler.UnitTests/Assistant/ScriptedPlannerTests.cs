@@ -36,6 +36,18 @@ public class ScriptedPlannerTests
     }
 
     [Fact]
+    public async Task Several_changes_are_announced_as_a_plan_before_any_tool_call()
+    {
+        var tools = new RecordingGateway();
+        var sink = new ListSink();
+        await new ScriptedPlanner().RunAsync(new AssistantRequest("c1", "Add a \"Vendor\" field. Rename Category to Request type", [], []), tools, sink, new AssistantBudget(), default);
+        var first = sink.Events[0];
+        Assert.Equal(AssistantEvent.Types.Plan, first.Type);
+        Assert.Contains("1. Add a", first.Text, StringComparison.Ordinal);
+        Assert.Contains("2. Rename Category", first.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Cancellation_stops_before_any_change()
     {
         using var cts = new CancellationTokenSource();

@@ -17,6 +17,7 @@ public sealed record AssistantEvent(
     public static class Types
     {
         public const string Thinking = "thinking";
+        public const string Plan = "plan";
         public const string Tool = "tool";
         public const string Step = "step";
         public const string Message = "message";
