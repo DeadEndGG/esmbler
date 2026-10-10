@@ -13,6 +13,8 @@ export interface DraftEvent {
   targets?: string[];
   agent?: boolean;
   r?: number;
+  /** Server time (epoch ms) the change was applied; used to measure live latency (REQ-LIVE-002). */
+  at?: number;
 }
 
 export interface AssistantEvent {
@@ -43,7 +45,10 @@ export class Live {
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build();
-    this.connection.on('draftChanged', (e: DraftEvent) => this.draft$.next(e));
+    this.connection.on('draftChanged', (e: DraftEvent) => {
+      this.recordTiming(e);
+      this.draft$.next(e);
+    });
     this.connection.on('assistantEvent', (e: AssistantEvent) => this.assistant$.next(e));
     this.connection.onreconnected(async () => {
       this.connected.set(true);
@@ -58,6 +63,17 @@ export class Live {
     } catch {
       this.connected.set(false);
     }
+  }
+
+  /**
+   * Last draft events with arrival times, exposed for the experience measurements in the Playwright suite.
+   * Contains only IDs and timestamps, never record data.
+   */
+  private recordTiming(e: DraftEvent): void {
+    const w = window as unknown as { esmblerLiveLog?: { at?: number; receivedAt: number; targets?: string[]; k: string }[] };
+    const log = (w.esmblerLiveLog ??= []);
+    log.push({ at: e.at, receivedAt: Date.now(), targets: e.targets, k: e.k });
+    if (log.length > 100) log.splice(0, log.length - 100);
   }
 
   async watchDraft(): Promise<void> {

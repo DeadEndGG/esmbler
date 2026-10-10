@@ -276,7 +276,7 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
     private static Task NotifyAsync(KernelDbContext db, RequestContext ctx, DraftRow draft, int seq, string kind, IReadOnlyList<string> targets, CancellationToken ct)
     {
         // Delivered on commit. IDs only; listeners reload under their own authorization.
-        var payload = JsonSerializer.Serialize(new { t = ctx.TenantId, e = ctx.EnvironmentId, d = draft.Id, v = draft.Version, s = seq, k = kind, targets, agent = ctx.AgentId is not null });
+        var payload = JsonSerializer.Serialize(new { t = ctx.TenantId, e = ctx.EnvironmentId, d = draft.Id, v = draft.Version, s = seq, k = kind, targets, agent = ctx.AgentId is not null, at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
         return db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_notify('esmbler_draft', {payload})", ct);
     }
 }
