@@ -37,6 +37,28 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
             };
         });
 
+    [McpServerTool(Name = "list_catalog_items", ReadOnly = true), Description("Service catalog items in the open draft: questions (variables with types), fulfillment tasks with dependencies and conditions, and whether each can be requested.")]
+    public Task<CallToolResult> ListCatalogItems() =>
+        runner.RunAsync("list_catalog_items", AgentScopes.ConfigRead, null, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            return new
+            {
+                draftVersion,
+                items = config.CatalogItems.OrderBy(i => i.Order).Select(i => new
+                {
+                    i.Id,
+                    i.Label,
+                    i.Category,
+                    i.Active,
+                    i.RequestEntity,
+                    customized = config.Customized.Contains(i.Id),
+                    variables = i.Variables.Select(v => new { v.Key, v.Label, v.Type, v.Required, v.ChoiceList }),
+                    tasks = i.Tasks.Select(t => new { t.Id, t.Title, t.DependsOn, t.When, t.AssignmentGroup }),
+                }),
+            };
+        });
+
     [McpServerTool(Name = "describe_entity", ReadOnly = true), Description("Fields (key, type, label, required, options), relationships, workflow states and transitions, and rules of an entity, as seen in the open draft. Field keys you add must start with tenant__.")]
     public Task<CallToolResult> DescribeEntity([Description("Entity ID, e.g. core.tickets.ticket.")] string entity) =>
         runner.RunAsync("describe_entity", AgentScopes.ConfigRead, entity, async ctx =>
@@ -65,7 +87,7 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
                     f.MaxLength,
                 }),
                 relationships = config.Relationships.Where(r => r.Entity == e.Id || r.Target == e.Id).Select(r => new { r.Id, r.Entity, r.Field, r.Target, r.Label, r.InverseLabel }),
-                workflow = config.WorkflowFor(e.Id) is { } wf ? new { wf.StateField, states = wf.States.Select(s => s.Id), transitions = wf.Transitions.Select(t => new { t.Id, t.Label, t.From, t.To }) } : null,
+                workflow = config.WorkflowFor(e.Id) is { } wf ? new { wf.Id, wf.StateField, policy = wf.ActiveInstances.Policy, states = wf.States.Select(s => new { s.Id, s.Category }), transitions = wf.Transitions.Where(t => !t.System).Select(t => new { t.Id, t.Label, t.From, t.To, t.Enabled }) } : null,
                 rules = config.Rules.Where(r => r.Entity == e.Id).Select(r => new { r.Id, r.Kind, r.Scope, r.Description, r.When, r.Assert, r.Enabled, actions = r.Actions.Select(a => new { a.Type, a.Field }) }),
             };
         });

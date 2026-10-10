@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy" })
         {
             Assert.Contains(expected, tools);
         }
@@ -97,6 +97,55 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var audited = await platform.Get<Database>().InTenantAsync(tenant.TenantId, tenant.Environments["prod"], null, db => db.AuditLog.Where(a => a.Operation.StartsWith("mcp.") && a.Agent != null).Select(a => a.Operation).ToListAsync(), default);
         Assert.Contains("mcp.add_rule", audited);
         Assert.Contains("mcp.request_publish", audited);
+    }
+
+    [Fact]
+    public async Task Agent_builds_a_catalog_item_and_reshapes_a_workflow_through_mcp()
+    {
+        var tenant = await platform.NewTenantAsync("mcat", "1.2.0");
+        var (api, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var listed = await Call(client, "list_catalog_items");
+        Assert.Equal(3, listed["items"]!.AsArray().Count);
+
+        var item = await Call(client, "add_catalog_item", new
+        {
+            label = "Parking permit",
+            category = "Facilities",
+            description = "A permit for the office car park.",
+            variables = new object[]
+            {
+                new { label = "Licence plate", type = "short_text", required = true },
+                new { label = "Vehicle type", type = "single_select", choices = new[] { "Petrol", "Electric" }, required = true },
+            },
+            tasks = new object[]
+            {
+                new { title = "Issue the permit", id = "issue", assignmentGroup = "service_desk" },
+                new { title = "Enable a charging bay", id = "charger", dependsOn = new[] { "issue" }, when = "variables.vehicle_type == 'electric'" },
+            },
+            expected_version = version,
+        });
+        version = item["version"]!.GetValue<int>();
+
+        var entity = await Call(client, "describe_entity", new { entity = "core.tickets.request" });
+        var workflow = entity["workflow"]!["id"]!.GetValue<string>();
+        version = (await Call(client, "add_workflow_state", new { workflow, label = "Awaiting information", category = "pending", expected_version = version }))["version"]!.GetValue<int>();
+        version = (await Call(client, "add_transition", new { workflow, label = "Ask for information", from = new[] { "submitted" }, to = "tenant__awaiting_information", expected_version = version }))["version"]!.GetValue<int>();
+        version = (await Call(client, "set_workflow_policy", new { workflow, policy = "pin", expected_version = version }))["version"]!.GetValue<int>();
+
+        var system = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_transition", new { workflow, transition = "complete", enabled = false, expected_version = version }));
+        Assert.Contains("system_transition", system.Body);
+
+        await Call(client, "request_publish");
+        var pending = await api.GetFromJsonAsync<JsonObject>("/api/config/publish-requests/pending", ApiFactory.Json);
+        (await api.PostAsJsonAsync("/api/config/publish", new { artifactHash = pending!["artifactHash"]!.GetValue<string>(), expectedRevision = 1 })).EnsureSuccessStatusCode();
+
+        var catalog = await api.GetFromJsonAsync<JsonObject>("/api/catalog", ApiFactory.Json);
+        var parking = catalog!["items"]!.AsArray().Single(i => i!["label"]!.GetValue<string>() == "Parking permit")!;
+        Assert.Equal(["licence_plate", "vehicle_type"], parking["variables"]!.AsArray().Select(v => v!["key"]!.GetValue<string>()));
+        Assert.True(parking["steps"]!.AsArray().Single(st => st!["id"]!.GetValue<string>() == "charger")!["conditional"]!.GetValue<bool>());
     }
 
     [Fact]

@@ -222,7 +222,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 Revision = p.Row.Revision,
                 ConfigRevision = artifact.Revision,
                 Data = Filter(p.Data, fieldAccess),
-                Display = DisplayFor(entity, p.Data, display, fieldAccess),
+                Display = DisplayFor(artifact.Config, entity, p.Data, display, fieldAccess),
                 CreatedAt = p.Row.CreatedAt,
                 UpdatedAt = p.Row.UpdatedAt,
             }).ToList();
@@ -684,7 +684,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             Revision = row.Revision,
             ConfigRevision = row.ConfigRevision,
             Data = Filter(data, fieldAccess),
-            Display = DisplayFor(entity, data, display, fieldAccess),
+            Display = DisplayFor(config, entity, data, display, fieldAccess),
             Access = new RecordAccessView(canUpdate, perms.Entity(entity.Id).Delete, fieldAccess.ToDictionary(f => f.Key, f => canUpdate ? f.Value : f.Value == FieldAccessLevels.Write ? FieldAccessLevels.Read : f.Value)),
             Transitions = transitions,
             FieldStates = new FieldStatesView(
@@ -785,9 +785,17 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         return display;
     }
 
-    private static IReadOnlyDictionary<string, string> DisplayFor(EntitySpec entity, JsonObject data, Dictionary<string, string> display, IReadOnlyDictionary<string, string> fieldAccess)
+    private static IReadOnlyDictionary<string, string> DisplayFor(EffectiveConfig config, EntitySpec entity, JsonObject data, Dictionary<string, string> display, IReadOnlyDictionary<string, string> fieldAccess)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var field in entity.Fields.Where(f => f.Type == FieldTypes.CatalogItem))
+        {
+            if (fieldAccess.GetValueOrDefault(field.Key) != FieldAccessLevels.Hidden && data[field.Key] is JsonValue item && item.TryGetValue<string>(out var itemId))
+            {
+                result[field.Key] = config.FindCatalogItem(itemId)?.Label ?? itemId;
+            }
+        }
+
         foreach (var field in entity.Fields.Where(f => f.Type is FieldTypes.User or FieldTypes.Group or FieldTypes.Lookup))
         {
             if (fieldAccess.GetValueOrDefault(field.Key) == FieldAccessLevels.Hidden || data[field.Key] is not JsonValue v || !v.TryGetValue<string>(out var raw))

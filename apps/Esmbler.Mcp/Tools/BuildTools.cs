@@ -29,6 +29,48 @@ public sealed class RuleActionInput
     public string? Message { get; set; }
 }
 
+public sealed class CatalogVariableInput
+{
+    [Description("Question people see, e.g. \"Licence plate\".")]
+    public required string Label { get; set; }
+
+    [Description("short_text, long_text, integer, decimal, date, date_time, single_select, multi_select, toggle, email, user, or group.")]
+    public required string Type { get; set; }
+
+    [Description("Optional snake_case key; derived from the label when omitted.")]
+    public string? Key { get; set; }
+
+    public bool Required { get; set; }
+
+    public string? Help { get; set; }
+
+    [Description("single_select/multi_select: option labels (a choice list is created).")]
+    public List<string>? Choices { get; set; }
+
+    [Description("single_select/multi_select: an existing choice list ID instead of choices.")]
+    public string? ChoiceList { get; set; }
+}
+
+public sealed class CatalogTaskInput
+{
+    [Description("What the fulfiller does, e.g. \"Issue the permit\".")]
+    public required string Title { get; set; }
+
+    [Description("Optional snake_case ID; derived from the title when omitted. dependsOn refers to these IDs.")]
+    public string? Id { get; set; }
+
+    public string? Description { get; set; }
+
+    [Description("Group key that receives the task, e.g. service_desk.")]
+    public string? AssignmentGroup { get; set; }
+
+    [Description("IDs of tasks of this item that must finish first.")]
+    public List<string>? DependsOn { get; set; }
+
+    [Description("Only create the task when this holds, e.g. variables.needs_laptop == true.")]
+    public string? When { get; set; }
+}
+
 /// <summary>
 /// Build tools (REQ-AI-003). Every change is a Command appended to the open draft and appears on the live page
 /// within a second. Pass the draft version you last saw as expected_version; a newer draft is reported as a conflict.
@@ -218,6 +260,109 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts)
             var state = await drafts.SetUndoneAsync(ctx, step, true, expected_version, default);
             return new { state.Version, undone = step };
         });
+
+    [McpServerTool(Name = "add_catalog_item"), Description("Add a service catalog item: the questions (variables) requesters answer and the fulfillment tasks that run, with dependencies (dependsOn) and optional conditions (when, over variables.<key>). Tasks start when an agent starts fulfillment; dependents wait for their prerequisites.")]
+    public Task<CallToolResult> AddCatalogItem(
+        [Description("Name in the catalog, e.g. \"Parking permit\".")] string label,
+        [Description("Questions requesters answer, in order.")] CatalogVariableInput[] variables,
+        [Description("Fulfillment tasks.")] CatalogTaskInput[] tasks,
+        int expected_version,
+        [Description("One sentence shown on the catalog card.")] string? description = null,
+        [Description("Catalog section, e.g. Hardware, Access, Facilities.")] string? category = null,
+        [Description("Entity that receives the requests; defaults to the one request entity (core.tickets.request).")] string? request_entity = null) =>
+        runner.RunAsync("add_catalog_item", AgentScopes.ConfigEdit, label, async ctx =>
+        {
+            var ops = new List<OverlayOp>();
+            var slug = Slug(label);
+            var item = new CatalogItemSpec
+            {
+                Id = Namespaces.TenantPrefix + slug[..Math.Min(40, slug.Length)],
+                Label = label,
+                Description = description,
+                Category = category,
+                RequestEntity = request_entity ?? "core.tickets.request",
+            };
+            foreach (var v in variables)
+            {
+                var key = v.Key ?? Slug(v.Label);
+                string? listId = v.ChoiceList;
+                if (v.Choices is { Count: > 0 } choices)
+                {
+                    listId = $"{Namespaces.TenantPrefix}cl_{slug[..Math.Min(20, slug.Length)]}_{key}";
+                    ops.Add(new AddChoiceList { ChoiceList = new ChoiceListSpec { Id = listId, Label = v.Label, Options = choices.Select(c => new ChoiceOption { Id = Slug(c), Label = c }).ToList() } });
+                }
+
+                item.Variables.Add(new VariableSpec { Key = key, Label = v.Label, Type = v.Type, Required = v.Required, Help = v.Help, ChoiceList = listId });
+            }
+
+            foreach (var t in tasks)
+            {
+                item.Tasks.Add(new FulfillmentTaskSpec { Id = t.Id ?? Slug(t.Title)[..Math.Min(40, Slug(t.Title).Length)], Title = t.Title, Description = t.Description, AssignmentGroup = t.AssignmentGroup, DependsOn = t.DependsOn ?? [], When = t.When });
+            }
+
+            ops.Add(new AddCatalogItem { Item = item });
+            return await ApplyAllAsync(ctx, ops, expected_version);
+        });
+
+    [McpServerTool(Name = "update_catalog_item"), Description("Change a catalog item's name, description, section, or whether it can be requested (active). Default-module items cannot have their questions or tasks replaced; deactivate them and add your own.")]
+    public Task<CallToolResult> UpdateCatalogItem(
+        [Description("Catalog item ID from list_catalog_items.")] string item,
+        int expected_version,
+        string? label = null,
+        string? description = null,
+        string? category = null,
+        bool? active = null) =>
+        runner.RunAsync("update_catalog_item", AgentScopes.ConfigEdit, item, async ctx =>
+            await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active } }], expected_version));
+
+    [McpServerTool(Name = "add_workflow_state"), Description("Add a state to a workflow (it also becomes a status option). Category is one of new, active, pending, resolved, closed, cancelled. Add transitions into and out of it with add_transition.")]
+    public Task<CallToolResult> AddWorkflowState(
+        [Description("Workflow ID from describe_entity, e.g. core.tickets.request_lifecycle.")] string workflow,
+        [Description("State name people see, e.g. \"Awaiting information\".")] string label,
+        [Description("new, active, pending, resolved, closed, or cancelled.")] string category,
+        int expected_version) =>
+        runner.RunAsync("add_workflow_state", AgentScopes.ConfigEdit, workflow, async ctx =>
+            await ApplyAllAsync(ctx, [new AddWorkflowState { Workflow = workflow, State = new WorkflowState { Id = Namespaces.TenantPrefix + Slug(label), Category = category }, Label = label, Tone = category switch { "pending" => "accent.amber", "resolved" => "accent.green", "cancelled" => "accent.gray", "active" => "accent.purple", _ => "accent.blue" } }], expected_version));
+
+    [McpServerTool(Name = "add_transition"), Description("Add a workflow transition (a button) from one or more states to another. Optionally limit it to roles, require fields, or guard it with an expression.")]
+    public Task<CallToolResult> AddTransition(
+        string workflow,
+        [Description("Button label, a verb, e.g. \"Ask for information\".")] string label,
+        [Description("State IDs it starts from.")] string[] from,
+        [Description("State ID it goes to.")] string to,
+        int expected_version,
+        [Description("Role IDs allowed to fire it; empty means anyone who can edit the record.")] string[]? roles = null,
+        [Description("Field keys that must be filled when it fires.")] string[]? required_fields = null,
+        [Description("Condition that must hold, e.g. record.assignee != null.")] string? guard = null,
+        string? guard_message = null,
+        [Description("primary, neutral, or danger.")] string? tone = null) =>
+        runner.RunAsync("add_transition", AgentScopes.ConfigEdit, workflow, async ctx =>
+            await ApplyAllAsync(ctx, [new AddTransition { Workflow = workflow, Transition = new WorkflowTransition { Id = Namespaces.TenantPrefix + Slug(label), Label = label, From = [.. from], To = to, Roles = [.. roles ?? []], RequiredFields = [.. required_fields ?? []], Guard = guard, GuardMessage = guard_message, Tone = tone } }], expected_version));
+
+    [McpServerTool(Name = "update_transition"), Description("Change a transition. Default-module transitions accept only label, guard_message, tone, and enabled (disable instead of delete); your own transitions accept everything.")]
+    public Task<CallToolResult> UpdateTransition(
+        string workflow,
+        string transition,
+        int expected_version,
+        string? label = null,
+        bool? enabled = null,
+        string? guard_message = null,
+        string? tone = null,
+        string[]? from = null,
+        string? to = null,
+        string? guard = null) =>
+        runner.RunAsync("update_transition", AgentScopes.ConfigEdit, $"{workflow}/{transition}", async ctx =>
+            await ApplyAllAsync(ctx, [new UpdateTransition { Workflow = workflow, Transition = transition, Set = new TransitionPatch { Label = label, Enabled = enabled, GuardMessage = guard_message, Tone = tone, From = from?.ToList(), To = to, Guard = guard } }], expected_version));
+
+    [McpServerTool(Name = "set_workflow_policy"), Description("Decide what happens to records already in a workflow when this draft changes it: pin (default; they finish on the version they started with), migrate (move them through state_map, old state → new state), or cancel (move active ones to cancel_state). The publish review shows how many records each choice affects.")]
+    public Task<CallToolResult> SetWorkflowPolicy(
+        string workflow,
+        [Description("pin, migrate, or cancel.")] string policy,
+        int expected_version,
+        [Description("migrate: old state ID → new state ID.")] Dictionary<string, string>? state_map = null,
+        [Description("cancel: a cancelled-category state ID.")] string? cancel_state = null) =>
+        runner.RunAsync("set_workflow_policy", AgentScopes.ConfigEdit, workflow, async ctx =>
+            await ApplyAllAsync(ctx, [new SetActiveInstancePolicy { Workflow = workflow, Policy = new ActiveInstancePolicy { Policy = policy, StateMap = state_map ?? [], CancelState = cancel_state } }], expected_version));
 
     private async Task<object> ApplyAllAsync(RequestContext ctx, IReadOnlyList<OverlayOp> ops, int expectedVersion)
     {

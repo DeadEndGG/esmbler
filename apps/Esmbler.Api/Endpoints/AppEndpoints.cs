@@ -18,6 +18,10 @@ public static class AppEndpoints
         app.MapGet("/api/app", (ClaimsPrincipal user, ExperienceService experience, CancellationToken ct) =>
             experience.AppAsync(RequestContextFactory.From(user, "api"), ct)).WithTags("App").RequireAuthorization();
 
+        // Service catalog (ADR 0015): active items the caller may request. Requests are created with POST /api/records.
+        app.MapGet("/api/catalog", (ClaimsPrincipal user, ExperienceService experience, CancellationToken ct) =>
+            experience.CatalogAsync(RequestContextFactory.From(user, "api"), ct)).WithTags("Catalog").RequireAuthorization();
+
         var config = app.MapGroup("/api/config").WithTags("Configuration").RequireAuthorization();
         config.MapGet("/entities/{entity}", (string entity, ClaimsPrincipal user, ExperienceService experience, CancellationToken ct) =>
             experience.EntityAsync(RequestContextFactory.From(user, "api"), entity, ct));

@@ -9,7 +9,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Esmbler.Kernel.Infrastructure.Configuration;
 
-public sealed record NavItem(string Entity, string Label, string PluralLabel, string? ListView, string? RecordView, string? QuickCreateView, bool CanCreate);
+/// <param name="Requests">The entity receives catalog requests: "New" opens the service catalog instead of a form.</param>
+public sealed record NavItem(string Entity, string Label, string PluralLabel, string? ListView, string? RecordView, string? QuickCreateView, bool CanCreate, bool Requests = false);
+
+/// <summary>A catalog item as the catalog and request forms show it: questions, plus the fulfillment steps as titles.</summary>
+public sealed record CatalogItemView(
+    string Id,
+    string Label,
+    string? Description,
+    string? Category,
+    string? Icon,
+    string RequestEntity,
+    bool Active,
+    int Order,
+    IReadOnlyList<VariableSpec> Variables,
+    IReadOnlyList<CatalogStepView> Steps);
+
+public sealed record CatalogStepView(string Id, string Title, IReadOnlyList<string> DependsOn, bool Conditional);
+
+public sealed record CatalogView(IReadOnlyList<CatalogItemView> Items, IReadOnlyList<ChoiceListSpec> ChoiceLists);
 
 public sealed record AppBootstrap(
     object Tenant,
@@ -20,7 +38,8 @@ public sealed record AppBootstrap(
     int ConfigRevision,
     IReadOnlyList<object> Modules,
     IReadOnlyList<NavItem> Navigation,
-    IReadOnlyList<TenantChoice> Workspaces);
+    IReadOnlyList<TenantChoice> Workspaces,
+    bool Catalog = false);
 
 /// <summary>Entity definition as one viewer may see it (hidden fields and rules that read them are removed).</summary>
 public sealed record EntityClientSpec(
@@ -31,7 +50,8 @@ public sealed record EntityClientSpec(
     WorkflowSpec? Workflow,
     IReadOnlyList<RuleSpec> Rules,
     IReadOnlyList<string> Customized,
-    int ConfigRevision);
+    int ConfigRevision,
+    IReadOnlyList<CatalogItemView>? CatalogItems = null);
 
 public sealed record ViewClientSpec(ViewSpec View, EntityClientSpec Entity, IReadOnlyDictionary<string, EntityClientSpec> RelatedEntities, int ConfigRevision);
 
@@ -57,8 +77,10 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                     artifact.Config.Views.Find(v => v.Entity == e.Id && v.Kind == ViewKinds.List)?.Id,
                     artifact.Config.Views.Find(v => v.Entity == e.Id && v.Kind == ViewKinds.Record)?.Id,
                     artifact.Config.Views.Find(v => v.Entity == e.Id && v.Kind == ViewKinds.Form)?.Id,
-                    perms.CanCreate(e)))
+                    perms.CanCreate(e),
+                    e.Request is not null))
                 .ToList();
+            var catalog = artifact.Config.CatalogItems.Any(i => i.Active && artifact.Config.FindEntity(i.RequestEntity) is { } re && perms.CanCreate(re));
             return new AppBootstrap(
                 new { tenant.Id, tenant.Slug, tenant.Name },
                 new { env.Id, env.Key, env.Name, env.Kind },
@@ -68,9 +90,38 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 artifact.Revision,
                 artifact.Lockfile.Where(m => m.Id != PlatformModule.ModuleId).Select(m => (object)new { m.Id, m.Version }).ToList(),
                 nav,
-                workspaces);
+                workspaces,
+                catalog);
         }, ct);
     }
+
+    /// <summary>The service catalog: active items whose request entity the viewer may create, with their questions.</summary>
+    public Task<CatalogView> CatalogAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            var items = artifact.Config.CatalogItems
+                .Where(i => i.Active && artifact.Config.FindEntity(i.RequestEntity) is { } e && perms.CanCreate(e))
+                .OrderBy(i => i.Order).ThenBy(i => i.Label, StringComparer.Ordinal)
+                .ToList();
+            return new CatalogView(items.Select(ToView).ToList(), VariableLists(artifact.Config, items));
+        }, ct);
+
+    public static CatalogItemView ToView(CatalogItemSpec item) => new(
+        item.Id,
+        item.Label,
+        item.Description,
+        item.Category,
+        item.Icon,
+        item.RequestEntity,
+        item.Active,
+        item.Order,
+        item.Variables,
+        item.Tasks.Select(t => new CatalogStepView(t.Id, t.Title, t.DependsOn, !string.IsNullOrWhiteSpace(t.When))).ToList());
+
+    private static List<ChoiceListSpec> VariableLists(EffectiveConfig config, IEnumerable<CatalogItemSpec> items) =>
+        items.SelectMany(i => i.Variables).Where(v => v.ChoiceList is not null).Select(v => config.FindChoiceList(v.ChoiceList!)).OfType<ChoiceListSpec>().DistinctBy(c => c.Id).ToList();
 
     /// <summary>Roles defined by the active configuration, for role assignment in administration.</summary>
     public Task<IReadOnlyList<RoleSpec>> RolesAsync(RequestContext ctx, CancellationToken ct) =>
@@ -138,7 +189,17 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
         // and delivered as field states with each record.
         var rules = config.Rules.Where(r => r.Entity == entity.Id && r.Enabled && ReadsOnly(r, visible)).ToList();
         var customized = config.Customized.Where(k => k.StartsWith(entity.Id + "/", StringComparison.Ordinal) && visible.Contains(k[(entity.Id.Length + 1)..])).ToList();
-        return new EntityClientSpec(copy, access.Where(a => visible.Contains(a.Key)).ToDictionary(a => a.Key, a => a.Value), lists, rels, config.WorkflowFor(entity.Id), rules, customized, revision);
+
+        // Requests: the items they can reference (inactive ones too, for older requests) and their questions' choice lists.
+        List<CatalogItemView>? catalog = null;
+        if (entity.Request is { } binding && visible.Contains(binding.VariablesField))
+        {
+            var items = config.CatalogItems.Where(i => i.RequestEntity == entity.Id).ToList();
+            catalog = items.Select(ToView).ToList();
+            lists = lists.Concat(VariableLists(config, items)).DistinctBy(c => c.Id).ToList();
+        }
+
+        return new EntityClientSpec(copy, access.Where(a => visible.Contains(a.Key)).ToDictionary(a => a.Key, a => a.Value), lists, rels, config.WorkflowFor(entity.Id), rules, customized, revision, catalog);
     }
 
     private static bool ReadsOnly(RuleSpec rule, HashSet<string> visible)
