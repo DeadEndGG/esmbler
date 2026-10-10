@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Esmbler.Hosting.Auth;
 using Esmbler.Kernel.Infrastructure.Configuration;
+using Esmbler.Kernel.Infrastructure.Events;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Sdk.Registry;
 
@@ -28,6 +29,15 @@ public static class AppEndpoints
         var directory = app.MapGroup("/api/directory").WithTags("Directory").RequireAuthorization();
         directory.MapGet("/people", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.DirectoryPeopleAsync(RequestContextFactory.From(user, "api"), ct));
         directory.MapGet("/groups", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.DirectoryGroupsAsync(RequestContextFactory.From(user, "api"), ct));
+
+        var ops = app.MapGroup("/api/admin/operations").WithTags("Operations").RequireAuthorization();
+        ops.MapGet("/queues", (ClaimsPrincipal user, OperationsService operations, CancellationToken ct) => operations.StatsAsync(RequestContextFactory.From(user, "api"), ct));
+        ops.MapGet("/dead-letters", (ClaimsPrincipal user, OperationsService operations, CancellationToken ct) => operations.DeadLettersAsync(RequestContextFactory.From(user, "api"), ct));
+        ops.MapPost("/{queue}/{id:guid}/replay", async (string queue, Guid id, ClaimsPrincipal user, OperationsService operations, CancellationToken ct) =>
+        {
+            await operations.ReplayAsync(RequestContextFactory.From(user, "api"), queue, id, ct);
+            return Results.NoContent();
+        });
 
         var admin = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
         admin.MapGet("/members", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.MembersAsync(RequestContextFactory.From(user, "api"), ct));

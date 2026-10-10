@@ -86,7 +86,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
                 db.MigrationRuns.Add(new MigrationRunRow { TenantId = ctx.TenantId, EnvironmentId = ctx.EnvironmentId, Id = Guid.NewGuid(), UpgradeId = row.Id, MigrationId = m.Id, Status = "pending", StartedAt = DateTimeOffset.UtcNow });
             }
 
-            EnqueueJob(db, ctx, row.Id);
+            await EnqueueJobAsync(db, ctx, row.Id, ct);
             await db.SaveChangesAsync(ct);
             return await ViewAsync(db, row.Id, ct);
         }, ct);
@@ -104,7 +104,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
             row.Status = "migrating";
             row.UpdatedAt = DateTimeOffset.UtcNow;
             await db.MigrationRuns.Where(r => r.UpgradeId == upgradeId && r.Status == "failed").ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "pending").SetProperty(r => r.LastError, (string?)null), ct);
-            EnqueueJob(db, ctx, upgradeId);
+            await EnqueueJobAsync(db, ctx, upgradeId, ct);
             AuditWriter.Add(db, ctx, "module.upgrade.resume", "module", row.ModuleId, null, new { upgradeId });
             await db.SaveChangesAsync(ct);
             return await ViewAsync(db, upgradeId, ct);
@@ -139,7 +139,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         database.InTenantAsync(tenantId, environmentId, null, async db =>
         {
             await db.Upgrades.Where(u => u.Id == upgradeId && u.Status != "activated").ExecuteUpdateAsync(s => s.SetProperty(u => u.Status, "failed").SetProperty(u => u.UpdatedAt, DateTimeOffset.UtcNow), ct);
-            await db.MigrationRuns.Where(r => r.UpgradeId == upgradeId && r.Status != "completed").ExecuteUpdateAsync(s => s.SetProperty(r => r.LastError, reason), ct);
+            await db.MigrationRuns.Where(r => r.UpgradeId == upgradeId && r.Status != "completed" && r.LastError == null).ExecuteUpdateAsync(s => s.SetProperty(r => r.LastError, reason), ct);
             return 0;
         }, ct);
 
@@ -241,20 +241,15 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         return published;
     }
 
-    private static void EnqueueJob(KernelDbContext db, RequestContext ctx, Guid upgradeId) =>
-        db.Jobs.Add(new JobRow
+    /// <summary>Queues the upgrade's job; resuming while an earlier job is still waiting reuses it (one live job per upgrade).</summary>
+    private static Task<Guid?> EnqueueJobAsync(KernelDbContext db, RequestContext ctx, Guid upgradeId, CancellationToken ct) =>
+        Events.JobScheduler.ScheduleAsync(db, ctx.TenantId, ctx.EnvironmentId, new Events.JobRequest(JobKind, new JsonObject { ["upgradeId"] = upgradeId.ToString() })
         {
-            Id = Guid.NewGuid(),
-            TenantId = ctx.TenantId,
-            EnvironmentId = ctx.EnvironmentId,
-            Kind = JobKind,
-            Payload = new JsonObject { ["upgradeId"] = upgradeId.ToString() }.ToJsonString(),
             MaxAttempts = 1,
-            AvailableAt = DateTimeOffset.UtcNow,
             CreatedBy = ctx.PrincipalId,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        });
+            DedupKey = $"upgrade:{upgradeId:N}",
+            ReplaceExisting = true,
+        }, ct);
 
     private static async Task<UpgradeView> ViewAsync(KernelDbContext db, Guid upgradeId, CancellationToken ct)
     {

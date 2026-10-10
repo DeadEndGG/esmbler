@@ -25,4 +25,19 @@ public static class AuditWriter
             CorrelationId = ctx.CorrelationId,
             Details = details is null ? "{}" : JsonSerializer.Serialize(details, SpecJson.Options),
         });
+
+    /// <summary>An entry written by the platform itself (governors, workers), with no acting person.</summary>
+    public static void AddSystem(KernelDbContext db, Guid tenantId, Guid environmentId, string operation, string targetType, string? targetId, object? details = null, string outcome = "denied") =>
+        db.AuditLog.Add(new AuditRow
+        {
+            TenantId = tenantId,
+            EnvironmentId = environmentId,
+            At = DateTimeOffset.UtcNow,
+            Channel = "system",
+            Operation = operation,
+            TargetType = targetType,
+            TargetId = targetId,
+            Outcome = outcome,
+            Details = details is null ? "{}" : JsonSerializer.Serialize(details, SpecJson.Options),
+        });
 }

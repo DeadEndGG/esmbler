@@ -75,6 +75,8 @@ public static class ServiceRegistration
         services.AddSingleton<MigrationExecutor>();
         services.AddSingleton<UpgradeService>();
         services.AddSingleton<Kernel.Infrastructure.Events.JobRunner>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Events.UpgradeJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.OperationsService>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));

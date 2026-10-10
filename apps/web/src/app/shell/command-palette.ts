@@ -80,6 +80,7 @@ export class CommandPalette {
       list.push({ id: 'config', label: 'Configuration history and upgrades', section: 'Build', run: () => this.router.navigate(['/admin/configuration']) });
     }
     if (this.session.isAdmin()) list.push({ id: 'people', label: 'People, groups, and roles', section: 'Admin', run: () => this.router.navigate(['/admin/people']) });
+    if (this.session.isAdmin()) list.push({ id: 'operations', label: 'Operations: queues and dead letters', section: 'Admin', run: () => this.router.navigate(['/admin/operations']) });
     list.push({ id: 'theme', label: 'Toggle theme (system, dark, light)', section: 'Preferences', run: () => this.theme.cycle() });
     list.push({ id: 'switch', label: 'Switch workspace', section: 'Preferences', run: () => this.router.navigate(['/workspaces']) });
     list.push({ id: 'logout', label: 'Sign out', section: 'Preferences', run: () => void this.auth.logout().then(() => this.router.navigate(['/login'])) });

@@ -33,6 +33,7 @@ import { KeyboardHelp } from './keyboard-help';
           }
           @if (session.isAdmin()) {
             <a routerLink="/admin/people" routerLinkActive="active">People and roles</a>
+            <a routerLink="/admin/operations" routerLinkActive="active">Operations</a>
           }
         }
         <div class="spacer"></div>

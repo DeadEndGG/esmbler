@@ -3,7 +3,6 @@ using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Tenancy;
-using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,83 +10,98 @@ using Microsoft.Extensions.Logging;
 namespace Esmbler.Kernel.Infrastructure.Events;
 
 /// <summary>
-/// Durable job runner (ADR 0005, REQ-EVT-005). Claims jobs fairly across tenants (one running job per tenant),
-/// leases them, and records the outcome. Handlers checkpoint their own progress so a reclaimed job resumes.
-/// Before each attempt the job is re-authorized as the person who queued it: a job never outlives its creator's
-/// rights (REQ-AUTHZ-006, REQ-ACC-07c), and a denied job fails closed without retrying.
+/// Durable job runner (ADR 0005, REQ-EVT-005/006). Claims jobs fairly across tenants (one running job per tenant per
+/// round), leases them, and dispatches to the <see cref="IJobHandler"/> for their kind. Before each attempt the job
+/// is re-authorized as the person who queued it, so a job never outlives its creator's rights (REQ-AUTHZ-006); a
+/// denied job fails closed without retrying. Other failures back off with jitter and dead-letter after their
+/// maximum attempts, where an operator can inspect and replay them.
 /// </summary>
-public sealed class JobRunner(Database database, UpgradeService upgrades, AccessService access, ConfigStore configs, ILogger<JobRunner> logger)
+public sealed class JobRunner(Database database, IEnumerable<IJobHandler> handlers, AccessService access, ConfigStore configs, ILogger<JobRunner> logger)
 {
-    /// <summary>The right each job kind needs from the principal who queued it.</summary>
-    private static readonly Dictionary<string, string> RequiredAction = new(StringComparer.Ordinal)
-    {
-        [UpgradeService.JobKind] = PlatformActions.ModulesManage,
-    };
+    public static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
 
-    private readonly string _worker = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+    private readonly Dictionary<string, IJobHandler> byKind = handlers.ToDictionary(h => h.Kind, StringComparer.Ordinal);
+    private readonly string worker = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
-        var claimed = await database.AnonymousAsync(db => db.Database.SqlQuery<Claimed>($"SELECT id AS \"Id\", tenant_id AS \"TenantId\", environment_id AS \"EnvironmentId\", kind AS \"Kind\", attempts AS \"Attempts\" FROM kernel.claim_jobs({_worker}, 10, 300)").ToListAsync(ct), ct);
+        var leaseSeconds = (int)Lease.TotalSeconds;
+        var claimed = await database.AnonymousAsync(db => db.Database.SqlQuery<Claimed>($"SELECT id AS \"Id\", tenant_id AS \"TenantId\", environment_id AS \"EnvironmentId\", kind AS \"Kind\", attempts AS \"Attempts\" FROM kernel.claim_jobs({worker}, 10, {leaseSeconds})").ToListAsync(ct), ct);
         foreach (var job in claimed)
         {
-            string status;
-            string? error = null;
-            var terminal = false;
-            string? payloadText = null;
-            try
-            {
-                var (payload, createdBy) = await database.InTenantAsync(job.TenantId, job.EnvironmentId, null, async db =>
-                {
-                    var row = await db.Jobs.Where(j => j.Id == job.Id).Select(j => new { j.Payload, j.CreatedBy }).FirstAsync(ct);
-                    return (row.Payload, row.CreatedBy);
-                }, ct);
-                payloadText = payload;
-                var denial = await ReauthorizeAsync(job, createdBy, ct);
-                if (denial is not null)
-                {
-                    terminal = true;
-                    throw new KernelException("job_unauthorized", denial, 403);
-                }
-
-                switch (job.Kind)
-                {
-                    case UpgradeService.JobKind:
-                        await upgrades.RunAsync(job.TenantId, job.EnvironmentId, Guid.Parse(JsonNode.Parse(payload)!["upgradeId"]!.GetValue<string>()), ct);
-                        break;
-                    default:
-                        throw new InvalidOperationException($"No handler for job kind '{job.Kind}'.");
-                }
-
-                status = "succeeded";
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Job {Job} ({Kind}) failed", job.Id, job.Kind);
-                status = "failed";
-                error = ex.Message;
-            }
-
-            if (terminal && job.Kind == UpgradeService.JobKind && payloadText is not null)
-            {
-                await upgrades.AbandonAsync(job.TenantId, job.EnvironmentId, Guid.Parse(JsonNode.Parse(payloadText)!["upgradeId"]!.GetValue<string>()), error ?? "Not authorized.", ct);
-            }
-
-            await database.InTenantAsync(job.TenantId, job.EnvironmentId, null, db => db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(
-                s => s.SetProperty(j => j.Status, j => status == "failed" && !terminal && j.Attempts < j.MaxAttempts ? "pending" : status)
-                    .SetProperty(j => j.AvailableAt, DateTimeOffset.UtcNow.AddSeconds(5 * Math.Pow(2, job.Attempts)))
-                    .SetProperty(j => j.LastError, error)
-                    .SetProperty(j => j.LockedUntil, (DateTimeOffset?)null)
-                    .SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow),
-                ct), ct);
+            await RunOneAsync(job, ct);
         }
 
         return claimed.Count;
     }
 
-    private async Task<string?> ReauthorizeAsync(Claimed job, Guid? createdBy, CancellationToken ct)
+    private async Task RunOneAsync(Claimed job, CancellationToken ct)
     {
-        if (!RequiredAction.TryGetValue(job.Kind, out var action))
+        var row = await database.InTenantAsync(job.TenantId, job.EnvironmentId, null, db => db.Jobs.FirstAsync(j => j.Id == job.Id, ct), ct);
+        var context = new JobContext(database, job.Id, job.TenantId, job.EnvironmentId, job.Kind, job.Attempts, row.CreatedBy, JsonNode.Parse(row.Payload) as JsonObject ?? [], row.Checkpoint is null ? null : JsonNode.Parse(row.Checkpoint), worker);
+        string status;
+        string? error = null;
+        byKind.TryGetValue(job.Kind, out var handler);
+        try
+        {
+            if (handler is null)
+            {
+                throw new JobTerminalException($"No handler for job kind '{job.Kind}'.");
+            }
+
+            if (await ReauthorizeAsync(job, row.CreatedBy, handler.RequiredAction, ct) is { } denial)
+            {
+                throw new JobTerminalException(denial);
+            }
+
+            await handler.RunAsync(context, ct);
+            status = "succeeded";
+        }
+        catch (JobTerminalException ex)
+        {
+            status = "failed";
+            error = ex.Message;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Job {Job} ({Kind}) failed on attempt {Attempt}", job.Id, job.Kind, job.Attempts);
+            status = job.Attempts >= row.MaxAttempts ? "dead" : "pending";
+            error = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
+        }
+
+        if (status is "failed" or "dead" && handler is not null)
+        {
+            try
+            {
+                await handler.OnAbandonedAsync(context, error ?? "Abandoned.", ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Abandon hook for job {Job} failed", job.Id);
+            }
+        }
+
+        var availableAt = status == "pending" ? DateTimeOffset.UtcNow + Backoff(job.Attempts) : DateTimeOffset.UtcNow;
+        await database.InTenantAsync(job.TenantId, job.EnvironmentId, null, db => db.Jobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(
+            s => s.SetProperty(j => j.Status, status)
+                .SetProperty(j => j.AvailableAt, availableAt)
+                .SetProperty(j => j.LastError, error)
+                .SetProperty(j => j.LockedUntil, (DateTimeOffset?)null)
+                .SetProperty(j => j.LockedBy, (string?)null)
+                .SetProperty(j => j.UpdatedAt, DateTimeOffset.UtcNow),
+            ct), ct);
+    }
+
+    /// <summary>min(5 s × 2^(attempt−1), 15 min) with ±20% jitter so retries from many jobs don't align.</summary>
+    public static TimeSpan Backoff(int attempt)
+    {
+        var seconds = Math.Min(900, 5 * Math.Pow(2, Math.Max(0, attempt - 1)));
+        return TimeSpan.FromSeconds(seconds * (0.8 + (Random.Shared.NextDouble() * 0.4)));
+    }
+
+    private async Task<string?> ReauthorizeAsync(Claimed job, Guid? createdBy, string? action, CancellationToken ct)
+    {
+        if (action is null)
         {
             return null;
         }

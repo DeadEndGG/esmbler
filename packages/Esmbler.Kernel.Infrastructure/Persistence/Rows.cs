@@ -459,6 +459,15 @@ public sealed class JobRow
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>At most one live (pending or running) job per key, e.g. "sla:{recordId}:resolution".</summary>
+    public string? DedupKey { get; set; }
+
+    /// <summary>The event that caused this job (fan-out limit).</summary>
+    public Guid? CausationId { get; set; }
+
+    /// <summary>Automation depth inherited from the causing event (cycle limit).</summary>
+    public int Depth { get; set; }
 }
 
 public sealed class MigrationRunRow
