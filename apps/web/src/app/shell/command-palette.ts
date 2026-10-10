@@ -4,6 +4,7 @@ import { Session } from '../core/session';
 import { ThemeService } from '../core/theme';
 import { BuilderState } from '../builder/builder-state';
 import { Auth } from '../core/auth';
+import { Icon, IconName } from '../ui/icon';
 
 interface Command {
   id: string;
@@ -16,39 +17,52 @@ interface Command {
 /** action.command_palette: Cmd/Ctrl+K. Lists only what the viewer may do; fuzzy search. */
 @Component({
   selector: 'esm-command-palette',
+  imports: [Icon],
   template: `
     @if (open()) {
       <div class="scrim" (click)="close()"></div>
       <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="search-row"><esm-icon name="search" [size]="18" />
         <input #input class="search" placeholder="Type a command or search…" [value]="query()" (input)="query.set($any($event.target).value); active.set(0)"
                (keydown)="onKey($event)" role="combobox" aria-expanded="true" aria-controls="cmd-list" [attr.aria-activedescendant]="'cmd-' + active()" />
+        <kbd>Esc</kbd></div>
         <ul id="cmd-list" role="listbox">
           @for (c of filtered(); track c.id; let i = $index) {
             @if (i === 0 || filtered()[i - 1].section !== c.section) {
               <li class="section" role="presentation">{{ c.section }}</li>
             }
             <li [id]="'cmd-' + i" role="option" [attr.aria-selected]="i === active()" [class.active]="i === active()" (click)="run(c)" (mousemove)="active.set(i)">
-              <span>{{ c.label }}</span>
-              @if (c.hint) { <kbd>{{ c.hint }}</kbd> }
+              <span class="label"><esm-icon [name]="iconFor(c)" [size]="15" />{{ c.label }}</span>
+              @if (c.hint) { <kbd>{{ c.hint }}</kbd> } @else if (i === active()) { <esm-icon name="enter" [size]="14" class="muted" /> }
             </li>
           } @empty {
             <li class="empty muted">No matching commands</li>
           }
         </ul>
+        <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> to move</span><span><kbd>↵</kbd> to run</span></div>
       </div>
     }
   `,
   styles: `
-    .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 25%); z-index: 900; }
-    .palette { position: fixed; top: 14vh; left: 50%; transform: translateX(-50%); width: min(560px, 92vw); z-index: 901;
-      background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-lg); box-shadow: var(--esm-shadow-overlay); overflow: hidden;
+    .scrim { position: fixed; inset: 0; background: var(--esm-scrim); backdrop-filter: blur(2px); z-index: 900; }
+    .palette { position: fixed; top: 14vh; left: 50%; transform: translateX(-50%); width: min(600px, 92vw); z-index: 901;
+      background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-xl); box-shadow: var(--esm-shadow-overlay); overflow: hidden;
       animation: pop var(--esm-motion-fast) var(--esm-ease-out); }
-    .search { width: 100%; border: 0; border-bottom: 1px solid var(--esm-border-subtle); padding: var(--esm-space-4); background: transparent; font: var(--esm-text-title-sm); font-weight: 400; outline: none; }
+    .search-row { display: flex; align-items: center; gap: var(--esm-space-3); padding: 0 var(--esm-space-4); border-bottom: 1px solid var(--esm-border-subtle); color: var(--esm-text-muted); }
+    .search { flex: 1; border: 0; padding: var(--esm-space-4) 0; background: transparent; font: var(--esm-text-title-sm); font-weight: 400; color: var(--esm-text-default); outline: none; }
+    .search::placeholder { color: var(--esm-text-muted); }
+    .search:focus-visible { outline: none; }
     ul { list-style: none; margin: 0; padding: var(--esm-space-2); max-height: 50vh; overflow: auto; }
-    li { display: flex; justify-content: space-between; align-items: center; padding: var(--esm-space-2) var(--esm-space-3); border-radius: var(--esm-radius-sm); cursor: pointer; }
+    li { display: flex; justify-content: space-between; align-items: center; min-height: 38px; padding: 0 var(--esm-space-3); border-radius: var(--esm-radius-md); cursor: pointer; font: var(--esm-text-body); }
+    .label { display: flex; align-items: center; gap: var(--esm-space-3); }
+    .label esm-icon { color: var(--esm-text-muted); }
     li.active { background: var(--esm-state-selected); }
-    .section { font: var(--esm-text-body-sm); color: var(--esm-text-muted); cursor: default; padding-top: var(--esm-space-3); }
-    @keyframes pop { from { opacity: 0; transform: translate(-50%, -4px); } }
+    li.active .label esm-icon { color: var(--esm-accent-brand); }
+    .section { min-height: 0; font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); cursor: default; padding: var(--esm-space-3) var(--esm-space-3) var(--esm-space-1); }
+    .empty { justify-content: center; padding: var(--esm-space-6); cursor: default; }
+    .foot { display: flex; gap: var(--esm-space-4); padding: var(--esm-space-2) var(--esm-space-4); border-top: 1px solid var(--esm-border-subtle); background: var(--esm-surface-base); font: var(--esm-text-caption); color: var(--esm-text-muted); }
+    .foot kbd { box-shadow: none; }
+    @keyframes pop { from { opacity: 0; transform: translate(-50%, -4px) scale(0.99); } }
   `,
 })
 export class CommandPalette {
@@ -96,6 +110,12 @@ export class CommandPalette {
       .sort((a, b) => b.score - a.score)
       .map((x) => x.c);
   });
+
+  protected iconFor(c: Command): IconName {
+    if (c.id.startsWith('go:')) return 'inbox';
+    if (c.id.startsWith('new:')) return 'plus';
+    return ({ builder: 'sparkles', config: 'sliders', people: 'users', operations: 'activity', theme: 'moon', switch: 'building', logout: 'log-out' } as Record<string, IconName>)[c.id] ?? 'command';
+  }
 
   toggle(): void {
     this.open.update((o) => !o);

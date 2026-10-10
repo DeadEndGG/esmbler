@@ -69,3 +69,10 @@ Sources: **EB §2** = execution brief section 2 defaults; **Decision** = Gate 0 
 | ASM-036 | Experience targets are measured with the built-in planner on the Docker Compose stack: 20 samples of "add a field to a card", time from sending the prompt to the field rendering, and from the server applying a step to it rendering | Gate 1 measurement | Proves the live-editing pipeline; model latency is excluded because no API key is available | Repeat with Claude once a key is provided ([human action](../human-actions.md)) |
 | ASM-037 | Gate 1 query benchmark at 100,000 tickets in one tenant environment (20% of the declared pilot size), median budget 300 ms per query shape; the 500,000-ticket load test with p95 targets is Gate 2 | G1-M5, ASM-003 | Evidence that the permission predicate inside SQL scales; tail latency on shared CI runners is reported, not asserted | Gate 2 load test |
 | ASM-038 | Reset to default is an overlay operation (`element.reset`) in the draft, not a destructive edit of the overlay: it undoes earlier operations on one element and shows dependents as validation errors before publishing | REQ-CFG-011 | Reset is reviewable, undoable and published like any change | User feedback on resetting whole pages |
+
+## Decisions made during Gate 2
+
+| ID | Assumption | Source | Impact | How / when to revisit |
+|---|---|---|---|---|
+| ASM-039 | The request "use tailscale for the UI" means Tailwind CSS (Tailscale is a VPN and has no role in styling) | Product owner request, 2026-10-10 | The web UI is styled with Tailwind v4 mapped onto the design tokens ([ADR 0014](../adr/0014-tailwind-css-for-the-web-ui.md)) | If a private-network deployment with Tailscale was meant, add it to the deployment docs separately |
+| ASM-040 | The approved icon set is Lucide (ISC), pinned to a release at least two weeks old; icons help recognition in navigation, actions and status, and are never the only signal | ADR 0014, design principles | Consistent, accessible icons; one small dependency | Marketplace UI packages (Gate 3) |

@@ -10,6 +10,7 @@ import { Shortcuts } from '../core/shortcuts';
 import { Toasts } from '../core/toast';
 import { NodeComponent } from '../renderer/node';
 import { RenderContext } from '../renderer/render-context';
+import { Icon } from '../ui/icon';
 
 interface SlashItem {
   label: string;
@@ -24,28 +25,28 @@ interface SlashItem {
  */
 @Component({
   selector: 'esm-record-page',
-  imports: [NodeComponent, RouterLink, FormsModule],
+  imports: [NodeComponent, RouterLink, FormsModule, Icon],
   providers: [RenderContext],
   template: `
     @let s = ctx.spec();
     <div class="page" [class.draft]="ctx.mode() === 'draft'">
       @if (ctx.mode() === 'draft') {
         <div class="band" role="status">
-          <span class="dot" aria-hidden="true"></span>
-          <strong>Draft preview</strong>
-          <span class="muted">Only you see this. {{ changedCount() }} element{{ changedCount() === 1 ? '' : 's' }} changed. Values you type here are not saved.</span>
+          <span class="band-mark" aria-hidden="true"><esm-icon name="sparkles" [size]="13" /></span>
+          <strong class="whitespace-nowrap">Draft preview</strong>
+          <span class="muted min-w-0 truncate">Only you see this. {{ changedCount() }} element{{ changedCount() === 1 ? '' : 's' }} changed. Values you type here are not saved.</span>
           <span class="flex"></span>
-          <button class="btn btn-sm" (click)="openSlash()">Insert <kbd>/</kbd></button>
-          @if (tried()) { <button class="btn btn-ghost btn-sm" (click)="resetTry()">Reset values</button> }
+          @if (tried()) { <button class="btn btn-ghost btn-sm" (click)="resetTry()"><esm-icon name="reset" [size]="14" /> Reset values</button> }
+          <button class="btn btn-sm" (click)="openSlash()"><esm-icon name="plus" [size]="14" /> Insert <kbd>/</kbd></button>
         </div>
       }
       <nav class="crumbs" aria-label="Breadcrumb">
-        <a [routerLink]="['/records', entity()]">{{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
-        <span aria-hidden="true">/</span>
-        <span>{{ preview() ? 'Sample record' : (ctx.record()?.number ?? '…') }}</span>
+        <a class="crumb-link" [routerLink]="['/records', entity()]"><esm-icon name="arrow-left" [size]="14" /> {{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
+        <esm-icon name="chevron-right" [size]="14" />
+        <span class="mono text-fg">{{ preview() ? 'Sample record' : (ctx.record()?.number ?? '…') }}</span>
         <span class="flex"></span>
         @if (ctx.mode() === 'view' && ctx.record()?.access?.canDelete) {
-          <button class="btn btn-ghost btn-sm" (click)="remove()">Delete</button>
+          <button class="btn btn-sm btn-danger" (click)="remove()"><esm-icon name="trash" [size]="14" /> Delete</button>
         }
       </nav>
 
@@ -86,25 +87,30 @@ interface SlashItem {
     }
   `,
   styles: `
-    .page { padding: var(--esm-space-4) var(--esm-space-6) var(--esm-space-10); max-width: 1280px; }
-    .page.draft { background-image: radial-gradient(var(--esm-border-subtle) 1px, transparent 1px); background-size: 16px 16px; min-height: 100%; }
-    .band { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--esm-space-2); margin: 0 calc(-1 * var(--esm-space-6)) var(--esm-space-3); padding: var(--esm-space-2) var(--esm-space-6); background: var(--esm-surface-raised); border-bottom: 1px solid var(--esm-accent-purple); font: var(--esm-text-body-sm); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--esm-accent-purple); }
+    .page { padding: var(--esm-space-5) var(--esm-space-8) var(--esm-space-12); max-width: 1320px; margin: 0 auto; }
+    .page.draft { background-image: radial-gradient(var(--esm-border-strong) 1px, transparent 1px); background-size: 18px 18px; min-height: 100%; max-width: none; }
+    .band { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--esm-space-2); margin: calc(-1 * var(--esm-space-5)) calc(-1 * var(--esm-space-8)) var(--esm-space-4);
+      padding: var(--esm-space-2) var(--esm-space-8); font: var(--esm-text-body-sm);
+      background: color-mix(in srgb, var(--esm-accent-brand) 7%, var(--esm-surface-raised)); border-bottom: 1px solid color-mix(in srgb, var(--esm-accent-brand) 30%, transparent);
+      backdrop-filter: blur(8px); }
+    .band-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--esm-radius-sm); background: var(--esm-gradient-brand); color: var(--esm-text-on-gradient); }
     .flex { flex: 1; }
-    .crumbs { display: flex; align-items: center; gap: var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-3); }
-    .callout { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); margin-bottom: var(--esm-space-3); background: color-mix(in srgb, var(--tone) 12%, transparent); }
+    .crumbs { display: flex; align-items: center; gap: var(--esm-space-2); min-height: 28px; font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-4); }
+    .crumb-link { display: inline-flex; align-items: center; gap: var(--esm-space-1); color: var(--esm-text-muted); font-weight: 500; }
+    .crumb-link:hover { color: var(--esm-text-default); text-decoration: none; }
+    .callout { margin-bottom: var(--esm-space-3); }
     .callout p { margin: var(--esm-space-2) 0 0; }
     .skeleton-page { display: flex; flex-direction: column; gap: var(--esm-space-3); max-width: 720px; }
     .skeleton-page .skeleton { display: block; height: 14px; }
-    .skeleton-page .h { height: 28px; width: 50%; }
+    .skeleton-page .h { height: 32px; width: 50%; }
     .skeleton-page .short { width: 30%; }
-    .scrim { position: fixed; inset: 0; z-index: 900; }
-    .slash { position: fixed; z-index: 901; top: 20vh; left: 50%; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); padding: var(--esm-space-2); border-radius: var(--esm-radius-lg); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-overlay); border: 1px solid var(--esm-border-subtle); }
+    .scrim { position: fixed; inset: 0; z-index: 900; background: var(--esm-scrim); backdrop-filter: blur(2px); }
+    .slash { position: fixed; z-index: 901; top: 18vh; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); padding: var(--esm-space-2); border-radius: var(--esm-radius-lg); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-overlay); border: 1px solid var(--esm-border-subtle); }
     .slash .input { width: 100%; }
     .slash ul { list-style: none; margin: var(--esm-space-2) 0 0; padding: 0; max-height: 320px; overflow: auto; }
-    .slash li { display: flex; justify-content: space-between; gap: var(--esm-space-3); padding: var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; font: var(--esm-text-body-sm); }
+    .slash li { display: flex; justify-content: space-between; gap: var(--esm-space-3); padding: var(--esm-space-2) var(--esm-space-3); border-radius: var(--esm-radius-sm); cursor: pointer; font: var(--esm-text-body-sm); }
     .slash li.active { background: var(--esm-state-selected); }
-    @media (max-width: 700px) { .page { padding: var(--esm-space-3) var(--esm-space-4); } .band { margin: 0 calc(-1 * var(--esm-space-4)) var(--esm-space-3); } }
+    @media (max-width: 700px) { .page { padding: var(--esm-space-3) var(--esm-space-4); } .band { margin: calc(-1 * var(--esm-space-3)) calc(-1 * var(--esm-space-4)) var(--esm-space-3); padding: var(--esm-space-2) var(--esm-space-4); } }
   `,
 })
 export class RecordPage {

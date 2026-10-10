@@ -8,73 +8,88 @@ import { BuilderState } from '../builder/builder-state';
 import { ChatPanel } from '../builder/chat-panel';
 import { CommandPalette } from './command-palette';
 import { KeyboardHelp } from './keyboard-help';
+import { Icon } from '../ui/icon';
 
 @Component({
   selector: 'esm-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, CommandPalette, KeyboardHelp, ChatPanel],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, CommandPalette, KeyboardHelp, ChatPanel, Icon],
   template: `
-    <div class="layout" [class.with-chat]="builder.open()">
-      <nav class="sidebar" aria-label="Main">
-        <div class="brand"><span class="mark" aria-hidden="true">E</span> <span>{{ session.app()?.tenant?.name }}</span></div>
-        <button class="env" (click)="router.navigate(['/workspaces'])" title="Switch workspace">
-          <span class="badge" [class]="session.app()?.environment?.kind === 'production' ? 'tone-green' : 'tone-amber'">{{ session.app()?.environment?.name }}</span>
-          <span class="muted">Switch</span>
+    <div class="layout grid h-dvh grid-cols-[256px_minmax(0,1fr)] max-[900px]:grid-cols-1" [class.with-chat]="builder.open()">
+      <nav class="sidebar flex flex-col gap-0.5 overflow-auto border-r border-subtle bg-nav px-3 pt-3 pb-3 max-[900px]:hidden" aria-label="Main">
+        <button class="group flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition hover:bg-hover" (click)="router.navigate(['/workspaces'])" title="Switch workspace">
+          <span class="brand-mark" aria-hidden="true"><esm-icon name="layers" [size]="16" [stroke]="2.25" /></span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-body font-semibold">{{ session.app()?.tenant?.name }}</span>
+            <span class="flex items-center gap-1.5 text-caption text-muted">
+              <span class="size-1.5 rounded-full" [class]="session.app()?.environment?.kind === 'production' ? 'bg-green' : 'bg-amber'"></span>
+              {{ session.app()?.environment?.name }}
+            </span>
+          </span>
+          <esm-icon name="chevrons-up-down" [size]="14" class="text-muted" />
+          <span class="sr-only">Switch</span>
         </button>
-        <button class="search" (click)="palette()?.toggle()"><span>Search or run a command</span><kbd>⌘K</kbd></button>
-        <div class="group">Workspace</div>
+
+        <button class="my-3 flex h-8 w-full items-center gap-2 overflow-hidden rounded-md whitespace-nowrap border border-subtle bg-raised px-2.5 text-left text-body-sm text-muted shadow-xs transition hover:border-strong" (click)="palette()?.toggle()">
+          <esm-icon name="search" [size]="14" />
+          <span class="flex-1 truncate">Search or run a command</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <div class="nav-group">Workspace</div>
         @for (n of session.app()?.navigation ?? []; track n.entity) {
-          <a [routerLink]="['/records', n.entity]" routerLinkActive="active">{{ n.pluralLabel }}</a>
+          <a class="nav-item" [routerLink]="['/records', n.entity]" routerLinkActive="active">
+            <esm-icon name="inbox" />
+            <span class="flex-1">{{ n.pluralLabel }}</span>
+          </a>
         }
         @if (session.canCustomize() || session.isAdmin()) {
-          <div class="group">Build</div>
+          <div class="nav-group">Build</div>
           @if (session.canCustomize()) {
-            <button class="link" (click)="builder.toggle()" [class.active]="builder.open()">✦ AI builder <kbd>⌘I</kbd></button>
-            <a routerLink="/admin/configuration" routerLinkActive="active">Configuration</a>
+            <button class="nav-item" (click)="builder.toggle()" [class.active]="builder.open()">
+              <esm-icon name="sparkles" class="text-brand" />
+              <span class="flex-1 text-left">AI builder</span>
+              <kbd>⌘I</kbd>
+            </button>
+            <a class="nav-item" routerLink="/admin/configuration" routerLinkActive="active"><esm-icon name="sliders" /><span class="flex-1">Configuration</span></a>
           }
           @if (session.isAdmin()) {
-            <a routerLink="/admin/people" routerLinkActive="active">People and roles</a>
-            <a routerLink="/admin/operations" routerLinkActive="active">Operations</a>
+            <a class="nav-item" routerLink="/admin/people" routerLinkActive="active"><esm-icon name="users" /><span class="flex-1">People and roles</span></a>
+            <a class="nav-item" routerLink="/admin/operations" routerLinkActive="active"><esm-icon name="activity" /><span class="flex-1">Operations</span></a>
           }
         }
-        <div class="spacer"></div>
-        <div class="me">
+        <div class="flex-1"></div>
+        <button class="nav-item mb-1 text-muted" (click)="help()?.open.set(true)"><esm-icon name="keyboard" /><span class="flex-1 text-left">Keyboard shortcuts</span><kbd>?</kbd></button>
+        <div class="flex items-center gap-2 rounded-lg border border-subtle bg-raised p-2 shadow-xs">
           <span class="avatar" aria-hidden="true">{{ initials() }}</span>
-          <span class="name">{{ session.app()?.user?.displayName }}</span>
-          <button class="btn btn-ghost btn-sm" (click)="theme.cycle()" [attr.aria-label]="'Theme: ' + theme.theme()">{{ theme.theme() === 'dark' ? '☾' : theme.theme() === 'light' ? '☀' : '◐' }}</button>
-          <button class="btn btn-ghost btn-sm" (click)="signOut()">Sign out</button>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-body-sm font-medium">{{ session.app()?.user?.displayName }}</span>
+            <span class="truncate text-caption text-muted">{{ session.app()?.tenant?.name }}</span>
+          </span>
+          <button class="btn btn-ghost btn-sm btn-icon" (click)="theme.cycle()" [attr.aria-label]="'Theme: ' + theme.theme()" [title]="'Theme: ' + theme.theme()">
+            <esm-icon [name]="theme.theme() === 'dark' ? 'moon' : theme.theme() === 'light' ? 'sun' : 'monitor'" [size]="15" />
+          </button>
+          <button class="btn btn-ghost btn-sm btn-icon" (click)="signOut()" aria-label="Sign out" title="Sign out"><esm-icon name="log-out" [size]="15" /></button>
         </div>
       </nav>
-      <main class="content" id="main"><router-outlet /></main>
+      <main class="content min-w-0 overflow-auto" id="main"><router-outlet /></main>
       @if (builder.open()) {
-        <esm-chat-panel class="chat" />
+        <esm-chat-panel class="chat min-w-0 border-l border-subtle bg-raised max-[900px]:fixed max-[900px]:inset-0 max-[900px]:z-[800]" />
       }
     </div>
     <esm-command-palette />
     <esm-keyboard-help />
   `,
   styles: `
-    .layout { display: grid; grid-template-columns: 232px 1fr; height: 100vh; }
-    .layout.with-chat { grid-template-columns: 232px 1fr 400px; }
-    .sidebar { display: flex; flex-direction: column; gap: 2px; padding: var(--esm-space-3); border-right: 1px solid var(--esm-border-subtle); background: var(--esm-surface-base); overflow: auto; }
-    .brand { display: flex; align-items: center; gap: var(--esm-space-2); font: var(--esm-text-title-sm); padding: var(--esm-space-1) var(--esm-space-2) var(--esm-space-2); }
-    .mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--esm-accent-brand); color: var(--esm-text-on-accent); font-size: 0.8rem; }
-    .env, .search, .link { display: flex; align-items: center; justify-content: space-between; gap: var(--esm-space-2); width: 100%; padding: 6px var(--esm-space-2); border: 0; border-radius: var(--esm-radius-sm); background: transparent; cursor: pointer; text-align: left; font: var(--esm-text-body-sm); }
-    .search { border: 1px solid var(--esm-border-subtle); background: var(--esm-surface-raised); color: var(--esm-text-muted); margin: var(--esm-space-2) 0; }
-    .group { margin-top: var(--esm-space-4); padding: 0 var(--esm-space-2) var(--esm-space-1); font: var(--esm-text-body-sm); color: var(--esm-text-muted); }
-    a, .link { display: flex; padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); color: var(--esm-text-default); font: var(--esm-text-body-sm); font-weight: 500; text-decoration: none; }
-    a:hover, .link:hover, .env:hover { background: var(--esm-state-hover); text-decoration: none; }
-    a.active, .link.active { background: var(--esm-state-selected); }
-    .spacer { flex: 1; }
-    .me { display: flex; align-items: center; gap: var(--esm-space-2); padding-top: var(--esm-space-3); border-top: 1px solid var(--esm-border-subtle); }
-    .avatar { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--esm-state-selected); font: var(--esm-text-body-sm); font-weight: 600; flex: none; }
-    .name { flex: 1; font: var(--esm-text-body-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .content { overflow: auto; min-width: 0; }
-    .chat { border-left: 1px solid var(--esm-border-subtle); min-width: 0; }
-    @media (max-width: 900px) {
-      .layout, .layout.with-chat { grid-template-columns: 1fr; }
-      .sidebar { display: none; }
-      .chat { position: fixed; inset: 0; z-index: 800; background: var(--esm-surface-base); }
-    }
+    .layout.with-chat { grid-template-columns: 256px minmax(0, 1fr) 420px; }
+    @media (max-width: 900px) { .layout.with-chat { grid-template-columns: 1fr; } }
+    .nav-group { margin: var(--esm-space-4) 0 var(--esm-space-1); padding: 0 var(--esm-space-2); font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); }
+    .nav-item { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 var(--esm-space-2); border-radius: var(--esm-radius-sm);
+      color: var(--esm-text-default); font: var(--esm-text-body-sm); font-weight: 500; text-decoration: none; transition: background-color var(--esm-motion-fast) var(--esm-ease-out); }
+    .nav-item esm-icon { color: var(--esm-text-muted); }
+    .nav-item:hover { background: var(--esm-state-hover); text-decoration: none; }
+    .nav-item.active { background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-xs); outline: 1px solid var(--esm-border-subtle); outline-offset: -1px; }
+    .nav-item.active esm-icon { color: var(--esm-accent-brand); }
+    .nav-item kbd { box-shadow: none; }
   `,
 })
 export class Shell {

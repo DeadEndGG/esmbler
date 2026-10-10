@@ -2,39 +2,47 @@ import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Session } from '../core/session';
+import { Icon } from '../ui/icon';
 
 /** Explicit tenant/environment switch (REQ-TEN-003): never inferred from a link or record ID. */
 @Component({
   selector: 'esm-workspaces',
+  imports: [Icon],
   template: `
-    <main class="wrap">
-      <section class="panel" aria-labelledby="t">
-        <h1 id="t">Choose a workspace</h1>
-        <ul>
+    <main class="backdrop-glow grid min-h-dvh place-items-center p-6">
+      <section class="surface w-full max-w-[520px] p-6" aria-labelledby="t">
+        <div class="mb-5 flex items-center gap-3">
+          <span class="brand-mark" aria-hidden="true"><esm-icon name="layers" [size]="16" [stroke]="2.25" /></span>
+          <div>
+            <h1 id="t" class="text-title-md">Choose a workspace</h1>
+            <p class="text-body-sm text-muted">Pick the organization and environment to work in.</p>
+          </div>
+        </div>
+        <ul class="flex flex-col gap-2.5">
           @for (w of auth.workspaces(); track w.tenantId) {
-            <li>
-              <div class="name">{{ w.name }} <span class="muted mono">{{ w.slug }}</span></div>
-              <div class="envs">
+            <li class="flex items-center justify-between gap-3 rounded-md border border-subtle bg-base p-3 transition hover:border-strong">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="grid size-9 flex-none place-items-center rounded-md bg-selected text-brand"><esm-icon name="building" [size]="18" /></span>
+                <div class="min-w-0">
+                  <div class="truncate text-body font-semibold">{{ w.name }}</div>
+                  <div class="mono text-muted">{{ w.slug }}</div>
+                </div>
+              </div>
+              <div class="flex flex-wrap justify-end gap-2">
                 @for (e of w.environments; track e.environmentId) {
-                  <button class="btn" (click)="open(w.slug, e.key)">{{ e.name }}</button>
+                  <button class="btn btn-sm" (click)="open(w.slug, e.key)">{{ e.name }} <esm-icon name="chevron-right" [size]="14" /></button>
                 }
               </div>
             </li>
           } @empty {
-            <li class="muted">You are not a member of any workspace yet.</li>
+            <li class="rounded-md border border-dashed border-strong p-6 text-center text-muted">You are not a member of any workspace yet.</li>
           }
         </ul>
-        <button class="btn btn-ghost" (click)="signOut()">Sign out</button>
+        <div class="mt-5 flex justify-end border-t border-subtle pt-4">
+          <button class="btn btn-ghost btn-sm" (click)="signOut()"><esm-icon name="log-out" [size]="14" /> Sign out</button>
+        </div>
       </section>
     </main>
-  `,
-  styles: `
-    .wrap { min-height: 100vh; display: grid; place-items: center; padding: var(--esm-space-4); }
-    .panel { width: min(480px, 100%); padding: var(--esm-space-6); background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-lg); }
-    h1 { font: var(--esm-text-title-md); margin: 0 0 var(--esm-space-4); }
-    ul { list-style: none; padding: 0; margin: 0 0 var(--esm-space-4); display: flex; flex-direction: column; gap: var(--esm-space-3); }
-    li { display: flex; justify-content: space-between; align-items: center; gap: var(--esm-space-3); padding: var(--esm-space-3); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); }
-    .envs { display: flex; gap: var(--esm-space-2); }
   `,
 })
 export class WorkspacesPage {

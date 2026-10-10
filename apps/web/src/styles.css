@@ -1,0 +1,560 @@
+/*
+ * Global styles: Tailwind CSS v4 (ADR 0014) over the Esmbler design tokens. The theme below maps Tailwind's
+ * vocabulary onto semantic tokens only and removes the default palette, so `bg-raised`, `text-muted`, `border-subtle`,
+ * `text-brand` and the tone colors are the whole color vocabulary (design lint DL-001).
+ */
+@import "tailwindcss";
+@import "@fontsource-variable/inter/wght.css";
+@import "./styles/tokens.css";
+
+@source "./app";
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) & {
+      @slot;
+    }
+  }
+  :root[data-theme="dark"] & {
+    @slot;
+  }
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-base: var(--esm-surface-base);
+  --color-raised: var(--esm-surface-raised);
+  --color-sunken: var(--esm-surface-sunken);
+  --color-nav: var(--esm-surface-nav);
+  --color-fg: var(--esm-text-default);
+  --color-muted: var(--esm-text-muted);
+  --color-on-accent: var(--esm-text-on-accent);
+  --color-subtle: var(--esm-border-subtle);
+  --color-strong: var(--esm-border-strong);
+  --color-control: var(--esm-border-input);
+  --color-brand: var(--esm-accent-brand);
+  --color-brand-hover: var(--esm-accent-brand-hover);
+  --color-blue: var(--esm-accent-blue);
+  --color-green: var(--esm-accent-green);
+  --color-amber: var(--esm-accent-amber);
+  --color-red: var(--esm-accent-red);
+  --color-purple: var(--esm-accent-purple);
+  --color-gray: var(--esm-accent-gray);
+  --color-hover: var(--esm-state-hover);
+  --color-selected: var(--esm-state-selected);
+  --color-focus: var(--esm-state-focus);
+  --color-hero: var(--esm-surface-hero);
+  --color-on-hero: var(--esm-text-on-hero);
+  --color-on-hero-muted: var(--esm-text-on-hero-muted);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: var(--esm-font);
+  --font-mono: var(--esm-font-mono);
+
+  /* The text styles (DL-004): text-title-xl … text-caption. */
+  --text-*: initial;
+  --text-title-xl: 1.75rem;
+  --text-title-xl--line-height: 2.25rem;
+  --text-title-xl--font-weight: 650;
+  --text-title-xl--letter-spacing: -0.02em;
+  --text-title-lg: 1.5rem;
+  --text-title-lg--line-height: 2rem;
+  --text-title-lg--font-weight: 600;
+  --text-title-lg--letter-spacing: -0.015em;
+  --text-title-md: 1.125rem;
+  --text-title-md--line-height: 1.5rem;
+  --text-title-md--font-weight: 600;
+  --text-title-sm: 0.9375rem;
+  --text-title-sm--line-height: 1.375rem;
+  --text-title-sm--font-weight: 600;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-body-sm: 0.8125rem;
+  --text-body-sm--line-height: 1.125rem;
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1rem;
+
+  --radius-*: initial;
+  --radius-sm: var(--esm-radius-sm);
+  --radius-md: var(--esm-radius-md);
+  --radius-lg: var(--esm-radius-lg);
+  --radius-xl: var(--esm-radius-xl);
+  --radius-full: var(--esm-radius-full);
+
+  --shadow-*: initial;
+  --shadow-xs: var(--esm-shadow-xs);
+  --shadow-card: var(--esm-shadow-card);
+  --shadow-raised: var(--esm-shadow-raised);
+  --shadow-overlay: var(--esm-shadow-overlay);
+
+  --ease-out: var(--esm-ease-out);
+  --default-transition-duration: var(--esm-motion-fast);
+  --default-transition-timing-function: var(--esm-ease-out);
+
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--esm-surface-base);
+    color: var(--esm-text-default);
+    font: var(--esm-text-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  a {
+    color: var(--esm-accent-brand);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--esm-state-focus);
+    outline-offset: 2px;
+    border-radius: var(--esm-radius-sm);
+  }
+
+  ::selection {
+    background: var(--esm-state-ring);
+  }
+
+  kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 var(--esm-space-1);
+    font: var(--esm-text-caption);
+    font-family: var(--esm-font);
+    color: var(--esm-text-muted);
+    background: var(--esm-surface-raised);
+    border: 1px solid var(--esm-border-subtle);
+    border-bottom-color: var(--esm-border-strong);
+    border-radius: 5px;
+    box-shadow: var(--esm-shadow-xs);
+  }
+}
+
+@layer components {
+  .muted {
+    color: var(--esm-text-muted);
+  }
+
+  .mono {
+    font: var(--esm-text-mono);
+  }
+
+  /* Buttons: one primary per view (accent.brand); neutral buttons sit on raised surfaces with a hairline and xs shadow. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--esm-space-2);
+    height: 32px;
+    padding: 0 var(--esm-space-3);
+    border-radius: var(--esm-radius-sm);
+    border: 1px solid var(--esm-border-strong);
+    background: var(--esm-surface-raised);
+    color: var(--esm-text-default);
+    box-shadow: var(--esm-shadow-xs);
+    font: var(--esm-text-body-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    text-decoration: none;
+    transition:
+      background-color var(--esm-motion-fast) var(--esm-ease-out),
+      border-color var(--esm-motion-fast) var(--esm-ease-out),
+      box-shadow var(--esm-motion-fast) var(--esm-ease-out),
+      transform var(--esm-motion-fast) var(--esm-ease-out);
+  }
+
+  .btn:hover {
+    background-color: var(--esm-surface-raised);
+    background-image: linear-gradient(var(--esm-state-hover), var(--esm-state-hover));
+    border-color: var(--esm-border-input);
+    text-decoration: none;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    background: var(--esm-accent-brand);
+    border-color: var(--esm-accent-brand);
+    color: var(--esm-text-on-accent);
+    box-shadow: var(--esm-shadow-inset-highlight), var(--esm-shadow-xs);
+  }
+
+  .btn-primary:hover {
+    background: var(--esm-accent-brand-hover);
+    border-color: var(--esm-accent-brand-hover);
+  }
+
+  .btn-danger {
+    color: var(--esm-accent-red);
+  }
+
+  .btn-danger:hover {
+    background-image: none;
+    background: color-mix(in srgb, var(--esm-accent-red) 8%, var(--esm-surface-raised));
+    border-color: color-mix(in srgb, var(--esm-accent-red) 40%, var(--esm-border-strong));
+  }
+
+  .btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .btn-ghost:hover {
+    border-color: transparent;
+  }
+
+  .btn-sm {
+    height: 28px;
+    padding: 0 var(--esm-space-2);
+    gap: 6px;
+  }
+
+  .btn-icon {
+    width: 32px;
+    padding: 0;
+  }
+
+  .btn-sm.btn-icon {
+    width: 28px;
+  }
+
+  .btn kbd {
+    height: 1.125rem;
+    min-width: 1.125rem;
+    box-shadow: none;
+  }
+
+  .btn-primary kbd {
+    color: inherit;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    border-color: color-mix(in srgb, currentColor 24%, transparent);
+  }
+
+  /* Form controls */
+  .input {
+    width: 100%;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--esm-border-input);
+    border-radius: var(--esm-radius-sm);
+    background: var(--esm-surface-raised);
+    color: var(--esm-text-default);
+    font: var(--esm-text-body);
+    box-shadow: var(--esm-shadow-xs);
+    transition:
+      border-color var(--esm-motion-fast) var(--esm-ease-out),
+      box-shadow var(--esm-motion-fast) var(--esm-ease-out);
+  }
+
+  .input::placeholder {
+    color: var(--esm-text-muted);
+  }
+
+  .input:hover:not(:disabled) {
+    border-color: var(--esm-text-muted);
+  }
+
+  .input:focus,
+  .input:focus-visible {
+    outline: none;
+    border-color: var(--esm-accent-brand);
+    box-shadow: 0 0 0 3px var(--esm-state-ring);
+  }
+
+  .input:disabled {
+    background: var(--esm-surface-sunken);
+    color: var(--esm-text-muted);
+    cursor: not-allowed;
+  }
+
+  select.input {
+    appearance: none;
+    padding-inline-end: 30px;
+    background-image: var(--esm-icon-chevron);
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+  }
+
+  textarea.input {
+    min-height: 80px;
+    resize: vertical;
+    font-family: var(--esm-font);
+  }
+
+  .input[aria-invalid="true"] {
+    border-color: var(--esm-accent-red);
+  }
+
+  .input[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--esm-accent-red) 22%, transparent);
+  }
+
+  /* Badges: a tone dot plus tone text on the tone at 11% (text keeps 4.5:1). */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 9px 0 8px;
+    border-radius: var(--esm-radius-full);
+    font: var(--esm-text-body-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    /* Text leans 18% toward text.default so it keeps 4.5:1 even on hovered or selected rows. */
+    color: color-mix(in srgb, var(--tone, var(--esm-accent-gray)) 82%, var(--esm-text-default));
+    background: color-mix(in srgb, var(--tone, var(--esm-accent-gray)) 11%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--esm-accent-gray)) 18%, transparent);
+  }
+
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+
+  .badge.no-dot::before {
+    display: none;
+  }
+
+  .tone-red {
+    --tone: var(--esm-accent-red);
+  }
+
+  .tone-amber {
+    --tone: var(--esm-accent-amber);
+  }
+
+  .tone-green {
+    --tone: var(--esm-accent-green);
+  }
+
+  .tone-blue {
+    --tone: var(--esm-accent-blue);
+  }
+
+  .tone-purple {
+    --tone: var(--esm-accent-purple);
+  }
+
+  .tone-gray {
+    --tone: var(--esm-accent-gray);
+  }
+
+  .tone-brand {
+    --tone: var(--esm-accent-brand);
+  }
+
+  /* Callouts: tinted panel with a tone rail. */
+  /* Tone defaults to gray through var() fallbacks, so a tone-* class always wins regardless of order. */
+  .callout {
+    display: flex;
+    gap: var(--esm-space-2);
+    align-items: center;
+    flex-wrap: wrap;
+    padding: var(--esm-space-3) var(--esm-space-4);
+    border-radius: var(--esm-radius-md);
+    color: var(--esm-text-default);
+    background: color-mix(in srgb, var(--tone, var(--esm-accent-gray)) 8%, var(--esm-surface-raised));
+    border: 1px solid color-mix(in srgb, var(--tone, var(--esm-accent-gray)) 22%, transparent);
+    border-inline-start: 3px solid var(--tone, var(--esm-accent-gray));
+  }
+
+  .callout strong,
+  .callout > esm-icon {
+    color: var(--tone, var(--esm-accent-gray));
+  }
+
+  /* Decorative backdrops: brand glow behind auth screens and page headers; hero glow on the sign-in panel. */
+  .backdrop-glow {
+    background: var(--esm-gradient-glow), var(--esm-surface-base);
+  }
+
+  .backdrop-hero {
+    background: var(--esm-gradient-hero);
+  }
+
+  /* Surfaces */
+  .surface {
+    background: var(--esm-surface-raised);
+    border: 1px solid var(--esm-border-subtle);
+    border-radius: var(--esm-radius-lg);
+    box-shadow: var(--esm-shadow-card);
+  }
+
+  .avatar {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--esm-radius-full);
+    font: var(--esm-text-caption);
+    font-weight: 600;
+    color: var(--esm-text-on-gradient);
+    background: var(--esm-gradient-brand);
+  }
+
+  .avatar-sm {
+    width: 20px;
+    height: 20px;
+    font-size: 0.5625rem;
+  }
+
+  .brand-mark {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--esm-gradient-brand);
+    color: var(--esm-text-on-gradient);
+    box-shadow: var(--esm-shadow-inset-highlight), var(--esm-shadow-brand);
+  }
+
+  /* Admin and settings pages: one page header, sections, and tables on a raised card. */
+  .admin-page {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: var(--esm-space-6) var(--esm-space-8) var(--esm-space-12);
+  }
+
+  .page-head {
+    display: flex;
+    align-items: center;
+    gap: var(--esm-space-3);
+    margin-bottom: var(--esm-space-6);
+  }
+
+  .page-head h1 {
+    font: var(--esm-text-title-lg);
+    letter-spacing: -0.015em;
+  }
+
+  .page-head p {
+    font: var(--esm-text-body-sm);
+    color: var(--esm-text-muted);
+  }
+
+  .page-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--esm-radius-md);
+    background: var(--esm-surface-raised);
+    border: 1px solid var(--esm-border-subtle);
+    box-shadow: var(--esm-shadow-xs);
+    color: var(--esm-accent-brand);
+  }
+
+  .section-title {
+    font: var(--esm-text-title-md);
+    margin: var(--esm-space-8) 0 var(--esm-space-1);
+  }
+
+  .section-lead {
+    font: var(--esm-text-body-sm);
+    color: var(--esm-text-muted);
+    margin: 0 0 var(--esm-space-3);
+  }
+
+  .table-card {
+    overflow-x: auto;
+    background: var(--esm-surface-raised);
+    border: 1px solid var(--esm-border-subtle);
+    border-radius: var(--esm-radius-lg);
+    box-shadow: var(--esm-shadow-card);
+  }
+
+  .table-card table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .table-card th {
+    white-space: nowrap;
+    text-align: left;
+    font: var(--esm-text-caption);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--esm-text-muted);
+    padding: 10px var(--esm-space-4);
+    border-bottom: 1px solid var(--esm-border-subtle);
+    background: color-mix(in srgb, var(--esm-surface-sunken) 60%, var(--esm-surface-raised));
+  }
+
+  .table-card td {
+    padding: var(--esm-space-3) var(--esm-space-4);
+    border-bottom: 1px solid var(--esm-border-subtle);
+    font: var(--esm-text-body-sm);
+    vertical-align: middle;
+  }
+
+  .table-card tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .table-card tbody tr:hover {
+    background: var(--esm-state-hover);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--esm-surface-sunken) 0%, var(--esm-state-hover) 50%, var(--esm-surface-sunken) 100%);
+    background-size: 200% 100%;
+    animation: esm-shimmer 1.2s infinite linear;
+    border-radius: var(--esm-radius-sm);
+    min-height: 14px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+    }
+  }
+}
+
+@keyframes esm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}

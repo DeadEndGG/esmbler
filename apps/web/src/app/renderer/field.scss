@@ -1,10 +1,11 @@
 :host { display: block; }
-.field { display: flex; flex-direction: column; gap: var(--esm-space-1); }
-.label { font: var(--esm-text-body-sm); color: var(--esm-text-muted); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > .badge { align-self: flex-start; }
+.label { font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); }
 .req { color: var(--esm-accent-red); margin-left: 2px; }
-.value { min-height: 28px; display: flex; align-items: center; flex-wrap: wrap; gap: var(--esm-space-1); padding: 3px var(--esm-space-2); margin: 0 calc(-1 * var(--esm-space-2)); border-radius: var(--esm-radius-sm); }
+.value { min-height: 30px; display: flex; align-items: center; flex-wrap: wrap; gap: var(--esm-space-1); padding: 4px var(--esm-space-2); margin: 0 calc(-1 * var(--esm-space-2)); border-radius: var(--esm-radius-sm); border: 1px solid transparent; transition: background-color var(--esm-motion-fast) var(--esm-ease-out), border-color var(--esm-motion-fast) var(--esm-ease-out); }
 .value.editable { cursor: text; }
-.value.editable:hover { background: var(--esm-state-hover); }
+.value.editable:hover { background: var(--esm-state-hover); border-color: var(--esm-border-subtle); }
 .rich-view :first-child { margin-top: 0; }
 .rich-view :last-child { margin-bottom: 0; }
 .rich { min-height: 96px; }
@@ -12,10 +13,11 @@
 .error { margin: 0; color: var(--esm-accent-red); font: var(--esm-text-body-sm); }
 .saving { font: var(--esm-text-body-sm); margin-left: auto; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--esm-space-1); }
-.chip { border: 1px solid var(--esm-border-subtle); background: var(--esm-surface-raised); border-radius: var(--esm-radius-full); padding: 2px 10px; cursor: pointer; font: var(--esm-text-body-sm); }
-.chip.on { background: var(--esm-state-selected); border-color: var(--esm-accent-brand); }
+.chip { border: 1px solid var(--esm-border-strong); background: var(--esm-surface-raised); border-radius: var(--esm-radius-full); padding: 3px 12px; font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-default); box-shadow: var(--esm-shadow-xs); transition: background-color var(--esm-motion-fast) var(--esm-ease-out), border-color var(--esm-motion-fast) var(--esm-ease-out); }
+.chip:hover:not(:disabled) { border-color: var(--esm-border-input); }
+.chip.on { background: var(--esm-state-selected); border-color: var(--esm-accent-brand); color: var(--esm-accent-brand); }
 .switch { width: 18px; height: 18px; accent-color: var(--esm-accent-brand); }
 .lookup { position: relative; }
-.results { position: absolute; z-index: 10; left: 0; right: 0; margin: 2px 0 0; padding: var(--esm-space-1); list-style: none; background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); box-shadow: var(--esm-shadow-overlay); }
+.results { position: absolute; z-index: 10; left: 0; right: 0; margin: 4px 0 0; padding: var(--esm-space-1); list-style: none; background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); box-shadow: var(--esm-shadow-overlay); }
 .results li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; }
 .results li:hover { background: var(--esm-state-hover); }

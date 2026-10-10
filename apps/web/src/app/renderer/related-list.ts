@@ -31,10 +31,13 @@ import { RenderContext } from './render-context';
     </div>
   `,
   styles: `
+    .related { border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); overflow: hidden; }
     table { width: 100%; border-collapse: collapse; font: var(--esm-text-body-sm); }
-    th { text-align: left; color: var(--esm-text-muted); font-weight: 500; padding: 6px var(--esm-space-2); border-bottom: 1px solid var(--esm-border-subtle); }
-    td { padding: 6px var(--esm-space-2); border-bottom: 1px solid var(--esm-border-subtle); }
-    .more { font: var(--esm-text-body-sm); }
+    th { text-align: left; color: var(--esm-text-muted); font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); background: var(--esm-surface-sunken); }
+    td { padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); }
+    tbody tr:last-child td { border-bottom: 0; }
+    td a { font: var(--esm-text-mono); font-weight: 500; }
+    .more { font: var(--esm-text-body-sm); margin: 0; padding: var(--esm-space-2) var(--esm-space-3); border-top: 1px solid var(--esm-border-subtle); }
   `,
 })
 export class RelatedList {

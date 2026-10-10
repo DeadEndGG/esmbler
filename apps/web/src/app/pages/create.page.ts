@@ -8,27 +8,32 @@ import { Shortcuts } from '../core/shortcuts';
 import { Toasts } from '../core/toast';
 import { NodeComponent } from '../renderer/node';
 import { RenderContext } from '../renderer/render-context';
+import { Icon } from '../ui/icon';
 
 /** spec_object.form for creating a record. Rules run as you type; the server re-validates on submit. */
 @Component({
   selector: 'esm-create-page',
-  imports: [NodeComponent, RouterLink],
+  imports: [NodeComponent, RouterLink, Icon],
   providers: [RenderContext],
   template: `
     @let s = ctx.spec();
     <div class="page">
       <nav class="crumbs" aria-label="Breadcrumb">
-        <a [routerLink]="['/records', entity()]">{{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
-        <span aria-hidden="true">/</span>
-        <span>New</span>
+        <a class="crumb-link" [routerLink]="['/records', entity()]"><esm-icon name="arrow-left" [size]="14" /> {{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
+        <esm-icon name="chevron-right" [size]="14" />
+        <span class="text-fg">New</span>
       </nav>
+      <header class="mb-5">
+        <h1 class="text-title-lg">New {{ s?.entity?.entity?.label?.toLowerCase() ?? 'record' }}</h1>
+        <p class="mt-0.5 text-body-sm text-muted">Fields marked * are required. Rules run as you type.</p>
+      </header>
       @if (error()) { <div class="callout tone-red" role="alert">{{ error() }}</div> }
       @if (s && ctx.record()) {
         <form (submit)="$event.preventDefault(); submit()" novalidate>
           @for (m of ctx.states().messages; track $index) { <div class="callout tone-blue" role="note">{{ m.text }}</div> }
           <esm-node [node]="s.view.layout" [viewId]="s.view.id" />
           <div class="actions">
-            <a class="btn" [routerLink]="['/records', entity()]">Cancel</a>
+            <a class="btn btn-ghost" [routerLink]="['/records', entity()]">Cancel</a>
             <button class="btn btn-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Creating…' : 'Create' }} <kbd>⌘↵</kbd></button>
           </div>
         </form>
@@ -38,10 +43,14 @@ import { RenderContext } from '../renderer/render-context';
     </div>
   `,
   styles: `
-    .page { padding: var(--esm-space-4) var(--esm-space-6) var(--esm-space-10); max-width: 860px; }
-    .crumbs { display: flex; gap: var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-3); }
-    .callout { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); margin-bottom: var(--esm-space-3); background: color-mix(in srgb, var(--tone) 12%, transparent); }
-    .actions { display: flex; justify-content: flex-end; gap: var(--esm-space-2); margin-top: var(--esm-space-4); }
+    .page { padding: var(--esm-space-5) var(--esm-space-8) var(--esm-space-12); max-width: 920px; margin: 0 auto; }
+    .crumbs { display: flex; align-items: center; gap: var(--esm-space-2); min-height: 28px; font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-4); }
+    .crumb-link { display: inline-flex; align-items: center; gap: var(--esm-space-1); color: var(--esm-text-muted); font-weight: 500; }
+    .crumb-link:hover { color: var(--esm-text-default); text-decoration: none; }
+    .callout { margin-bottom: var(--esm-space-3); }
+    .actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: var(--esm-space-2); margin-top: var(--esm-space-4); padding: var(--esm-space-3) 0;
+      background: linear-gradient(transparent, var(--esm-surface-base) 35%); }
+    @media (max-width: 700px) { .page { padding: var(--esm-space-3) var(--esm-space-4); } }
     .skeleton-page { display: flex; flex-direction: column; gap: var(--esm-space-3); }
     .skeleton-page .skeleton { display: block; height: 32px; }
   `,

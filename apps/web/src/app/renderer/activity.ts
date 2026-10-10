@@ -4,35 +4,39 @@ import { Api } from '../core/api';
 import { ActivityView, HistoryEntry, NodeSpec } from '../core/models';
 import { Toasts } from '../core/toast';
 import { RenderContext } from './render-context';
+import { Icon } from '../ui/icon';
 
 /** activity.feed: public replies and internal work notes (REQ-BIZ-002). Requesters never receive work notes. */
 @Component({
   selector: 'esm-activity-feed',
-  imports: [DatePipe],
+  imports: [DatePipe, Icon],
   template: `
     <div class="feed">
       @if (ctx.record()?.access?.canUpdate || canReply()) {
         <div class="composer" [class.internal]="kind() === 'work_note'">
           <div class="kinds" role="radiogroup" aria-label="Message type">
             @if (canNote()) {
-              <button role="radio" [attr.aria-checked]="kind() === 'work_note'" (click)="kind.set('work_note')">Internal note</button>
+              <button role="radio" [attr.aria-checked]="kind() === 'work_note'" (click)="kind.set('work_note')"><esm-icon name="shield" [size]="13" /> Internal note</button>
             }
-            <button role="radio" [attr.aria-checked]="kind() === 'public_reply'" (click)="kind.set('public_reply')">Reply to requester</button>
+            <button role="radio" [attr.aria-checked]="kind() === 'public_reply'" (click)="kind.set('public_reply')"><esm-icon name="message" [size]="13" /> Reply to requester</button>
           </div>
           <textarea class="input" [placeholder]="kind() === 'work_note' ? 'Only agents see internal notes' : 'The requester sees this reply'" [value]="text()" (input)="text.set($any($event.target).value)"
                     (keydown)="onKey($event)" aria-label="Message" [disabled]="preview()"></textarea>
-          <div class="send"><span class="muted hint"><kbd>⌘</kbd><kbd>Enter</kbd> to send</span>
+          <div class="send"><span class="muted hint"><kbd>⌘</kbd> <kbd>↵</kbd> to send</span>
             <button class="btn btn-primary btn-sm" [disabled]="!text().trim() || busy() || preview()" (click)="send()">{{ kind() === 'work_note' ? 'Add note' : 'Send reply' }}</button></div>
         </div>
       }
       <ol class="items">
         @for (a of items(); track a.id) {
           <li [class.note]="a.kind === 'work_note'">
+            <span class="avatar" aria-hidden="true">{{ initials(a.authorName) }}</span>
+            <div class="entry">
             <div class="meta"><strong>{{ a.authorName ?? 'Someone' }}</strong>
               @if (a.byAgent) { <span class="badge tone-brand">AI</span> }
               <span class="badge" [class]="a.kind === 'work_note' ? 'tone-amber' : 'tone-blue'">{{ a.kind === 'work_note' ? 'Internal' : 'Public' }}</span>
               <span class="muted">{{ a.createdAt | date: 'MMM d, HH:mm' }}</span></div>
             <div class="body" [innerHTML]="a.body"></div>
+            </div>
           </li>
         } @empty {
           <li class="muted empty">{{ preview() ? 'Activity appears here on real records.' : 'No activity yet.' }}</li>
@@ -41,20 +45,27 @@ import { RenderContext } from './render-context';
     </div>
   `,
   styles: `
-    .composer { border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); padding: var(--esm-space-2); margin-bottom: var(--esm-space-4); background: var(--esm-surface-raised); }
+    .composer { border: 1px solid var(--esm-border-input); border-radius: var(--esm-radius-lg); padding: var(--esm-space-2) var(--esm-space-3) var(--esm-space-2); margin-bottom: var(--esm-space-5); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-xs);
+      transition: border-color var(--esm-motion-fast) var(--esm-ease-out), box-shadow var(--esm-motion-fast) var(--esm-ease-out); }
+    .composer:focus-within { border-color: var(--esm-accent-brand); box-shadow: 0 0 0 3px var(--esm-state-ring); }
     .composer.internal { background: color-mix(in srgb, var(--esm-accent-amber) 6%, var(--esm-surface-raised)); }
-    .kinds { display: flex; gap: var(--esm-space-1); margin-bottom: var(--esm-space-2); }
-    .kinds button { border: 0; background: transparent; padding: 2px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; font: var(--esm-text-body-sm); color: var(--esm-text-muted); }
-    .kinds button[aria-checked="true"] { background: var(--esm-state-selected); color: var(--esm-text-default); font-weight: 500; }
-    textarea { border: 0; min-height: 60px; background: transparent; }
+    .kinds { display: inline-flex; gap: 2px; padding: 2px; margin-bottom: var(--esm-space-1); border-radius: var(--esm-radius-sm); background: var(--esm-surface-sunken); }
+    .kinds button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; height: 26px; padding: 0 var(--esm-space-2); border-radius: 5px; font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); }
+    .kinds button[aria-checked="true"] { background: var(--esm-surface-raised); color: var(--esm-text-default); box-shadow: var(--esm-shadow-xs); }
+    textarea { border: 0; min-height: 64px; background: transparent; box-shadow: none; padding-inline: 0; }
+    textarea:focus, textarea:focus-visible { box-shadow: none; outline: none; }
     .send { display: flex; justify-content: space-between; align-items: center; }
-    .hint { font: var(--esm-text-body-sm); }
-    .items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--esm-space-3); }
-    li { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); border: 1px solid var(--esm-border-subtle); }
-    li.note { border-left: 3px solid var(--esm-accent-amber); }
-    .meta { display: flex; align-items: center; gap: var(--esm-space-2); font: var(--esm-text-body-sm); margin-bottom: var(--esm-space-1); }
+    .hint { font: var(--esm-text-caption); }
+    .hint kbd { box-shadow: none; }
+    .items { position: relative; list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--esm-space-4); }
+    .items::before { content: ""; position: absolute; left: 13px; top: 8px; bottom: 8px; width: 1px; background: var(--esm-border-subtle); }
+    li { position: relative; display: flex; gap: var(--esm-space-3); }
+    .entry { flex: 1; min-width: 0; padding: var(--esm-space-3); border-radius: var(--esm-radius-md); border: 1px solid var(--esm-border-subtle); background: var(--esm-surface-raised); }
+    li.note .entry { background: color-mix(in srgb, var(--esm-accent-amber) 5%, var(--esm-surface-raised)); border-color: color-mix(in srgb, var(--esm-accent-amber) 25%, var(--esm-border-subtle)); }
+    .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esm-space-2); font: var(--esm-text-body-sm); margin-bottom: var(--esm-space-1); }
     .body :first-child { margin-top: 0; } .body :last-child { margin-bottom: 0; }
-    .empty { border: 0; }
+    .empty { padding-left: var(--esm-space-10); }
+    .items:has(.empty)::before { display: none; }
   `,
 })
 export class ActivityFeed {
@@ -106,6 +117,10 @@ export class ActivityFeed {
       this.busy.set(false);
     }
   }
+
+  protected initials(name: string | null | undefined): string {
+    return (name ?? '?').split(' ').map((p) => p[0]).slice(0, 2).join('');
+  }
 }
 
 /** activity.audit_history: who changed what, when, under which configuration revision (REQ-REC-007). */
@@ -129,9 +144,12 @@ export class ActivityFeed {
     </ol>
   `,
   styles: `
-    .history { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--esm-space-3); }
-    .meta { display: flex; gap: var(--esm-space-2); align-items: center; font: var(--esm-text-body-sm); }
-    .change { font: var(--esm-text-body-sm); padding-left: var(--esm-space-3); }
+    .history { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--esm-space-4); }
+    .history li { position: relative; padding-left: var(--esm-space-5); }
+    .history li::before { content: ""; position: absolute; left: 3px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--esm-surface-raised); border: 2px solid var(--esm-accent-brand); }
+    .history li:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 18px; bottom: calc(-1 * var(--esm-space-4) + 4px); width: 1px; background: var(--esm-border-subtle); }
+    .meta { display: flex; flex-wrap: wrap; gap: var(--esm-space-2); align-items: center; font: var(--esm-text-body-sm); margin-bottom: 2px; }
+    .change { font: var(--esm-text-body-sm); }
     .from { text-decoration: line-through; color: var(--esm-text-muted); }
   `,
 })

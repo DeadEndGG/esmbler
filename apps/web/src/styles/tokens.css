@@ -1,0 +1,164 @@
+/*
+ * Esmbler design tokens (docs/explanation/design-principles.md). This is the only file with raw colors: components,
+ * Tailwind utilities (see ../styles.css @theme) and specs use the semantic names. Token "surface.raised" is the custom
+ * property --esm-surface-raised. Every color has a light and a dark value.
+ */
+:root {
+  color-scheme: light;
+  --esm-surface-base: #f6f6f9;
+  --esm-surface-raised: #ffffff;
+  --esm-surface-sunken: #eeeef3;
+  --esm-surface-nav: #f1f0f7;
+  --esm-text-default: #18181d;
+  --esm-text-muted: #5c5c68;
+  --esm-text-on-accent: #ffffff;
+  --esm-text-on-gradient: #ffffff;
+  --esm-border-subtle: #e4e4ea;
+  --esm-border-strong: #d2d2db;
+  --esm-border-input: #8c8c98;
+  --esm-accent-brand: #5b4ddb;
+  --esm-accent-brand-hover: #4b3dc8;
+  --esm-accent-blue: #2d64cc;
+  --esm-accent-green: #1d7349;
+  --esm-accent-amber: #9a5b05;
+  --esm-accent-red: #c42f3a;
+  --esm-accent-purple: #7a45c9;
+  --esm-accent-gray: #62626d;
+  --esm-state-hover: rgb(24 24 29 / 5%);
+  --esm-state-selected: rgb(91 77 219 / 10%);
+  --esm-state-focus: #5b4ddb;
+  --esm-state-changed: rgb(91 77 219 / 40%);
+  --esm-state-ring: rgb(91 77 219 / 22%);
+  --esm-scrim: rgb(16 16 24 / 38%);
+  /* Decorative only (brand mark, sign-in hero, assistant mark): never behind body text. */
+  --esm-gradient-brand: linear-gradient(135deg, #6a5cf0 0%, #8b5cf6 55%, #c157d6 100%);
+  /* Sign-in hero: a deep indigo panel in both themes. */
+  --esm-surface-hero: #16132c;
+  --esm-text-on-hero: #f4f3ff;
+  --esm-text-on-hero-muted: #c3bfe6;
+  --esm-gradient-hero: radial-gradient(80% 60% at 0% 0%, rgb(124 108 255 / 45%) 0%, transparent 60%),
+    radial-gradient(70% 60% at 100% 100%, rgb(193 87 214 / 35%) 0%, transparent 60%);
+  --esm-gradient-glow: radial-gradient(60% 50% at 20% 0%, rgb(124 108 255 / 14%) 0%, transparent 70%),
+    radial-gradient(50% 40% at 90% 10%, rgb(193 87 214 / 10%) 0%, transparent 70%);
+  --esm-shadow-xs: 0 1px 2px rgb(16 16 24 / 6%);
+  --esm-shadow-card: 0 1px 2px rgb(16 16 24 / 4%), 0 2px 8px -2px rgb(16 16 24 / 6%);
+  --esm-shadow-raised: 0 6px 16px -4px rgb(16 16 24 / 12%), 0 2px 4px -2px rgb(16 16 24 / 6%);
+  --esm-shadow-overlay: 0 16px 40px -8px rgb(16 16 24 / 18%), 0 4px 10px -4px rgb(16 16 24 / 10%);
+  --esm-shadow-inset-highlight: inset 0 1px 0 rgb(255 255 255 / 18%);
+  /* Registry name for overlay elevation (elements list `elevation.overlay`). */
+  --esm-elevation-overlay: var(--esm-shadow-overlay);
+  --esm-shadow-brand: 0 2px 8px -2px rgb(91 77 219 / 50%);
+  /* Select chevron; mid gray reads on both themes. */
+  --esm-icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238c8c98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
+  --esm-font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --esm-font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --esm-text-title-xl: 650 1.75rem/2.25rem var(--esm-font);
+  --esm-text-title-lg: 600 1.5rem/2rem var(--esm-font);
+  --esm-text-title-md: 600 1.125rem/1.5rem var(--esm-font);
+  --esm-text-title-sm: 600 0.9375rem/1.375rem var(--esm-font);
+  --esm-text-body: 400 0.875rem/1.25rem var(--esm-font);
+  --esm-text-body-sm: 400 0.8125rem/1.125rem var(--esm-font);
+  --esm-text-caption: 500 0.6875rem/1rem var(--esm-font);
+  --esm-text-mono: 400 0.8125rem/1.125rem var(--esm-font-mono);
+
+  --esm-space-1: 4px;
+  --esm-space-2: 8px;
+  --esm-space-3: 12px;
+  --esm-space-4: 16px;
+  --esm-space-5: 20px;
+  --esm-space-6: 24px;
+  --esm-space-8: 32px;
+  --esm-space-10: 40px;
+  --esm-space-12: 48px;
+  --esm-radius-sm: 6px;
+  --esm-radius-md: 10px;
+  --esm-radius-lg: 14px;
+  --esm-radius-xl: 20px;
+  --esm-radius-full: 999px;
+  --esm-motion-fast: 120ms;
+  --esm-motion-base: 200ms;
+  --esm-motion-slow: 320ms;
+  --esm-ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Dark values: system preference unless the person picked light; or an explicit dark choice. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --esm-surface-base: #0f0f13;
+    --esm-surface-raised: #17171d;
+    --esm-surface-sunken: #0a0a0d;
+    --esm-surface-nav: #131318;
+    --esm-text-default: #ececf1;
+    --esm-text-muted: #a3a3b1;
+    --esm-text-on-accent: #111114;
+    --esm-border-subtle: #25252e;
+    --esm-border-strong: #33333e;
+    --esm-border-input: #6b6b78;
+    --esm-accent-brand: #958cff;
+    --esm-accent-brand-hover: #aaa3ff;
+    --esm-accent-blue: #72a5ff;
+    --esm-accent-green: #4cc38a;
+    --esm-accent-amber: #e9a23b;
+    --esm-accent-red: #f2676f;
+    --esm-accent-purple: #b992ff;
+    --esm-accent-gray: #9c9ca8;
+    --esm-state-hover: rgb(255 255 255 / 6%);
+    --esm-state-selected: rgb(149 140 255 / 18%);
+    --esm-state-focus: #958cff;
+    --esm-state-changed: rgb(149 140 255 / 50%);
+    --esm-state-ring: rgb(149 140 255 / 30%);
+  --esm-scrim: rgb(0 0 0 / 60%);
+    --esm-gradient-glow: radial-gradient(60% 50% at 20% 0%, rgb(124 108 255 / 18%) 0%, transparent 70%),
+      radial-gradient(50% 40% at 90% 10%, rgb(193 87 214 / 12%) 0%, transparent 70%);
+    --esm-shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+    --esm-shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 0 0 1px rgb(255 255 255 / 2%);
+    --esm-shadow-raised: 0 8px 20px -4px rgb(0 0 0 / 55%), 0 2px 4px -2px rgb(0 0 0 / 40%);
+    --esm-shadow-overlay: 0 16px 40px -8px rgb(0 0 0 / 65%), 0 4px 10px -4px rgb(0 0 0 / 45%);
+    --esm-shadow-inset-highlight: inset 0 1px 0 rgb(255 255 255 / 25%);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --esm-surface-base: #0f0f13;
+  --esm-surface-raised: #17171d;
+  --esm-surface-sunken: #0a0a0d;
+  --esm-surface-nav: #131318;
+  --esm-text-default: #ececf1;
+  --esm-text-muted: #a3a3b1;
+  --esm-text-on-accent: #111114;
+  --esm-border-subtle: #25252e;
+  --esm-border-strong: #33333e;
+  --esm-border-input: #6b6b78;
+  --esm-accent-brand: #958cff;
+  --esm-accent-brand-hover: #aaa3ff;
+  --esm-accent-blue: #72a5ff;
+  --esm-accent-green: #4cc38a;
+  --esm-accent-amber: #e9a23b;
+  --esm-accent-red: #f2676f;
+  --esm-accent-purple: #b992ff;
+  --esm-accent-gray: #9c9ca8;
+  --esm-state-hover: rgb(255 255 255 / 6%);
+  --esm-state-selected: rgb(149 140 255 / 18%);
+  --esm-state-focus: #958cff;
+  --esm-state-changed: rgb(149 140 255 / 50%);
+  --esm-state-ring: rgb(149 140 255 / 30%);
+  --esm-scrim: rgb(0 0 0 / 60%);
+  --esm-gradient-glow: radial-gradient(60% 50% at 20% 0%, rgb(124 108 255 / 18%) 0%, transparent 70%),
+    radial-gradient(50% 40% at 90% 10%, rgb(193 87 214 / 12%) 0%, transparent 70%);
+  --esm-shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+  --esm-shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 0 0 1px rgb(255 255 255 / 2%);
+  --esm-shadow-raised: 0 8px 20px -4px rgb(0 0 0 / 55%), 0 2px 4px -2px rgb(0 0 0 / 40%);
+  --esm-shadow-overlay: 0 16px 40px -8px rgb(0 0 0 / 65%), 0 4px 10px -4px rgb(0 0 0 / 45%);
+  --esm-shadow-inset-highlight: inset 0 1px 0 rgb(255 255 255 / 25%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --esm-motion-fast: 0ms;
+    --esm-motion-base: 0ms;
+    --esm-motion-slow: 0ms;
+  }
+}

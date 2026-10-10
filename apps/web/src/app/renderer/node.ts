@@ -9,6 +9,7 @@ import { FieldPlacement } from './field';
 import { RelatedList } from './related-list';
 import { RenderContext } from './render-context';
 import { visibleWhen } from './rules';
+import { Icon, IconName } from '../ui/icon';
 
 const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'display.heading', 'display.label_value', 'display.badge', 'display.callout', 'display.empty_state', 'collection.related_list', 'activity.feed', 'activity.audit_history', 'action.transition_buttons', 'action.button', 'action.action_menu']);
 
@@ -19,7 +20,7 @@ const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'displa
  */
 @Component({
   selector: 'esm-node',
-  imports: [FieldPlacement, ActivityFeed, AuditHistory, TransitionButtons, ActionButton, ActionMenu, RelatedList, CdkDropList, CdkDrag, CdkDragHandle],
+  imports: [Icon, FieldPlacement, ActivityFeed, AuditHistory, TransitionButtons, ActionButton, ActionMenu, RelatedList, CdkDropList, CdkDrag, CdkDragHandle],
   templateUrl: './node.html',
   styleUrl: './node.scss',
 })
@@ -51,6 +52,10 @@ export class NodeComponent {
 
   protected toneOf(tone: string | undefined): string {
     return ({ info: 'blue', success: 'green', warning: 'amber', critical: 'red' } as Record<string, string>)[tone ?? ''] ?? 'gray';
+  }
+
+  protected calloutIcon(tone: string | undefined): IconName {
+    return ({ success: 'circle-check', warning: 'warning', critical: 'circle-alert' } as Record<string, IconName>)[tone ?? ''] ?? 'info';
   }
 
   protected spanClass(child: NodeSpec): string {

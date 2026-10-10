@@ -8,6 +8,7 @@ import { DraftViewSpec, FieldSpec, NodeSpec, RecordPage, RecordView, ViewClientS
 import { Session } from '../core/session';
 import { Shortcuts } from '../core/shortcuts';
 import { Toasts } from '../core/toast';
+import { Icon } from '../ui/icon';
 
 interface SavedView {
   id: string;
@@ -22,32 +23,44 @@ interface SavedView {
  */
 @Component({
   selector: 'esm-list-page',
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, Icon],
   template: `
     @let s = spec();
-    <div class="page">
-      <header class="top">
-        <h1>{{ s?.view?.layout?.props?.['title'] ?? nav()?.pluralLabel ?? 'Records' }}</h1>
-        <span class="flex"></span>
+    <div class="page mx-auto max-w-[1440px] px-8 pt-7 pb-12 max-[700px]:px-4">
+      <header class="mb-5 flex flex-wrap items-end gap-3">
+        <div class="min-w-0">
+          <h1 class="text-title-lg">{{ s?.view?.layout?.props?.['title'] ?? nav()?.pluralLabel ?? 'Records' }}</h1>
+          <p class="mt-0.5 text-body-sm text-muted">
+            @if (page(); as p) {
+              {{ p.total }}{{ p.totalIsCapped ? '+' : '' }} {{ p.total === 1 ? s?.entity?.entity?.label?.toLowerCase() : s?.entity?.entity?.pluralLabel?.toLowerCase() }}{{ activeView() ? ' in ' + activeView()!.label.toLowerCase() : '' }}
+            } @else {
+              Loading…
+            }
+          </p>
+        </div>
+        <span class="flex-1"></span>
         @if (nav()?.canCreate) {
-          <a class="btn btn-primary" [routerLink]="['/records', entity(), 'new']">New {{ s?.entity?.entity?.label?.toLowerCase() ?? 'record' }} <kbd>C</kbd></a>
+          <a class="btn btn-primary" [routerLink]="['/records', entity(), 'new']"><esm-icon name="plus" [size]="15" /> New {{ s?.entity?.entity?.label?.toLowerCase() ?? 'record' }} <kbd>C</kbd></a>
         }
       </header>
 
       @if (savedViews().length) {
-        <nav class="views" aria-label="Saved views">
+        <nav class="views mb-4 inline-flex max-w-full gap-0.5 overflow-x-auto rounded-md bg-sunken p-1" aria-label="Saved views">
           @for (v of savedViews(); track v.id) {
             <button class="view" [class.active]="activeView()?.id === v.id" [attr.aria-pressed]="activeView()?.id === v.id" (click)="selectView(v)">{{ v.label }}</button>
           }
         </nav>
       }
 
-      <div class="filters" role="search">
+      <div class="filters mb-3 flex flex-wrap items-center gap-2" role="search">
         @if (filterBar()?.props?.['showSearch'] !== false) {
-          <input class="input search" type="search" placeholder="Search" aria-label="Search records" [ngModel]="search()" (ngModelChange)="onSearch($event)" #searchBox />
+          <div class="relative w-full max-w-[280px]">
+            <esm-icon name="search" [size]="15" class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
+            <input class="input search h-8 min-h-8 pl-8" type="search" placeholder="Search" aria-label="Search records" [ngModel]="search()" (ngModelChange)="onSearch($event)" #searchBox />
+          </div>
         }
         @for (f of filterFields(); track f.key) {
-          <select class="input" [attr.aria-label]="'Filter by ' + f.label" [ngModel]="filters()[f.key] ?? ''" (ngModelChange)="setFilter(f.key, $event)">
+          <select class="input filter h-8 min-h-8 w-auto py-0 text-body-sm" [class.set]="!!filters()[f.key]" [attr.aria-label]="'Filter by ' + f.label" [ngModel]="filters()[f.key] ?? ''" (ngModelChange)="setFilter(f.key, $event)">
             <option value="">{{ f.label }}: any</option>
             @if (f.type === 'user') {
               <option value="@me">Me</option>
@@ -59,23 +72,21 @@ interface SavedView {
             }
           </select>
         }
-        @if (hasFilters()) { <button class="btn btn-ghost btn-sm" (click)="clearFilters()">Clear</button> }
-        <span class="flex"></span>
-        <span class="muted count">{{ page()?.total ?? 0 }}{{ page()?.totalIsCapped ? '+' : '' }} {{ (page()?.total ?? 0) === 1 ? s?.entity?.entity?.label?.toLowerCase() : s?.entity?.entity?.pluralLabel?.toLowerCase() }}</span>
+        @if (hasFilters()) { <button class="btn btn-ghost btn-sm" (click)="clearFilters()"><esm-icon name="x" [size]="14" /> Clear</button> }
       </div>
 
       @if (error()) {
-        <div class="callout tone-red" role="alert">{{ error() }}</div>
+        <div class="callout tone-red mb-3" role="alert">{{ error() }}</div>
       }
 
-      <div class="table-wrap">
-        <table [class.compact]="table()?.props?.['density'] !== 'comfortable'" aria-rowcount="-1">
+      <div class="table-wrap surface overflow-x-auto">
+        <table class="w-full border-collapse" [class.compact]="table()?.props?.['density'] !== 'comfortable'" aria-rowcount="-1">
           <thead>
             <tr>
               @for (c of columns(); track c.id) {
                 <th scope="col" [class]="'w-' + (c.props['width'] ?? 'md')" [attr.aria-sort]="sort().field === c.props['field'] ? (sort().direction === 'asc' ? 'ascending' : 'descending') : null">
                   <button class="sort" (click)="toggleSort(c.props['field'])">{{ c.props['label'] ?? fieldSpec(c.props['field'])?.label ?? c.props['field'] }}
-                    @if (sort().field === c.props['field']) { <span aria-hidden="true">{{ sort().direction === 'asc' ? '↑' : '↓' }}</span> }
+                    @if (sort().field === c.props['field']) { <esm-icon [name]="sort().direction === 'asc' ? 'arrow-up' : 'arrow-down'" [size]="12" class="text-brand" /> }
                   </button>
                 </th>
               }
@@ -91,15 +102,17 @@ interface SavedView {
                   @let key = c.props['field'];
                   <td>
                     @if (first) {
-                      <a [routerLink]="['/records', r.entity, r.id]" (click)="$event.stopPropagation()">{{ cell(r, key) }}</a>
+                      <a class="record-link" [routerLink]="['/records', r.entity, r.id]" (click)="$event.stopPropagation()">{{ cell(r, key) }}</a>
                     } @else if (isChoice(key) && canEdit(r, key)) {
                       <select class="inline" [attr.aria-label]="(fieldSpec(key)?.label ?? key) + ' for ' + (r.number ?? r.id)" [ngModel]="r.data[key] ?? ''" (ngModelChange)="inlineSave(r, key, $event)" (click)="$event.stopPropagation()">
                         @for (o of options(fieldSpec(key)!); track o.id) { <option [value]="o.id">{{ o.label }}</option> }
                       </select>
                     } @else if (isChoice(key) && r.data[key]) {
                       <span class="badge" [class]="tone(key, r.data[key])">{{ cell(r, key) }}</span>
+                    } @else if (isPerson(key) && cell(r, key) !== '—') {
+                      <span class="inline-flex items-center gap-2"><span class="avatar avatar-sm" aria-hidden="true">{{ initialsOf(cell(r, key)) }}</span>{{ cell(r, key) }}</span>
                     } @else {
-                      <span [class.muted]="cell(r, key) === '—'">{{ cell(r, key) }}</span>
+                      <span [class.muted]="cell(r, key) === '—' || key === 'updated_at'">{{ cell(r, key) }}</span>
                     }
                   </td>
                 }
@@ -107,7 +120,8 @@ interface SavedView {
             } @empty {
               @if (!loading()) {
                 <tr><td [attr.colspan]="columns().length" class="empty">
-                  <strong>Nothing here</strong>
+                  <span class="mx-auto mb-3 grid size-11 place-items-center rounded-lg bg-sunken text-muted"><esm-icon name="inbox" [size]="20" /></span>
+                  <strong class="text-title-sm">Nothing here</strong>
                   <p class="muted">{{ hasFilters() ? 'No records match these filters.' : 'No records yet.' }}</p>
                   @if (hasFilters()) { <button class="btn btn-sm" (click)="clearFilters()">Clear filters</button> }
                 </td></tr>
@@ -118,44 +132,38 @@ interface SavedView {
       </div>
 
       @if ((page()?.total ?? 0) > pageSize()) {
-        <div class="pager">
-          <button class="btn btn-sm" [disabled]="offset() === 0" (click)="go(-1)">Previous</button>
+        <div class="mt-3 flex items-center justify-end gap-3 text-body-sm">
           <span class="muted">{{ offset() + 1 }}–{{ offset() + (page()?.items?.length ?? 0) }} of {{ page()?.total }}</span>
+          <button class="btn btn-sm" [disabled]="offset() === 0" (click)="go(-1)">Previous</button>
           <button class="btn btn-sm" [disabled]="offset() + pageSize() >= (page()?.total ?? 0)" (click)="go(1)">Next</button>
         </div>
       }
     </div>
   `,
   styles: `
-    .page { padding: var(--esm-space-5) var(--esm-space-6); max-width: 1400px; }
-    .top { display: flex; align-items: center; gap: var(--esm-space-3); margin-bottom: var(--esm-space-3); }
-    h1 { margin: 0; font: var(--esm-text-title-lg); }
-    .flex { flex: 1; }
-    .views { display: flex; gap: var(--esm-space-1); border-bottom: 1px solid var(--esm-border-subtle); margin-bottom: var(--esm-space-3); overflow-x: auto; }
-    .view { padding: var(--esm-space-2) var(--esm-space-3); border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); white-space: nowrap; }
-    .view.active { color: var(--esm-text-default); border-bottom-color: var(--esm-accent-brand); }
-    .filters { display: flex; flex-wrap: wrap; gap: var(--esm-space-2); align-items: center; margin-bottom: var(--esm-space-3); }
-    .filters .input { height: 30px; width: auto; }
-    .search { min-width: 220px; }
-    .count { font: var(--esm-text-body-sm); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); }
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); border-bottom: 1px solid var(--esm-border-subtle); background: var(--esm-surface-sunken); position: sticky; top: 0; }
-    .sort { border: 0; background: transparent; padding: var(--esm-space-2) var(--esm-space-3); width: 100%; text-align: left; cursor: pointer; color: inherit; font: inherit; }
-    td { padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); font: var(--esm-text-body-sm); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    table.compact td { padding-top: 6px; padding-bottom: 6px; }
-    tbody tr { cursor: pointer; }
+    .view { height: 28px; padding: 0 var(--esm-space-3); border-radius: 7px; font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); white-space: nowrap;
+      transition: background-color var(--esm-motion-fast) var(--esm-ease-out), color var(--esm-motion-fast) var(--esm-ease-out); }
+    .view:hover { color: var(--esm-text-default); }
+    .view.active { color: var(--esm-text-default); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-xs), 0 0 0 1px var(--esm-border-subtle); }
+    .filter.set { border-color: var(--esm-accent-brand); background-color: var(--esm-state-selected); color: var(--esm-text-default); }
+    th { white-space: nowrap; text-align: left; font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); border-bottom: 1px solid var(--esm-border-subtle);
+      background: color-mix(in srgb, var(--esm-surface-sunken) 60%, var(--esm-surface-raised)); position: sticky; top: 0; z-index: 1; }
+    .sort { display: inline-flex; align-items: center; gap: var(--esm-space-1); padding: 10px var(--esm-space-4); width: 100%; text-align: left; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+    .sort:hover { color: var(--esm-text-default); }
+    td { padding: 10px var(--esm-space-4); border-bottom: 1px solid var(--esm-border-subtle); font: var(--esm-text-body-sm); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    table.compact td { padding-top: 9px; padding-bottom: 9px; }
+    tbody tr { transition: background-color var(--esm-motion-fast) var(--esm-ease-out); }
     tbody tr:hover { background: var(--esm-state-hover); }
-    tr.cursor { background: var(--esm-state-selected); box-shadow: inset 2px 0 0 var(--esm-accent-brand); }
-    .w-sm { width: 100px; } .w-lg { width: 40%; }
-    .inline { border: 1px solid transparent; background: transparent; border-radius: var(--esm-radius-sm); padding: 2px 4px; font: inherit; cursor: pointer; }
+    tr.cursor { background: var(--esm-state-selected); box-shadow: inset 3px 0 0 var(--esm-accent-brand); }
+    .record-link { font: var(--esm-text-mono); font-weight: 500; }
+    td:nth-child(2) { color: var(--esm-text-default); font-weight: 500; }
+    .w-sm { width: 120px; } .w-lg { width: 36%; }
+    .inline { border: 1px solid transparent; background: transparent; border-radius: var(--esm-radius-sm); padding: 2px 4px; font: inherit; }
     .inline:hover, .inline:focus { border-color: var(--esm-border-input); background: var(--esm-surface-raised); }
-    .empty { text-align: center; padding: var(--esm-space-10); white-space: normal; }
-    .empty p { margin: var(--esm-space-1) 0 var(--esm-space-3); }
+    .empty { text-align: center; padding: var(--esm-space-12) var(--esm-space-4); white-space: normal; }
+    .empty p { margin: var(--esm-space-1) 0 var(--esm-space-4); }
     .skeleton { display: block; height: 12px; width: 70%; }
-    .pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--esm-space-3); margin-top: var(--esm-space-3); font: var(--esm-text-body-sm); }
-    .callout { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); margin-bottom: var(--esm-space-3); }
-    @media (max-width: 700px) { .page { padding: var(--esm-space-4); } }
   `,
 })
 export class ListPage {
@@ -313,6 +321,15 @@ export class ListPage {
   private isHiddenField(key: string): boolean {
     const f = this.fieldSpec(key);
     return !f || !!f.hidden || this.spec()?.entity.fieldAccess[key] === 'hidden';
+  }
+
+  protected isPerson(key: string): boolean {
+    const t = this.fieldSpec(key)?.type;
+    return t === 'user';
+  }
+
+  protected initialsOf(name: string): string {
+    return name.split(' ').map((p) => p[0]).slice(0, 2).join('');
   }
 
   protected isChoice(key: string): boolean {

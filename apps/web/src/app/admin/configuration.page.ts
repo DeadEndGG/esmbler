@@ -6,6 +6,7 @@ import { Session } from '../core/session';
 import { Toasts } from '../core/toast';
 import { BuilderState } from '../builder/builder-state';
 import { DraftCommands } from '../builder/draft-commands';
+import { Icon } from '../ui/icon';
 
 interface Revision {
   revision: number;
@@ -54,27 +55,35 @@ interface UpgradeView {
 /** Published revisions with compatibility-checked rollback, and module upgrades with a preview (REQ-MOD-003, REQ-MIG-*). */
 @Component({
   selector: 'esm-configuration-page',
-  imports: [DatePipe],
+  imports: [DatePipe, Icon],
   template: `
-    <div class="page">
-      <header class="top"><h1>Configuration</h1><span class="muted">Live revision {{ session.app()?.configRevision }}</span></header>
+    <div class="admin-page">
+      <header class="page-head">
+        <span class="page-icon" aria-hidden="true"><esm-icon name="sliders" [size]="20" /></span>
+        <div class="flex-1">
+          <h1>Configuration</h1>
+          <p>Modules, customizations and published revisions for this workspace.</p>
+        </div>
+        <span class="badge tone-green">Live revision {{ session.app()?.configRevision }}</span>
+      </header>
 
       <section>
-        <h2>Modules</h2>
-        <div class="table-wrap">
+        <h2 class="section-title">Modules</h2>
+        <p class="section-lead">Installed modules and available upgrades. Upgrades are previewed against your customizations first.</p>
+        <div class="table-card">
           <table>
             <thead><tr><th scope="col">Module</th><th scope="col">Installed</th><th scope="col">Latest</th><th scope="col"></th></tr></thead>
             <tbody>
               @for (m of modules(); track m.module) {
                 <tr>
-                  <td class="mono">{{ m.module }}</td>
+                  <td><span class="inline-flex items-center gap-2"><esm-icon name="package" [size]="15" class="text-muted" /><span class="mono">{{ m.module }}</span></span></td>
                   <td>{{ m.installed }}</td>
                   <td>{{ m.latest }}</td>
                   <td class="right">
                     @if (m.upgradeAvailable && session.canManageModules()) {
-                      <button class="btn btn-sm" (click)="plan(m)">Preview upgrade</button>
+                      <button class="btn btn-sm btn-primary" (click)="plan(m)">Preview upgrade</button>
                     } @else if (!m.upgradeAvailable) {
-                      <span class="muted">Up to date</span>
+                      <span class="badge tone-green">Up to date</span>
                     }
                   </td>
                 </tr>
@@ -87,9 +96,9 @@ interface UpgradeView {
           <div class="panel" aria-live="polite">
             <h3>Upgrade {{ r.module }} {{ r.fromVersion }} → {{ r.toVersion }}</h3>
             @if (r.compatible) {
-              <p class="ok">✓ Your customizations carry over. {{ r.affectedCustomizations.length }} customized element{{ r.affectedCustomizations.length === 1 ? '' : 's' }} checked.</p>
+              <p class="ok"><esm-icon name="circle-check" [size]="16" /> Your customizations carry over. {{ r.affectedCustomizations.length }} customized element{{ r.affectedCustomizations.length === 1 ? '' : 's' }} checked.</p>
             } @else {
-              <p class="err">This upgrade conflicts with your customizations. Resolve these before upgrading:</p>
+              <p class="err"><esm-icon name="circle-alert" [size]="16" /> This upgrade conflicts with your customizations. Resolve these before upgrading:</p>
               <ul>@for (e of r.errors; track $index) { <li>{{ e.message }}@if (e.suggestion) { <span class="muted"> {{ e.suggestion }}</span> }</li> }</ul>
             }
             @if (r.baseChanges.length) {
@@ -127,15 +136,15 @@ interface UpgradeView {
 
       @if (session.canCustomize()) {
         <section>
-          <h2>Customizations</h2>
-          <p class="muted small">What this workspace changed compared with the default modules. Resetting adds a step to your draft; nothing changes until it is published.</p>
-          <div class="table-wrap">
+          <h2 class="section-title">Customizations</h2>
+          <p class="section-lead">What this workspace changed compared with the default modules. Resetting adds a step to your draft; nothing changes until it is published.</p>
+          <div class="table-card">
             <table>
               <thead><tr><th scope="col">Element</th><th scope="col">Kind</th><th scope="col"></th></tr></thead>
               <tbody>
                 @for (c of customizations(); track c.element) {
                   <tr>
-                    <td>{{ c.label }} <div class="muted small mono">{{ c.element }}</div></td>
+                    <td>{{ c.label }} <div class="muted mono">{{ c.element }}</div></td>
                     <td><span class="badge" [class]="c.kind === 'added' ? 'tone-green' : 'tone-blue'">{{ c.kind }}</span></td>
                     <td class="right"><button class="btn btn-sm" (click)="reset(c)" [disabled]="busy()">{{ c.kind === 'added' ? 'Remove' : 'Reset to default' }}</button></td>
                   </tr>
@@ -147,8 +156,9 @@ interface UpgradeView {
       }
 
       <section>
-        <h2>Revisions</h2>
-        <div class="table-wrap">
+        <h2 class="section-title">Revisions</h2>
+        <p class="section-lead">Every publish creates an immutable revision. Roll back to any compatible one.</p>
+        <div class="table-card">
           <table>
             <thead><tr><th scope="col">Revision</th><th scope="col">Source</th><th scope="col">Modules</th><th scope="col">Customizations</th><th scope="col">When</th><th scope="col"></th></tr></thead>
             <tbody>
@@ -174,24 +184,21 @@ interface UpgradeView {
     </div>
   `,
   styles: `
-    .page { padding: var(--esm-space-5) var(--esm-space-6); max-width: 1100px; }
-    .top { display: flex; align-items: baseline; gap: var(--esm-space-3); margin-bottom: var(--esm-space-4); }
-    h1 { margin: 0; font: var(--esm-text-title-lg); }
-    h2 { font: var(--esm-text-title-md); margin: var(--esm-space-6) 0 var(--esm-space-2); }
     h3 { font: var(--esm-text-title-sm); margin: 0 0 var(--esm-space-2); }
-    h4 { font: var(--esm-text-body-sm); font-weight: 600; margin: var(--esm-space-3) 0 var(--esm-space-1); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); }
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font: var(--esm-text-body-sm); color: var(--esm-text-muted); padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); background: var(--esm-surface-sunken); }
-    td { padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); font: var(--esm-text-body-sm); vertical-align: top; }
+    h4 { font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); margin: var(--esm-space-4) 0 var(--esm-space-2); }
     .right { text-align: right; }
     .small { font: var(--esm-text-body-sm); }
     .mono { margin-right: var(--esm-space-2); }
-    .panel { margin-top: var(--esm-space-3); padding: var(--esm-space-4); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); background: var(--esm-surface-raised); }
+    .panel { margin-top: var(--esm-space-3); padding: var(--esm-space-5); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-lg); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-card); }
     .panel ul { margin: 0; padding-left: var(--esm-space-4); font: var(--esm-text-body-sm); }
+    .panel ul.changes { list-style: none; padding: 0; display: flex; flex-direction: column; gap: var(--esm-space-2); }
+    .panel ul.changes li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .panel p { margin: var(--esm-space-1) 0; }
-    .actions { display: flex; justify-content: flex-end; gap: var(--esm-space-2); margin-top: var(--esm-space-3); }
+    .actions { display: flex; justify-content: flex-end; gap: var(--esm-space-2); margin-top: var(--esm-space-4); padding-top: var(--esm-space-4); border-top: 1px solid var(--esm-border-subtle); }
+    .ok, .err { display: flex; align-items: center; gap: var(--esm-space-2); font-weight: 500; }
     .ok { color: var(--esm-accent-green); } .err { color: var(--esm-accent-red); } .warn { color: var(--esm-accent-amber); }
+    h3 .ok, h3 .err { display: inline; }
+    @media (max-width: 700px) { :host ::ng-deep .admin-page { padding: var(--esm-space-4); } }
   `,
 })
 export class ConfigurationPage {

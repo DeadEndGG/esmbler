@@ -24,10 +24,10 @@ import { RenderContext } from './render-context';
     </div>
   `,
   styles: `
-    .transitions { display: flex; gap: var(--esm-space-2); flex-wrap: wrap; margin-top: var(--esm-space-3); }
+    .transitions { display: flex; gap: var(--esm-space-2); flex-wrap: wrap; }
     .more { position: relative; }
     .menu { position: absolute; right: 0; z-index: 10; margin: 4px 0 0; padding: var(--esm-space-1); list-style: none; min-width: 160px; background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); box-shadow: var(--esm-shadow-overlay); }
-    .menu li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; }
+    .menu li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; font: var(--esm-text-body-sm); }
     .menu li:hover { background: var(--esm-state-hover); }
   `,
 })
@@ -80,7 +80,8 @@ export class ActionButton {
   styles: `
     .wrap { position: relative; display: inline-block; }
     .menu { position: absolute; z-index: 10; margin: 4px 0 0; padding: var(--esm-space-1); list-style: none; min-width: 180px; background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); box-shadow: var(--esm-shadow-overlay); }
-    .menu li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; }
+    .menu li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; font: var(--esm-text-body-sm); }
+    .menu li:hover { background: var(--esm-state-hover); }
   `,
 })
 export class ActionMenu {

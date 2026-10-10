@@ -71,6 +71,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0011 Identity and development authentication](adr/0011-identity-and-development-authentication.md): principals, local login, JWT, agent tokens.
 - [0012 Repository layout and module boundaries](adr/0012-repository-layout-and-module-boundaries.md): projects and NetArchTest rules.
 - [0013 AI assistant model adapter](adr/0013-ai-assistant-model-adapter.md): Claude as an MCP client; scripted planner without a key; bounds and evaluation suite.
+- [0014 Tailwind CSS for the web UI](adr/0014-tailwind-css-for-the-web-ui.md): Tailwind v4 mapped onto the design tokens, Lucide icons, CSP-safe stylesheet loading.
 
 ## Decisions
 

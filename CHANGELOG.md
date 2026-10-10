@@ -10,7 +10,12 @@ Gate 2: private pilot (in progress).
 
 ### Added
 
+- Visual refresh of the web UI on Tailwind CSS v4 mapped onto the design tokens (ADR 0014): new sidebar and workspace switcher, sign-in with a product preview, segmented saved views, status badges with tone dots, card-based record page, AI builder panel with message bubbles and a step timeline, command palette, admin pages with page headers and table cards; Lucide icons; self-hosted Inter; refined light and dark tokens. axe passes in both themes. REQ-DS-001, REQ-DS-002, REQ-DS-003
 - Durable jobs and timers: job handler registry with per-attempt re-authorization, checkpoints and lease renewal; idempotent, cancellable timers; jittered backoff; dead letters with audited operator replay (Operations page); tenant-interleaved event dispatch; automation depth, fan-out and queue quotas. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11
+
+### Fixed
+
+- The production web build no longer depends on an inline `onload` script to load its stylesheet; the CSP blocked it, so deployed pages rendered without most styles. The CSP no longer allows Google Fonts hosts; Inter is served from the app's own origin.
 
 ## [0.2.0] - 2026-10-10 (`gate-1-complete`)
 

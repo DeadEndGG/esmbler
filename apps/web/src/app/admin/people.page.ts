@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Icon } from '../ui/icon';
 import { Api, ApiError } from '../core/api';
 import { Session } from '../core/session';
 import { Toasts } from '../core/toast';
@@ -28,25 +29,31 @@ interface Role {
 /** People, groups and role assignments (REQ-IAM-002). Changes write kernel tables then the relationship graph. */
 @Component({
   selector: 'esm-people-page',
-  imports: [FormsModule],
+  imports: [FormsModule, Icon],
   template: `
-    <div class="page">
-      <header class="top"><h1>People and roles</h1></header>
+    <div class="admin-page">
+      <header class="page-head">
+        <span class="page-icon" aria-hidden="true"><esm-icon name="users" [size]="20" /></span>
+        <div>
+          <h1>People and roles</h1>
+          <p>Who belongs to this workspace, what they may do, and which groups they work in.</p>
+        </div>
+      </header>
       @if (!session.isAdmin()) {
         <div class="callout tone-amber" role="alert">Managing people requires the permission administration right.</div>
       } @else {
-        <input class="input search" type="search" placeholder="Filter people" aria-label="Filter people" [ngModel]="query()" (ngModelChange)="query.set($event)" />
-        <div class="table-wrap">
+        <div class="relative mb-3 max-w-[320px]"><esm-icon name="search" [size]="15" class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" /><input class="input search pl-8" type="search" placeholder="Filter people" aria-label="Filter people" [ngModel]="query()" (ngModelChange)="query.set($event)" /></div>
+        <div class="table-card">
           <table>
             <thead><tr><th scope="col">Name</th><th scope="col">Roles</th><th scope="col">Groups</th></tr></thead>
             <tbody>
               @for (m of filtered(); track m.id) {
                 <tr>
-                  <td><strong>{{ m.displayName }}</strong><div class="muted small">{{ m.email }}</div></td>
+                  <td><div class="flex items-center gap-3"><span class="avatar" aria-hidden="true">{{ initials(m.displayName) }}</span><div><strong>{{ m.displayName }}</strong><div class="muted small">{{ m.email }}</div></div></div></td>
                   <td>
                     <div class="chips">
                       @for (r of m.roles; track r) {
-                        <span class="chip">{{ roleLabel(r) }} <button [attr.aria-label]="'Revoke ' + roleLabel(r) + ' from ' + m.displayName" (click)="revoke(m, r)">×</button></span>
+                        <span class="chip">{{ roleLabel(r) }} <button [attr.aria-label]="'Revoke ' + roleLabel(r) + ' from ' + m.displayName" (click)="revoke(m, r)"><esm-icon name="x" [size]="12" /></button></span>
                       }
                       <select class="add" [attr.aria-label]="'Assign a role to ' + m.displayName" [ngModel]="''" (ngModelChange)="assign(m, $event)">
                         <option value="">+ Role</option>
@@ -57,7 +64,7 @@ interface Role {
                   <td>
                     <div class="chips">
                       @for (g of m.groups; track g) {
-                        <span class="chip">{{ groupName(g) }} <button [attr.aria-label]="'Remove ' + m.displayName + ' from ' + groupName(g)" (click)="leave(m, g)">×</button></span>
+                        <span class="chip">{{ groupName(g) }} <button [attr.aria-label]="'Remove ' + m.displayName + ' from ' + groupName(g)" (click)="leave(m, g)"><esm-icon name="x" [size]="12" /></button></span>
                       }
                       <select class="add" [attr.aria-label]="'Add ' + m.displayName + ' to a group'" [ngModel]="''" (ngModelChange)="join(m, $event)">
                         <option value="">+ Group</option>
@@ -72,30 +79,26 @@ interface Role {
             </tbody>
           </table>
         </div>
-        <h2>Groups</h2>
+        <h2 class="section-title">Groups</h2>
+        <p class="section-lead">Groups receive work through assignment rules and can be granted access together.</p>
         <ul class="groups">
-          @for (g of groups(); track g.id) { <li><strong>{{ g.name }}</strong> <span class="muted">{{ g.members }} member{{ g.members === 1 ? '' : 's' }} · {{ g.key }}</span></li> }
+          @for (g of groups(); track g.id) { <li><span class="group-icon" aria-hidden="true"><esm-icon name="users" [size]="16" /></span><div><strong>{{ g.name }}</strong><div class="muted small">{{ g.members }} member{{ g.members === 1 ? '' : 's' }} · <span class="mono">{{ g.key }}</span></div></div></li> }
         </ul>
       }
     </div>
   `,
   styles: `
-    .page { padding: var(--esm-space-5) var(--esm-space-6); max-width: 1100px; }
-    h1 { margin: 0 0 var(--esm-space-4); font: var(--esm-text-title-lg); }
-    h2 { font: var(--esm-text-title-md); margin: var(--esm-space-6) 0 var(--esm-space-2); }
-    .search { max-width: 320px; margin-bottom: var(--esm-space-3); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); }
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font: var(--esm-text-body-sm); color: var(--esm-text-muted); padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); background: var(--esm-surface-sunken); }
-    td { padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); vertical-align: top; font: var(--esm-text-body-sm); }
     .small { font: var(--esm-text-body-sm); }
+    td { vertical-align: top; }
     .chips { display: flex; flex-wrap: wrap; gap: var(--esm-space-1); align-items: center; }
-    .chip { display: inline-flex; align-items: center; gap: var(--esm-space-1); padding: 0 var(--esm-space-2); border-radius: var(--esm-radius-full); background: var(--esm-state-selected); }
-    .chip button { border: 0; background: transparent; cursor: pointer; padding: 0; color: var(--esm-text-muted); }
-    .add { border: 1px dashed var(--esm-border-subtle); border-radius: var(--esm-radius-full); background: transparent; padding: 0 var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); cursor: pointer; }
-    .groups { list-style: none; padding: 0; margin: 0; }
-    .groups li { padding: var(--esm-space-2) 0; border-bottom: 1px solid var(--esm-border-subtle); }
-    .callout { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); background: color-mix(in srgb, var(--tone) 12%, transparent); }
+    .chip { display: inline-flex; align-items: center; gap: var(--esm-space-1); height: 24px; padding: 0 var(--esm-space-1) 0 var(--esm-space-2); border-radius: var(--esm-radius-full); background: var(--esm-state-selected); color: var(--esm-accent-brand); font-weight: 500; }
+    .chip button { display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; padding: 0; color: inherit; }
+    .chip button:hover { background: color-mix(in srgb, var(--esm-accent-brand) 16%, transparent); }
+    .add { height: 24px; border: 1px dashed var(--esm-border-strong); border-radius: var(--esm-radius-full); background: transparent; padding: 0 var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); }
+    .add:hover { border-color: var(--esm-accent-brand); color: var(--esm-accent-brand); }
+    .groups { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--esm-space-3); }
+    .groups li { display: flex; align-items: center; gap: var(--esm-space-3); padding: var(--esm-space-3) var(--esm-space-4); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-lg); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-xs); }
+    .group-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--esm-radius-md); background: var(--esm-state-selected); color: var(--esm-accent-brand); }
   `,
 })
 export class PeoplePage {
@@ -174,5 +177,9 @@ export class PeoplePage {
       this.toasts.show(e instanceof ApiError ? e.message : 'The change failed.', 'warning');
     }
     await this.load();
+  }
+
+  protected initials(name: string): string {
+    return name.split(' ').map((p) => p[0]).slice(0, 2).join('');
   }
 }

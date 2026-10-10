@@ -30,3 +30,26 @@ test('@REQ-DS-003 sign-in, list, record and draft pages have no serious accessib
   await expect(page.getByRole('heading', { name: 'Revisions' })).toBeVisible();
   await audit(page, 'configuration');
 });
+
+test.describe('dark mode', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('@REQ-DS-003 sign-in, list, record and draft pages have no serious accessibility violations in dark mode', async ({ page }) => {
+    await page.goto('/login');
+    await audit(page, 'login (dark)');
+
+    await signIn(page, 'alex@acme.example', 'Acme');
+    await expect(page.locator('tbody tr').first()).toBeVisible();
+    await page.keyboard.press('j');
+    await audit(page, 'list (dark)');
+
+    await openFirstTicket(page);
+    await expect(page.locator('section.card').first()).toBeVisible();
+    await audit(page, 'record (dark)');
+
+    await page.getByRole('button', { name: /AI builder/ }).click();
+    await expect(page.getByText('Draft preview')).toBeVisible();
+    await audit(page, 'record in draft mode (dark)');
+    await page.getByRole('button', { name: 'Close the AI builder' }).click();
+  });
+});

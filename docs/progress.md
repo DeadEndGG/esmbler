@@ -18,6 +18,7 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 | Current milestone | G2-M2 full request workflow |
 | Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md) |
 | Next | G2-M2 requests, catalog items and fulfillment tasks; then approvals (G2-M3) and SLA (G2-M4) |
+| Interjected | Web UI visual refresh on Tailwind CSS v4 ([ADR 0014](adr/0014-tailwind-css-for-the-web-ui.md)), including a fix for the production stylesheet that the CSP blocked; axe clean in light and dark |
 | Blockers | None. Open human actions: Anthropic API key to score the Claude planner; product-target confirmation ([human actions](human-actions.md)) |
 
 ## How to read the backlog

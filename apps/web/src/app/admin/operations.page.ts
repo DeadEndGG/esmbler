@@ -1,6 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { Api, ApiError } from '../core/api';
+import { Icon } from '../ui/icon';
 import { Toasts } from '../core/toast';
 
 interface QueueStats {
@@ -24,14 +25,21 @@ interface DeadLetter {
 /** Background work of this workspace: queue depth and age, dead letters, and replay (REQ-EVT-005). */
 @Component({
   selector: 'esm-operations-page',
-  imports: [DatePipe, DecimalPipe],
+  imports: [Icon, DatePipe, DecimalPipe],
   template: `
-    <div class="page">
-      <header class="top"><h1>Operations</h1><button class="btn btn-sm" (click)="load()">Refresh</button></header>
+    <div class="admin-page">
+      <header class="page-head">
+        <span class="page-icon" aria-hidden="true"><esm-icon name="activity" [size]="20" /></span>
+        <div class="flex-1">
+          <h1>Operations</h1>
+          <p>Background work for this workspace: queues, timers and dead letters.</p>
+        </div>
+        <button class="btn btn-sm" (click)="load()"><esm-icon name="reset" [size]="14" /> Refresh</button>
+      </header>
       <section class="tiles" aria-label="Queues">
         @for (q of stats(); track q.queue) {
           <div class="tile">
-            <h2>{{ q.queue === 'jobs' ? 'Jobs and timers' : 'Events' }}</h2>
+            <h2><esm-icon [name]="q.queue === 'jobs' ? 'clock' : 'zap'" [size]="15" /> {{ q.queue === 'jobs' ? 'Jobs and timers' : 'Events' }}</h2>
             <dl>
               <div><dt>Waiting</dt><dd>{{ q.pending }}</dd></div>
               <div><dt>Running</dt><dd>{{ q.running }}</dd></div>
@@ -41,9 +49,9 @@ interface DeadLetter {
           </div>
         }
       </section>
-      <h2>Dead letters</h2>
-      <p class="muted small">Work that failed every retry, or stopped because it was no longer allowed. Replay requeues it; it runs again with its creator's current rights.</p>
-      <div class="table-wrap">
+      <h2 class="section-title">Dead letters</h2>
+      <p class="section-lead">Work that failed every retry, or stopped because it was no longer allowed. Replay requeues it; it runs again with its creator's current rights.</p>
+      <div class="table-card">
         <table>
           <thead><tr><th scope="col">Kind</th><th scope="col">Queue</th><th scope="col">Attempts</th><th scope="col">Last error</th><th scope="col">When</th><th scope="col"></th></tr></thead>
           <tbody>
@@ -65,21 +73,15 @@ interface DeadLetter {
     </div>
   `,
   styles: `
-    .page { padding: var(--esm-space-5) var(--esm-space-6); max-width: 1100px; }
-    .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--esm-space-4); }
-    h1 { margin: 0; font: var(--esm-text-title-lg); }
-    h2 { font: var(--esm-text-title-md); margin: var(--esm-space-5) 0 var(--esm-space-2); }
-    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--esm-space-3); }
-    .tile { padding: var(--esm-space-4); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); background: var(--esm-surface-raised); }
-    .tile h2 { margin: 0 0 var(--esm-space-2); font: var(--esm-text-title-sm); }
-    dl { display: grid; grid-template-columns: 1fr 1fr; gap: var(--esm-space-2); margin: 0; }
-    dt { font: var(--esm-text-body-sm); color: var(--esm-text-muted); }
-    dd { margin: 0; font: var(--esm-text-title-md); }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--esm-space-4); }
+    .tile { padding: var(--esm-space-5); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-lg); background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-card); }
+    .tile h2 { display: flex; align-items: center; gap: var(--esm-space-2); margin: 0 0 var(--esm-space-4); font: var(--esm-text-title-sm); }
+    .tile h2 esm-icon { color: var(--esm-accent-brand); }
+    dl { display: grid; grid-template-columns: 1fr 1fr; gap: var(--esm-space-4) var(--esm-space-3); margin: 0; }
+    dt { font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); }
+    dd { margin: 2px 0 0; font: var(--esm-text-title-lg); font-variant-numeric: tabular-nums; }
     .err { color: var(--esm-accent-red); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); }
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font: var(--esm-text-body-sm); color: var(--esm-text-muted); padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); background: var(--esm-surface-sunken); }
-    td { padding: var(--esm-space-2) var(--esm-space-3); border-bottom: 1px solid var(--esm-border-subtle); font: var(--esm-text-body-sm); vertical-align: top; }
+    td { vertical-align: top; }
     td.error { max-width: 360px; color: var(--esm-text-muted); }
     .right { text-align: right; }
     .small { font: var(--esm-text-body-sm); }
