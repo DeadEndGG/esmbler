@@ -12,7 +12,7 @@ namespace Esmbler.Kernel.Infrastructure.Configuration;
 /// Stores a compiled artifact immutably and atomically switches the environment's active pointer, guarded by the
 /// expected current revision (optimistic concurrency, REQ-CFG-007). The previous artifact stays for rollback.
 /// </summary>
-public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catalog)
+public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catalog, IActivationHealthCheck health)
 {
     public CompileResult Compile(IReadOnlyList<(string ModuleId, string Version)> modules, IReadOnlyList<OverlayOp> overlay, EffectiveConfig? previous = null) =>
         compiler.Compile(modules.Select(m => catalog.Release(m.ModuleId, m.Version)).ToList(), overlay, previous);
@@ -85,6 +85,15 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
             CreatedAt = DateTimeOffset.UtcNow,
         });
         await db.SaveChangesAsync(ct);
+
+        // Health check inside the activation transaction: throwing here rolls everything back, so the previous
+        // revision stays live and nothing half-activated is ever visible.
+        var problems = await health.CheckAsync(db, tenantId, environmentId, revision, ct);
+        if (problems.Count > 0)
+        {
+            throw new KernelException("activation_unhealthy", $"Revision {revision} failed its health check and was not activated; the previous revision stays live. {problems[0]}", 422, details: problems);
+        }
+
         return revision;
     }
 }

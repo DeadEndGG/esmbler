@@ -50,6 +50,7 @@ public static class EventTypes
     public const string RecordUpdated = "record.updated";
     public const string RecordTransitioned = "record.transitioned";
     public const string RecordDeleted = "record.deleted";
+    public const string RecordRestored = "record.restored";
     public const string ActivityAdded = "activity.added";
     public const string ConfigPublished = "config.published";
     public const string DraftChanged = "draft.changed";

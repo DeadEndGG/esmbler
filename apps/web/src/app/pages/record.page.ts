@@ -43,6 +43,10 @@ interface SlashItem {
         <a [routerLink]="['/records', entity()]">{{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
         <span aria-hidden="true">/</span>
         <span>{{ preview() ? 'Sample record' : (ctx.record()?.number ?? '…') }}</span>
+        <span class="flex"></span>
+        @if (ctx.mode() === 'view' && ctx.record()?.access?.canDelete) {
+          <button class="btn btn-ghost btn-sm" (click)="remove()">Delete</button>
+        }
       </nav>
 
       @if (error(); as err) {
@@ -87,7 +91,7 @@ interface SlashItem {
     .band { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--esm-space-2); margin: 0 calc(-1 * var(--esm-space-6)) var(--esm-space-3); padding: var(--esm-space-2) var(--esm-space-6); background: var(--esm-surface-raised); border-bottom: 1px solid var(--esm-accent-purple); font: var(--esm-text-body-sm); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--esm-accent-purple); }
     .flex { flex: 1; }
-    .crumbs { display: flex; gap: var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-3); }
+    .crumbs { display: flex; align-items: center; gap: var(--esm-space-2); font: var(--esm-text-body-sm); color: var(--esm-text-muted); margin-bottom: var(--esm-space-3); }
     .callout { padding: var(--esm-space-3); border-radius: var(--esm-radius-md); margin-bottom: var(--esm-space-3); background: color-mix(in srgb, var(--tone) 12%, transparent); }
     .callout p { margin: var(--esm-space-2) 0 0; }
     .skeleton-page { display: flex; flex-direction: column; gap: var(--esm-space-3); max-width: 720px; }
@@ -321,6 +325,25 @@ export class RecordPage {
     if (sel.length !== 1) return;
     const removed = await this.commands.remove(sel[0].view, sel[0].nodeId);
     if (removed) this.builder.selection.set([]);
+  }
+
+  protected async remove(): Promise<void> {
+    const record = this.ctx.record();
+    if (!record || !window.confirm(`Delete ${record.number ?? 'this record'}? You can undo this for 30 days.`)) return;
+    try {
+      await this.api.delete(`/api/records/${record.entity}/${record.id}`, { revision: record.revision });
+      await this.router.navigate(['/records', record.entity]);
+      this.toasts.show(`${record.number ?? 'Record'} deleted.`, 'info', {
+        label: 'Undo',
+        run: () =>
+          void this.api
+            .post(`/api/records/${record.entity}/${record.id}/restore`)
+            .then(() => this.router.navigate(['/records', record.entity, record.id]))
+            .catch((e) => this.toasts.show(e instanceof ApiError ? e.message : 'Could not restore.', 'warning')),
+      }, 8000);
+    } catch (e) {
+      this.handleWriteError(e);
+    }
   }
 
   protected back(): void {

@@ -57,6 +57,9 @@ public static class RecordEndpoints
             return Results.NoContent();
         });
 
+        g.MapPost("/{id:guid}/restore", (string entity, Guid id, ClaimsPrincipal user, RecordService records, CancellationToken ct) =>
+            records.RestoreAsync(Ctx(user), entity, id, ct));
+
         g.MapGet("/{id:guid}/activity", (string entity, Guid id, ClaimsPrincipal user, RecordService records, CancellationToken ct) =>
             records.ActivityAsync(Ctx(user), entity, id, ct));
 

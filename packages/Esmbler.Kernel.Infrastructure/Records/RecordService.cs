@@ -120,6 +120,41 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             await db.SaveChangesAsync(ct);
         }, ct);
 
+    /// <summary>Soft-deleted records can be restored for 30 days by anyone allowed to delete them (REQ-REC-006, ASM-027).</summary>
+    public static readonly TimeSpan RestoreWindow = TimeSpan.FromDays(30);
+
+    public async Task<RecordView> RestoreAsync(RequestContext ctx, string entityId, Guid id, CancellationToken ct)
+    {
+        await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var (artifact, entity, perms) = await PrepareAsync(db, ctx, entityId, null, ct);
+            var rows = await db.Records.FromSqlInterpolated($"SELECT * FROM kernel.records WHERE tenant_id = {ctx.TenantId} AND environment_id = {ctx.EnvironmentId} AND id = {id} FOR UPDATE").ToListAsync(ct);
+            var row = rows.FirstOrDefault(r => r.EntityId == entity.Id && r.DeletedAt is not null) ?? throw KernelException.NotFound($"Deleted {entity.Label.ToLowerInvariant()}");
+            if (!perms.CanRead(entity, JsonNode.Parse(row.Data)!.AsObject()))
+            {
+                throw KernelException.NotFound($"Deleted {entity.Label.ToLowerInvariant()}");
+            }
+
+            if (!perms.Entity(entity.Id).Delete)
+            {
+                throw KernelException.Forbidden($"You cannot restore {entity.PluralLabel.ToLowerInvariant()}.");
+            }
+
+            var now = clock.UtcNow;
+            if (now - row.DeletedAt!.Value > RestoreWindow)
+            {
+                throw new KernelException("restore_expired", $"This {entity.Label.ToLowerInvariant()} was deleted more than 30 days ago and can no longer be restored.", 410);
+            }
+
+            await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.DeletedAt, (DateTimeOffset?)null).SetProperty(r => r.Revision, row.Revision + 1).SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId), ct);
+            AuditWriter.Add(db, ctx, "record.restore", entity.Id, id.ToString(), artifact.Revision);
+            AddEvent(db, ctx, EventTypes.RecordRestored, entity.Id, id, row.Revision + 1, artifact.Revision, []);
+            await db.SaveChangesAsync(ct);
+            return 0;
+        }, ct);
+        return await GetAsync(ctx, entityId, id, ct);
+    }
+
     public Task<RecordView> GetAsync(RequestContext ctx, string entityId, Guid id, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {

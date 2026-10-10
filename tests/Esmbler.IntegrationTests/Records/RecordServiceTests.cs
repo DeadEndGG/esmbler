@@ -134,6 +134,26 @@ public class RecordServiceTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Deleted_records_can_be_restored_by_people_who_may_delete_them()
+    {
+        // REQ-REC-006: soft delete, then restore within the window; others can't restore, and other tenants can't see it.
+        var t = await f.NewTenantAsync("rs");
+        var admin = f.As(t, "admin");
+        var created = await Records.CreateAsync(admin, Ticket, new JsonObject { ["title"] = "Printer on fire", ["requester"] = t.Users["dana"].ToString() }, null, null, default);
+        await Records.DeleteAsync(admin, Ticket, created.Id, created.Revision, default);
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Records.GetAsync(admin, Ticket, created.Id, default))).Status);
+
+        var requester = await Assert.ThrowsAsync<KernelException>(() => Records.RestoreAsync(f.As(t, "dana"), Ticket, created.Id, default));
+        Assert.Contains(requester.Status, new[] { 403, 404 });
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Records.RestoreAsync(f.As(f.Globex, "alex"), Ticket, created.Id, default))).Status);
+
+        var restored = await Records.RestoreAsync(admin, Ticket, created.Id, default);
+        Assert.Equal(created.Revision + 2, restored.Revision);
+        Assert.Equal("Printer on fire", restored.Data["title"]!.GetValue<string>());
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Records.RestoreAsync(admin, Ticket, created.Id, default))).Status);
+    }
+
+    [Fact]
     public async Task Tenants_are_isolated_through_the_service_layer()
     {
         var acmeTicket = (await Records.QueryAsync(f.As(f.Acme, "alex"), new RecordQuery { Entity = Ticket }, default)).Items[0];
