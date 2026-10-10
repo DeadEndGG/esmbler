@@ -560,5 +560,8 @@ public sealed class RefreshTokenRow
 
     public Guid? ReplacedBy { get; set; }
 
+    /// <summary>When the session (token family) began; rotation never extends past the absolute session lifetime.</summary>
+    public DateTimeOffset SessionStartedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }

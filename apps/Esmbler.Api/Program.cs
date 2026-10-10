@@ -25,6 +25,8 @@ builder.Services.AddSingleton(assistantOptions);
 builder.Services.AddHttpClient("mcp");
 builder.Services.AddSingleton<IAssistantGatewayFactory, HttpAssistantGatewayFactory>();
 builder.Services.AddSingleton<AssistantService>();
+var platformOptions = builder.Configuration.GetSection(PlatformOptions.Section).Get<PlatformOptions>() ?? new PlatformOptions();
+LoginThrottle.AddPolicy(builder.Services, platformOptions);
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -55,6 +57,7 @@ if (args.Contains("seed") || options.SeedDemoData)
 }
 
 app.UseExceptionHandler();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

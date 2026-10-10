@@ -41,8 +41,11 @@ public static class AgentScopes
 
     public static IReadOnlyList<string> All { get; } = [ConfigRead, ConfigEdit, PublishRequest, RecordsRead, RecordsWrite, AccessExplain];
 
-    /// <summary>Default delegation for the in-app builder chat.</summary>
-    public static IReadOnlyList<string> Builder { get; } = [ConfigRead, ConfigEdit, PublishRequest, RecordsRead, AccessExplain];
+    /// <summary>
+    /// Default delegation for the in-app builder chat. No record access by default (threat model T-23): the model works
+    /// on configuration and synthetic sample data; reading real records is an explicit opt-in (records:read).
+    /// </summary>
+    public static IReadOnlyList<string> Builder { get; } = [ConfigRead, ConfigEdit, PublishRequest, AccessExplain];
 }
 
 public interface IClock

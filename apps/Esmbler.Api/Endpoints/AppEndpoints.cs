@@ -24,6 +24,11 @@ public static class AppEndpoints
             experience.ViewAsync(RequestContextFactory.From(user, "api"), view, ct));
         config.MapGet("/elements", (IElementRegistry registry) => registry.All.OrderBy(e => e.Id, StringComparer.Ordinal));
 
+        // Pickers: names only, for any member of the workspace.
+        var directory = app.MapGroup("/api/directory").WithTags("Directory").RequireAuthorization();
+        directory.MapGet("/people", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.DirectoryPeopleAsync(RequestContextFactory.From(user, "api"), ct));
+        directory.MapGet("/groups", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.DirectoryGroupsAsync(RequestContextFactory.From(user, "api"), ct));
+
         var admin = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
         admin.MapGet("/members", (ClaimsPrincipal user, IdentityService identity, CancellationToken ct) => identity.MembersAsync(RequestContextFactory.From(user, "api"), ct));
         admin.MapGet("/roles", (ClaimsPrincipal user, ExperienceService experience, CancellationToken ct) => experience.RolesAsync(RequestContextFactory.From(user, "api"), ct));

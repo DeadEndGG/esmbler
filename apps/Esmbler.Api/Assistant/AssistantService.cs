@@ -24,8 +24,8 @@ public sealed class AssistantOptions
 
     public string FallbackModel { get; set; } = "claude-opus-4-8";
 
-    /// <summary>Anthropic API key. Prefer the ANTHROPIC_API_KEY environment variable or a secret store.</summary>
-    public string? ApiKey { get; set; }
+    /// <summary>Anthropic API key (Esmbler:Assistant:AnthropicApiKey, or the ANTHROPIC_API_KEY variable). From a secret store in production.</summary>
+    public string? AnthropicApiKey { get; set; }
 
     public int MaxToolCalls { get; set; } = 30;
 
@@ -79,7 +79,7 @@ public sealed class AssistantService(
     {
         "anthropic" => true,
         "scripted" => false,
-        _ => !string.IsNullOrWhiteSpace(options.ApiKey) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")),
+        _ => !string.IsNullOrWhiteSpace(options.AnthropicApiKey) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")),
     };
 
     public object Status() => new { planner = PlannerName, model = UseClaude ? options.Model : null };
@@ -157,7 +157,7 @@ public sealed class AssistantService(
     }
 
     private IPlanner CreatePlanner() => UseClaude
-        ? new ClaudePlanner(new ClaudePlannerOptions { Model = options.Model, Effort = options.Effort, FallbackModel = options.FallbackModel, ApiKey = options.ApiKey })
+        ? new ClaudePlanner(new ClaudePlannerOptions { Model = options.Model, Effort = options.Effort, FallbackModel = options.FallbackModel, ApiKey = options.AnthropicApiKey })
         : new ScriptedPlanner();
 
     private async Task RunAsync(Conversation conversation, IPlanner planner, AssistantRequest request, string token)
@@ -208,6 +208,17 @@ public sealed class AssistantService(
             if (c.Running is null && DateTimeOffset.UtcNow - c.LastActive > TimeSpan.FromHours(2))
             {
                 conversations.TryRemove(key, out _);
+            }
+        }
+
+        foreach (var (principal, q) in rate)
+        {
+            lock (q)
+            {
+                if (q.Count == 0 || DateTimeOffset.UtcNow - q.Last() > TimeSpan.FromMinutes(1))
+                {
+                    rate.TryRemove(principal, out _);
+                }
             }
         }
     }

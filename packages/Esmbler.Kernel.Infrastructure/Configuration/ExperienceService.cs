@@ -77,6 +77,12 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
         database.InTenantAsync<IReadOnlyList<RoleSpec>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            if (!perms.Can(PlatformActions.PermissionsAdmin))
+            {
+                throw KernelException.Forbidden("Role administration requires the permission administration right.");
+            }
+
             return artifact.Config.Roles.OrderBy(r => r.Label, StringComparer.Ordinal).ToList();
         }, ct);
 

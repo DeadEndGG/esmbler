@@ -16,6 +16,8 @@ public sealed record EnvironmentChoice(Guid EnvironmentId, string Key, string Na
 
 public sealed record MemberView(Guid Id, string DisplayName, string? Email, IReadOnlyList<string> Roles, IReadOnlyList<string> Groups);
 
+public sealed record DirectoryEntry(Guid Id, string Name, string? Key);
+
 public sealed record GroupView(Guid Id, string Key, string Name, int Members);
 
 /// <summary>
@@ -46,6 +48,9 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
 
         return Hasher.VerifyHashedPassword(HashUser, found.PasswordHash, password) == PasswordVerificationResult.Failed ? null : (found.Id, found.DisplayName);
     }
+
+    public Task<bool> IsDisabledAsync(Guid principalId, CancellationToken ct) =>
+        database.AsPrincipalAsync(principalId, db => db.Principals.Where(p => p.Id == principalId).Select(p => p.Disabled).FirstOrDefaultAsync(ct), ct);
 
     public Task<string> DisplayNameAsync(Guid principalId, CancellationToken ct) =>
         database.AsPrincipalAsync(principalId, db => db.Principals.Where(p => p.Id == principalId).Select(p => p.DisplayName).FirstAsync(ct), ct);
@@ -116,6 +121,7 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
     public Task<IReadOnlyList<MemberView>> MembersAsync(RequestContext ctx, CancellationToken ct) =>
         database.InTenantAsync<IReadOnlyList<MemberView>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            await RequireActionAsync(db, ctx, PlatformActions.PermissionsAdmin, ct);
             var members = await (from m in db.Memberships where m.TenantId == ctx.TenantId join p in db.Principals on m.PrincipalId equals p.Id select new { p.Id, p.DisplayName, p.Email }).OrderBy(x => x.DisplayName).ToListAsync(ct);
             var roles = await db.RoleAssignments.Where(r => r.PrincipalId != null).ToListAsync(ct);
             var groups = await db.Groups.ToDictionaryAsync(g => g.Id, g => g.Name, ct);
@@ -131,8 +137,25 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
     public Task<IReadOnlyList<GroupView>> GroupsAsync(RequestContext ctx, CancellationToken ct) =>
         database.InTenantAsync<IReadOnlyList<GroupView>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            await RequireActionAsync(db, ctx, PlatformActions.PermissionsAdmin, ct);
             var members = await db.GroupMembers.GroupBy(g => g.GroupId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
             return (await db.Groups.OrderBy(g => g.Name).ToListAsync(ct)).Select(g => new GroupView(g.Id, g.Key, g.Name, members.GetValueOrDefault(g.Id))).ToList();
+        }, ct);
+
+    /// <summary>People of the workspace for user pickers: names only, for any member (no emails, roles, or groups).</summary>
+    public Task<IReadOnlyList<DirectoryEntry>> DirectoryPeopleAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync<IReadOnlyList<DirectoryEntry>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            await RequireMemberAsync(db, ctx, ct);
+            return await (from m in db.Memberships where m.TenantId == ctx.TenantId join p in db.Principals on m.PrincipalId equals p.Id where p.Kind == "user" orderby p.DisplayName select new DirectoryEntry(p.Id, p.DisplayName, null)).ToListAsync(ct);
+        }, ct);
+
+    /// <summary>Groups of the workspace for group pickers, for any member.</summary>
+    public Task<IReadOnlyList<DirectoryEntry>> DirectoryGroupsAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync<IReadOnlyList<DirectoryEntry>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            await RequireMemberAsync(db, ctx, ct);
+            return await db.Groups.Where(g => g.TenantId == ctx.TenantId).OrderBy(g => g.Name).Select(g => new DirectoryEntry(g.Id, g.Name, g.Key)).ToListAsync(ct);
         }, ct);
 
     public async Task AssignRoleAsync(RequestContext ctx, string roleId, Guid? principalId, Guid? groupId, CancellationToken ct)
@@ -146,6 +169,7 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
                 throw KernelException.NotFound($"Role '{roleId}'");
             }
 
+            await RequireTargetAsync(db, ctx, principalId, groupId, ct);
             db.RoleAssignments.Add(new RoleAssignmentRow { TenantId = ctx.TenantId, RoleId = roleId, PrincipalId = principalId, GroupId = groupId, CreatedAt = DateTimeOffset.UtcNow, CreatedBy = ctx.PrincipalId });
             AuditWriter.Add(db, ctx, "role.assign", "role", roleId, artifact.Revision, new { principalId, groupId }, environmentScoped: false);
             await db.SaveChangesAsync(ct);
@@ -170,6 +194,7 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
         await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             await RequireActionAsync(db, ctx, PlatformActions.PermissionsAdmin, ct);
+            await RequireTargetAsync(db, ctx, principalId, groupId, ct);
             db.GroupMembers.Add(new GroupMemberRow { TenantId = ctx.TenantId, GroupId = groupId, PrincipalId = principalId, CreatedAt = DateTimeOffset.UtcNow });
             AuditWriter.Add(db, ctx, "group.add_member", "group", groupId.ToString(), null, new { principalId }, environmentScoped: false);
             await db.SaveChangesAsync(ct);
@@ -205,13 +230,33 @@ public sealed class IdentityService(Database database, IRelationshipGraph graph,
         return tuples.Count;
     }
 
+    private async Task RequireMemberAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
+    {
+        var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+        _ = await access.ForAsync(db, ctx, artifact.Config, ct); // throws unless a member (and a valid agent, if any)
+    }
+
+    /// <summary>Role and group targets must be members and groups of this tenant (foreign keys ignore RLS).</summary>
+    private static async Task RequireTargetAsync(KernelDbContext db, RequestContext ctx, Guid? principalId, Guid? groupId, CancellationToken ct)
+    {
+        if (principalId is { } p && !await db.Memberships.AnyAsync(m => m.TenantId == ctx.TenantId && m.PrincipalId == p, ct))
+        {
+            throw KernelException.NotFound("Person");
+        }
+
+        if (groupId is { } g && !await db.Groups.AnyAsync(x => x.TenantId == ctx.TenantId && x.Id == g, ct))
+        {
+            throw KernelException.NotFound("Group");
+        }
+    }
+
     private async Task RequireActionAsync(KernelDbContext db, RequestContext ctx, string action, CancellationToken ct)
     {
         var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
         var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
         if (!perms.Can(action))
         {
-            throw KernelException.Forbidden("Changing people, groups, and roles requires the permission administration right.", suggestion: "Ask a tenant administrator.");
+            throw KernelException.Forbidden("Managing people, groups, and roles requires the permission administration right.", suggestion: "Ask a tenant administrator.");
         }
     }
 

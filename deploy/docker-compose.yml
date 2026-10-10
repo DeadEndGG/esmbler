@@ -8,7 +8,8 @@ x-dotnet-env: &dotnet-env
   Esmbler__Database__App: Host=postgres;Database=esmbler;Username=esmbler_app;Password=${ESMBLER_APP_PASSWORD:-dev-only-app};Gss Encryption Mode=Disable
   Esmbler__OpenFga__ApiUrl: http://openfga:8080
   Esmbler__Auth__SigningKey: ${ESMBLER_SIGNING_KEY:-dev-only-signing-key-change-me-0123456789abcdef}
-  Esmbler__Assistant__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
+  # Local development only: hosts refuse the public dev key unless this is true. Set false with a real key.
+  Esmbler__Auth__AllowDevelopmentKey: ${ESMBLER_ALLOW_DEV_KEY:-true}
   Logging__LogLevel__Default: Information
 
 services:
@@ -71,8 +72,8 @@ services:
       Esmbler__MigrateOnStartup: "true"
       Esmbler__SeedDemoData: "true"
       Esmbler__Assistant__McpUrl: http://mcp:8080/mcp
-      # Leave empty to use the scripted assistant; set to use Claude (human action: provide the key).
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Leave empty to use the built-in scripted assistant; set to use Claude (human action: provide the key).
+      Esmbler__Assistant__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

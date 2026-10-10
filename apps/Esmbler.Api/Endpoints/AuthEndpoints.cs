@@ -23,16 +23,24 @@ public static class AuthEndpoints
     {
         var g = app.MapGroup("/api/auth").WithTags("Auth");
 
-        g.MapPost("/login", async (LoginRequest body, IdentityService identity, TokenService tokens, HttpContext http, CancellationToken ct) =>
+        g.MapPost("/login", async (LoginRequest body, IdentityService identity, TokenService tokens, LoginThrottle throttle, HttpContext http, CancellationToken ct) =>
         {
-            var user = await identity.VerifyPasswordAsync(body.Email ?? string.Empty, body.Password ?? string.Empty, ct)
-                ?? throw new KernelException("invalid_credentials", "That email and password don't match.", 401);
+            var email = (body.Email ?? string.Empty).Trim();
+            throttle.EnsureAllowed(email);
+            var verified = await identity.VerifyPasswordAsync(email, body.Password ?? string.Empty, ct);
+            if (verified is not { } user)
+            {
+                throttle.RecordFailure(email);
+                throw new KernelException("invalid_credentials", "That email and password don't match.", 401);
+            }
+
+            throttle.RecordSuccess(email);
             var workspaces = await identity.TenantsForAsync(user.Id, ct);
             var refresh = await tokens.CreateRefreshAsync(user.Id, null, null, ct);
             SetRefreshCookie(http, refresh);
             var access = tokens.IssueApi(user.Id, user.Name, null, null);
             return Results.Ok(new { access.AccessToken, access.ExpiresAt, user = new { user.Id, name = user.Name }, workspaces });
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.Policy);
 
         g.MapPost("/switch", async (SwitchRequest body, ClaimsPrincipal principal, IdentityService identity, TokenService tokens, HttpContext http, CancellationToken ct) =>
         {
@@ -51,6 +59,11 @@ public static class AuthEndpoints
             RequireCsrfHeader(http);
             var raw = http.Request.Cookies[RefreshCookie] ?? throw new KernelException("invalid_refresh", "Your session expired. Sign in again.", 401);
             var (principalId, tenantId, envId, next) = await tokens.RotateRefreshAsync(raw, ct);
+            if (await identity.IsDisabledAsync(principalId, ct))
+            {
+                throw new KernelException("invalid_refresh", "Your account is disabled. Contact your administrator.", 401);
+            }
+
             var workspaces = await identity.TenantsForAsync(principalId, ct);
             if (tenantId is { } t && !workspaces.Any(w => w.TenantId == t))
             {
@@ -61,7 +74,7 @@ public static class AuthEndpoints
             var name = await identity.DisplayNameAsync(principalId, ct);
             var access = tokens.IssueApi(principalId, name, tenantId, envId);
             return Results.Ok(new { access.AccessToken, access.ExpiresAt, workspaces });
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.Policy);
 
         g.MapPost("/logout", async (TokenService tokens, HttpContext http, CancellationToken ct) =>
         {
@@ -115,7 +128,8 @@ public static class AuthEndpoints
         {
             HttpOnly = true,
             SameSite = SameSiteMode.Strict,
-            Secure = http.Request.IsHttps,
+            // Secure by default, also behind a TLS-terminating proxy; browsers accept Secure cookies on localhost.
+            Secure = http.Request.IsHttps || http.RequestServices.GetRequiredService<PlatformOptions>().Auth.SecureCookies,
             Path = "/api/auth",
             MaxAge = TimeSpan.FromHours(8),
         });

@@ -25,7 +25,8 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
 
     public static readonly JsonSerializerOptions Json = new(SpecJson.Options) { WriteIndented = false };
 
-    private static readonly ConcurrentDictionary<string, (Queue<DateTimeOffset> Window, int Total)> Budgets = new();
+    private static readonly ConcurrentDictionary<string, (Queue<DateTimeOffset> Window, int Total, DateTimeOffset Last)> Budgets = new();
+    private static int budgetCalls;
 
     static ToolRunner()
     {
@@ -82,7 +83,19 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
     {
         var key = $"{ctx.AgentId}:{http.HttpContext?.User.FindFirst("jti")?.Value}";
         var now = DateTimeOffset.UtcNow;
-        var entry = Budgets.AddOrUpdate(key, _ => (new Queue<DateTimeOffset>([now]), 1), (_, e) =>
+        if (Interlocked.Increment(ref budgetCalls) % 500 == 0)
+        {
+            // Agent tokens live at most 30 minutes: forget sessions idle for longer than that.
+            foreach (var (k, v) in Budgets)
+            {
+                if (now - v.Last > TimeSpan.FromMinutes(35))
+                {
+                    Budgets.TryRemove(k, out _);
+                }
+            }
+        }
+
+        var entry = Budgets.AddOrUpdate(key, _ => (new Queue<DateTimeOffset>([now]), 1, now), (_, e) =>
         {
             lock (e.Window)
             {
@@ -94,7 +107,7 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
                 e.Window.Enqueue(now);
             }
 
-            return (e.Window, e.Total + 1);
+            return (e.Window, e.Total + 1, now);
         });
         if (entry.Total > MaxCallsPerToken)
         {

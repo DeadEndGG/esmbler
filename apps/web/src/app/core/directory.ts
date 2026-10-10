@@ -23,8 +23,8 @@ export class Directory {
 
   load(): Promise<void> {
     this.loaded ??= Promise.all([
-      this.api.get<Person[]>('/api/admin/members').then((p) => this.people.set(p)).catch(() => undefined),
-      this.api.get<Group[]>('/api/admin/groups').then((g) => this.groups.set(g)).catch(() => undefined),
+      this.api.get<{ id: string; name: string }[]>('/api/directory/people').then((p) => this.people.set(p.map((x) => ({ id: x.id, displayName: x.name })))).catch(() => undefined),
+      this.api.get<{ id: string; name: string; key: string }[]>('/api/directory/groups').then((g) => this.groups.set(g.map((x) => ({ id: x.id, key: x.key, name: x.name })))).catch(() => undefined),
     ]).then(() => undefined);
     return this.loaded;
   }

@@ -41,5 +41,17 @@ public sealed class PlatformOptions
         public int AccessTokenMinutes { get; set; } = 15;
 
         public int AgentTokenMinutes { get; set; } = 30;
+
+        /// <summary>Accept the public development signing key (docker-compose.yml). Never set outside local development.</summary>
+        public bool AllowDevelopmentKey { get; set; }
+
+        /// <summary>Login attempts allowed per client address per minute.</summary>
+        public int LoginAttemptsPerMinute { get; set; } = 20;
+
+        /// <summary>Failed sign-ins per account within 15 minutes before the account is temporarily locked.</summary>
+        public int FailedLoginsPerAccount { get; set; } = 8;
+
+        /// <summary>Mark the refresh cookie Secure even on plain HTTP (browsers accept Secure cookies on localhost).</summary>
+        public bool SecureCookies { get; set; } = true;
     }
 }

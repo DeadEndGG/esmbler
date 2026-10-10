@@ -121,6 +121,12 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         database.InTenantAsync<IReadOnlyList<object>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var perms = await access.ForAsync(db, ctx, published.Config, ct);
+            if (!perms.Can(PlatformActions.ModulesManage) && !perms.Can(PlatformActions.ConfigEdit))
+            {
+                throw KernelException.Forbidden("Module versions are visible to builders and administrators.");
+            }
+
             return published.Lockfile.Where(m => m.Id != PlatformModule.ModuleId).Select(m =>
             {
                 var latest = catalog.Latest(m.Id).Version;

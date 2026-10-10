@@ -72,6 +72,14 @@ public sealed class PublishService(Database database, ConfigStore configs, Confi
     public Task<PublishRequestView?> PendingAsync(RequestContext ctx, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            // The pending request reveals the draft's changes (labels, rules, permission changes): builders only.
+            var published = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var perms = await access.ForAsync(db, ctx, published.Config, ct);
+            if (!perms.Can(PlatformActions.ConfigEdit) && !perms.Can(PlatformActions.ConfigPublish))
+            {
+                throw KernelException.Forbidden("Publish requests are visible to builders.");
+            }
+
             var row = await db.PublishRequests.Where(p => p.Status == "pending").OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync(ct);
             if (row is null)
             {

@@ -24,6 +24,8 @@ public sealed class ApiFactory(PlatformFixture platform) : WebApplicationFactory
         builder.UseSetting("Esmbler:MigrateOnStartup", "false");
         builder.UseSetting("Esmbler:SeedDemoData", "false");
         builder.UseSetting("Esmbler:Auth:SigningKey", "integration-test-signing-key-0123456789abcdef");
+        builder.UseSetting("Esmbler:Auth:LoginAttemptsPerMinute", "100000");
+        builder.UseSetting("Esmbler:Auth:SecureCookies", "false");
         builder.ConfigureTestServices(s => s.AddSingleton<IRelationshipGraph>(platform.Graph));
     }
 

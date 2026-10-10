@@ -33,13 +33,25 @@ public sealed class TokenService(PlatformOptions options, Database database)
 {
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromHours(8);
 
-    public SymmetricSecurityKey SigningKey { get; } = CreateKey(options.Auth.SigningKey);
+    /// <summary>A session ends this long after sign-in however often it is refreshed (ASM-032).</summary>
+    public static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(24);
 
-    public static SymmetricSecurityKey CreateKey(string key)
+    /// <summary>Prefix of the development signing key shipped in docker-compose.yml.</summary>
+    public const string DevelopmentKeyPrefix = "dev-only";
+
+    public SymmetricSecurityKey SigningKey { get; } = CreateKey(options.Auth.SigningKey, options.Auth.AllowDevelopmentKey);
+
+    public static SymmetricSecurityKey CreateKey(string key, bool allowDevelopmentKey = true)
     {
         if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
         {
             throw new InvalidOperationException("Esmbler:Auth:SigningKey must be at least 32 bytes.");
+        }
+
+        // The key in docker-compose.yml is public. Anyone holding it can forge tokens for every tenant (T-40).
+        if (!allowDevelopmentKey && key.StartsWith(DevelopmentKeyPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Esmbler:Auth:SigningKey is the public development key. Set ESMBLER_SIGNING_KEY to a secret of at least 32 bytes, or set Esmbler:Auth:AllowDevelopmentKey=true for local development only.");
         }
 
         return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
@@ -88,13 +100,17 @@ public sealed class TokenService(PlatformOptions options, Database database)
 
     /// <summary>Creates a refresh token bound to the principal (and the tenant/environment it was issued for).</summary>
     public Task<string> CreateRefreshAsync(Guid principalId, Guid? tenantId, Guid? environmentId, CancellationToken ct) =>
-        database.AsPrincipalAsync(principalId, async db =>
-        {
-            var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-            db.RefreshTokens.Add(new RefreshTokenRow { Id = Guid.NewGuid(), PrincipalId = principalId, TokenHash = Hash(raw), TenantId = tenantId, EnvironmentId = environmentId, ExpiresAt = DateTimeOffset.UtcNow + RefreshLifetime, CreatedAt = DateTimeOffset.UtcNow });
-            await db.SaveChangesAsync(ct);
-            return raw;
-        }, ct);
+        database.AsPrincipalAsync(principalId, db => AddRefreshAsync(db, principalId, tenantId, environmentId, DateTimeOffset.UtcNow, ct), ct);
+
+    private static async Task<string> AddRefreshAsync(KernelDbContext db, Guid principalId, Guid? tenantId, Guid? environmentId, DateTimeOffset sessionStartedAt, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var expires = now + RefreshLifetime < sessionStartedAt + SessionLifetime ? now + RefreshLifetime : sessionStartedAt + SessionLifetime;
+        db.RefreshTokens.Add(new RefreshTokenRow { Id = Guid.NewGuid(), PrincipalId = principalId, TokenHash = Hash(raw), TenantId = tenantId, EnvironmentId = environmentId, ExpiresAt = expires, SessionStartedAt = sessionStartedAt, CreatedAt = now });
+        await db.SaveChangesAsync(ct);
+        return raw;
+    }
 
     /// <summary>Rotates a refresh token. Reuse of a rotated token revokes the whole family (theft signal).</summary>
     public async Task<(Guid PrincipalId, Guid? TenantId, Guid? EnvironmentId, string NewToken)> RotateRefreshAsync(string raw, CancellationToken ct)
@@ -113,8 +129,31 @@ public sealed class TokenService(PlatformOptions options, Database database)
             throw new KernelException("invalid_refresh", "Your session expired. Sign in again.", 401);
         }
 
-        var next = await CreateRefreshAsync(token.PrincipalId, token.TenantId, token.EnvironmentId, ct);
-        await database.AsPrincipalAsync(token.PrincipalId, db => db.RefreshTokens.Where(r => r.Id == token.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.RevokedAt, DateTimeOffset.UtcNow), ct), ct);
+        // Claim the token atomically: of two concurrent redemptions only one revokes it and gets a successor; the
+        // other is treated as reuse and ends the whole family.
+        var next = await database.AsPrincipalAsync(token.PrincipalId, async db =>
+        {
+            var claimed = await db.RefreshTokens.Where(r => r.Id == token.Id && r.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(r => r.RevokedAt, DateTimeOffset.UtcNow), ct);
+            if (claimed != 1)
+            {
+                return null;
+            }
+
+            var started = await db.RefreshTokens.Where(r => r.Id == token.Id).Select(r => r.SessionStartedAt).FirstAsync(ct);
+            return started + SessionLifetime <= DateTimeOffset.UtcNow ? string.Empty : await AddRefreshAsync(db, token.PrincipalId, token.TenantId, token.EnvironmentId, started, ct);
+        }, ct);
+
+        if (next is null)
+        {
+            await database.AsPrincipalAsync(token.PrincipalId, db => db.RefreshTokens.Where(r => r.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(r => r.RevokedAt, DateTimeOffset.UtcNow), ct), ct);
+            throw new KernelException("invalid_refresh", "Your session was ended for safety. Sign in again.", 401);
+        }
+
+        if (next.Length == 0)
+        {
+            throw new KernelException("invalid_refresh", "Your session reached its maximum length. Sign in again.", 401);
+        }
+
         return (token.PrincipalId, token.TenantId, token.EnvironmentId, next);
     }
 

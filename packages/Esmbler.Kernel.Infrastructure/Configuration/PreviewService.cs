@@ -185,15 +185,18 @@ public sealed class PreviewService(Database database, ConfigStore configs, Draft
             throw KernelException.Forbidden("Draft previews and configuration discovery are available to builders.");
         }
 
+        // Configuration shape (which fields and pages exist, which fields the person may see) follows the person's own
+        // rights: an agent never sees more than its user, and reading configuration needs no record access (T-23).
+        // Record data is never returned through these paths; sample pages use synthetic values.
         var draft = await db.Drafts.FirstOrDefaultAsync(d => d.Status == "open", ct);
         if (draft is null)
         {
-            return (published.Config, publishedPerms, null, null);
+            return (published.Config, userPerms, null, null);
         }
 
         var compiled = await drafts.CompileAsync(db, ctx, draft, ct);
         var config = compiled.Result.Config;
-        var perms = await access.ForAsync(db, ctx, config, ct);
+        var perms = await access.ForAsync(db, ctx with { AgentId = null, Scopes = null }, config, ct);
         return (config, perms, draft, compiled);
     }
 }

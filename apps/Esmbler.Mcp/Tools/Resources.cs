@@ -29,16 +29,24 @@ public sealed class Resources(ToolRunner runner, IElementRegistry registry, Prev
     [McpServerResource(UriTemplate = "esmbler://app/graph", Name = "App graph", MimeType = "application/json"), Description("Entities, relationships, and pages of this workspace as currently drafted.")]
     public async Task<string> AppGraph()
     {
-        var ctx = runner.Context();
-        var (config, _, draftVersion, revision) = await preview.WorkingConfigAsync(ctx, default);
-        return JsonSerializer.Serialize(new
+        // Same path as tools: scope check, budget, audit, and only fields the user can see.
+        var result = await runner.RunAsync("resource.app_graph", Kernel.Tenancy.AgentScopes.ConfigRead, null, async ctx =>
         {
-            draftVersion,
-            publishedRevision = revision,
-            modules = config.Modules,
-            entities = config.Entities.Select(e => new { e.Id, e.Label, fields = e.Fields.Select(f => f.Key) }),
-            relationships = config.Relationships.Select(r => new { r.Id, from = r.Entity, to = r.Target, r.Field }),
-            views = config.Views.Select(v => new { v.Id, v.Kind, v.Entity }),
-        }, ToolRunner.Json);
+            var (config, perms, draftVersion, revision) = await preview.WorkingConfigAsync(ctx, default);
+            return new
+            {
+                draftVersion,
+                publishedRevision = revision,
+                modules = config.Modules,
+                entities = config.Entities.Select(e =>
+                {
+                    var access = perms.FieldAccessMap(e);
+                    return new { e.Id, e.Label, fields = e.Fields.Where(f => access[f.Key] != Sdk.Specs.FieldAccessLevels.Hidden).Select(f => f.Key) };
+                }),
+                relationships = config.Relationships.Select(r => new { r.Id, from = r.Entity, to = r.Target, r.Field }),
+                views = config.Views.Select(v => new { v.Id, v.Kind, v.Entity }),
+            };
+        });
+        return string.Join(string.Empty, result.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(c => c.Text));
     }
 }
