@@ -5,6 +5,7 @@ import { ConfigChange, Diagnostic } from '../core/models';
 import { Session } from '../core/session';
 import { Toasts } from '../core/toast';
 import { BuilderState } from '../builder/builder-state';
+import { DraftCommands } from '../builder/draft-commands';
 
 interface Revision {
   revision: number;
@@ -124,6 +125,27 @@ interface UpgradeView {
         }
       </section>
 
+      @if (session.canCustomize()) {
+        <section>
+          <h2>Customizations</h2>
+          <p class="muted small">What this workspace changed compared with the default modules. Resetting adds a step to your draft; nothing changes until it is published.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Element</th><th scope="col">Kind</th><th scope="col"></th></tr></thead>
+              <tbody>
+                @for (c of customizations(); track c.element) {
+                  <tr>
+                    <td>{{ c.label }} <div class="muted small mono">{{ c.element }}</div></td>
+                    <td><span class="badge" [class]="c.kind === 'added' ? 'tone-green' : 'tone-blue'">{{ c.kind }}</span></td>
+                    <td class="right"><button class="btn btn-sm" (click)="reset(c)" [disabled]="busy()">{{ c.kind === 'added' ? 'Remove' : 'Reset to default' }}</button></td>
+                  </tr>
+                } @empty { <tr><td colspan="3" class="muted">No customizations. Everything matches the default modules.</td></tr> }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
       <section>
         <h2>Revisions</h2>
         <div class="table-wrap">
@@ -177,6 +199,8 @@ export class ConfigurationPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly builder = inject(BuilderState);
+  private readonly commands = inject(DraftCommands);
+  protected readonly customizations = signal<{ element: string; label: string; kind: string }[]>([]);
   protected readonly revisions = signal<Revision[]>([]);
   protected readonly modules = signal<ModuleRow[]>([]);
   protected readonly report = signal<UpgradeReport | null>(null);
@@ -194,9 +218,24 @@ export class ConfigurationPage {
       const [revisions, modules] = await Promise.all([this.api.get<Revision[]>('/api/config/revisions'), this.api.get<ModuleRow[]>('/api/modules')]);
       this.revisions.set(revisions);
       this.modules.set(modules);
+      if (this.session.canCustomize()) this.customizations.set(await this.api.get('/api/config/customizations'));
     } catch (e) {
       this.toasts.show(e instanceof ApiError ? e.message : 'Could not load configuration.', 'warning');
     }
+  }
+
+  protected async reset(c: { element: string; label: string; kind: string }): Promise<void> {
+    await this.guard(async () => {
+      const draft = await this.commands.apply({ op: 'element.reset', target: c.element });
+      if (!draft) return;
+      const errors = draft.diagnostics.filter((d) => d.severity === 'error');
+      this.toasts.show(
+        errors.length ? `Reset added to your draft. ${errors[0].message} Fix that before publishing.` : `Reset of ${c.label} added to your draft. Open the AI builder to review and publish.`,
+        errors.length ? 'warning' : 'success',
+        { label: 'Open builder', run: () => void this.builder.start() },
+      );
+      this.customizations.set(await this.api.get('/api/config/customizations'));
+    });
   }
 
   protected async plan(m: ModuleRow): Promise<void> {

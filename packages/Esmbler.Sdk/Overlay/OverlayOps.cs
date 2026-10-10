@@ -25,6 +25,7 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(MoveNode), "node.move")]
 [JsonDerivedType(typeof(RemoveNode), "node.remove")]
 [JsonDerivedType(typeof(SetFieldAccess), "permission.field_access")]
+[JsonDerivedType(typeof(ResetElement), "element.reset")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -292,4 +293,23 @@ public sealed class SetFieldAccess : OverlayOp
     public override string Describe() => $"Set {Entity}/{Field} to {Access} for {PermissionSet}";
 
     public override IEnumerable<string> Targets() => [PermissionSet, $"{Entity}/{Field}"];
+}
+
+/// <summary>
+/// Resets one element to the default modules' definition (REQ-CFG-011): every earlier overlay operation that targets
+/// it (or its children, such as a choice list's options) stops applying. Elements the tenant added disappear, so
+/// rules or page nodes that still use them show up as validation errors in the draft's impact preview.
+/// </summary>
+public sealed class ResetElement : OverlayOp
+{
+    /// <summary>Element key as listed in "customized", e.g. core.tickets.ticket/category or a node ID.</summary>
+    public required string Target { get; set; }
+
+    public override string Describe() => $"Reset {Target} to default";
+
+    public override IEnumerable<string> Targets() => [Target];
+
+    /// <summary>Whether <paramref name="op"/> is undone by this reset.</summary>
+    public bool Covers(OverlayOp op) =>
+        op is not ResetElement && op.Targets().Any(t => t == Target || t.StartsWith(Target + "/", StringComparison.Ordinal));
 }

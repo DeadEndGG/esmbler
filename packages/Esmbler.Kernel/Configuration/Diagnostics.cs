@@ -33,6 +33,9 @@ public static class OpStatus
 
     /// <summary>The operation could not be applied (missing target, namespace violation, ...).</summary>
     public const string Failed = "failed";
+
+    /// <summary>A later element.reset undid the operation; it no longer applies.</summary>
+    public const string Reset = "reset";
 }
 
 public sealed record OpOutcome(int Index, string Op, string Summary, string Status, IReadOnlyList<Diagnostic> Diagnostics);

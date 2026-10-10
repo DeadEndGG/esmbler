@@ -14,6 +14,8 @@ namespace Esmbler.Kernel.Infrastructure.Configuration;
 
 public sealed record DraftViewSpec(ViewClientSpec Spec, Guid? DraftId, int DraftVersion, IReadOnlyList<string> ChangedTargets, IReadOnlyList<DraftStep> Steps, bool IsDraft);
 
+public sealed record CustomizationView(string Element, string Label, string Kind);
+
 public sealed record SimulationResult(FieldStatesView States, IReadOnlyList<string> MatchedRules, IReadOnlyList<FieldError> Violations, IReadOnlyList<string> Explanations);
 
 /// <summary>
@@ -136,6 +138,42 @@ public sealed class PreviewService(Database database, ConfigStore configs, Draft
             var published = compiled?.Published.Revision ?? (await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct)).Revision;
             return (config, perms, draft?.Version, published);
         }, ct);
+
+    /// <summary>Elements this workspace customized, with plain labels (REQ-CFG-011). Builders only.</summary>
+    public async Task<IReadOnlyList<CustomizationView>> CustomizationsAsync(RequestContext ctx, CancellationToken ct)
+    {
+        var (config, _, _, _) = await WorkingConfigAsync(ctx, ct);
+        return config.Customized.Select(key => new CustomizationView(key, Describe(config, key), config.Provenance.GetValueOrDefault(key, Composer.TenantLayer) == Composer.TenantLayer ? "added" : "changed")).ToList();
+    }
+
+    private static string Describe(EffectiveConfig config, string key)
+    {
+        if (key.Split('/') is [var entityId, var fieldKey] && config.FindEntity(entityId) is { } entity)
+        {
+            return entity.FindField(fieldKey) is { } f ? $"{entity.Label} field \"{f.Label}\"" : $"{entity.Label} field {fieldKey}";
+        }
+
+        if (config.Rules.Find(r => r.Id == key) is { } rule)
+        {
+            return $"Rule \"{rule.Description ?? rule.Id}\"";
+        }
+
+        if (config.FindChoiceList(key) is { } list)
+        {
+            return $"Choice list \"{list.Label}\"";
+        }
+
+        foreach (var view in config.Views)
+        {
+            if (view.Layout.Find(key) is { } node)
+            {
+                var title = node.StringProp("title") ?? node.StringProp("text") ?? node.StringProp("field");
+                return $"{view.Label}: {node.Type.Split('.').Last().Replace('_', ' ')}{(title is null ? string.Empty : $" \"{title}\"")}";
+            }
+        }
+
+        return key;
+    }
 
     private async Task<(EffectiveConfig Config, EffectivePermissions Perms, DraftRow? Draft, CompiledDraft? Compiled)> ResolveAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
     {

@@ -105,6 +105,11 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts)
             return await ApplyAllAsync(ctx, [new UpdateField { Entity = entity, Field = field, Set = patch }], expected_version);
         });
 
+    [McpServerTool(Name = "reset_to_default"), Description("Reset one customized element (from get_customizations) to the default module's definition. Elements this workspace added are removed; validate_draft then shows anything that still depends on them.")]
+    public Task<CallToolResult> ResetToDefault([Description("Element key from get_customizations, e.g. core.tickets.ticket/category.")] string element, int expected_version) =>
+        runner.RunAsync("reset_to_default", AgentScopes.ConfigEdit, element, async ctx =>
+            await ApplyAllAsync(ctx, [new ResetElement { Target = element }], expected_version));
+
     [McpServerTool(Name = "hide_field"), Description("Hide (or show again) a field everywhere. Data is kept. The title field and workflow state field cannot be hidden.")]
     public Task<CallToolResult> HideField(string entity, string field, int expected_version, bool hidden = true) =>
         runner.RunAsync("hide_field", AgentScopes.ConfigEdit, $"{entity}/{field}", async ctx =>

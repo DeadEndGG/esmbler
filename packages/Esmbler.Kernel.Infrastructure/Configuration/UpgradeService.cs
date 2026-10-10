@@ -217,7 +217,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         }
 
         var overlay = candidate.Composition.Outcomes;
-        return new UpgradeReport(moduleId, from.Version, toVersion, candidate.Succeeded && overlay.All(o => o.Status is OpStatus.Applied or OpStatus.Redundant), overlay, errors, affected, ConfigDiff.Compare(oldBase, newBase), migrations);
+        return new UpgradeReport(moduleId, from.Version, toVersion, candidate.Succeeded && overlay.All(o => o.Status is OpStatus.Applied or OpStatus.Redundant or OpStatus.Reset), overlay, errors, affected, ConfigDiff.Compare(oldBase, newBase), migrations);
     }
 
     private CompileResult Candidate(ActiveArtifact published, string moduleId, string toVersion) =>

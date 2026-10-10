@@ -31,9 +31,16 @@ public static class Composer
     {
         var config = ComposeBase(modules);
         var outcomes = new List<OpOutcome>(ops.Count);
+        var resetBy = ResetIndexes(ops);
         for (var i = 0; i < ops.Count; i++)
         {
-            var ctx = new OpContext(config, i);
+            if (resetBy[i] is not null)
+            {
+                outcomes.Add(new OpOutcome(i, OpName(ops[i]), ops[i].Describe(), OpStatus.Reset, []));
+                continue;
+            }
+
+            var ctx = new OpContext(config, i) { ResetSomething = Array.IndexOf(resetBy, i) >= 0 };
             try
             {
                 Apply(ctx, ops[i]);
@@ -48,6 +55,29 @@ public static class Composer
 
         config.Customized.Sort(StringComparer.Ordinal);
         return new CompositionResult { Config = config, Outcomes = outcomes };
+    }
+
+    /// <summary>For each operation, the index of a later element.reset that undoes it (null when it applies).</summary>
+    private static int?[] ResetIndexes(IReadOnlyList<OverlayOp> ops)
+    {
+        var result = new int?[ops.Count];
+        for (var i = 0; i < ops.Count; i++)
+        {
+            if (ops[i] is not ResetElement reset)
+            {
+                continue;
+            }
+
+            for (var j = 0; j < i; j++)
+            {
+                if (result[j] is null && reset.Covers(ops[j]))
+                {
+                    result[j] = i;
+                }
+            }
+        }
+
+        return result;
     }
 
     public static EffectiveConfig ComposeBase(IReadOnlyList<ModuleSpec> modules)
@@ -205,6 +235,13 @@ public static class Composer
                 break;
             case RemoveNode rn:
                 ApplyRemoveNode(ctx, rn);
+                break;
+            case ResetElement re:
+                if (!ctx.ResetSomething)
+                {
+                    ctx.Redundant($"'{re.Target}' has no customizations to reset.", re.Target);
+                }
+
                 break;
             case SetFieldAccess sfa:
                 ApplySetFieldAccess(ctx, sfa);
@@ -627,6 +664,9 @@ public static class Composer
         public EffectiveConfig Config { get; } = config;
 
         public string Status { get; private set; } = OpStatus.Applied;
+
+        /// <summary>For element.reset: whether it undid at least one earlier operation.</summary>
+        public bool ResetSomething { get; init; }
 
         public IReadOnlyList<Diagnostic> Diagnostics => _diagnostics;
 

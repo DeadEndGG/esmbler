@@ -122,6 +122,14 @@ public sealed partial class ScriptedPlanner : IPlanner
             return await AddOptionAsync(s, m);
         }
 
+        if ((m = ResetPattern().Match(clause)).Success)
+        {
+            var field = await s.ResolveFieldAsync(m.Groups["field"].Value);
+            return field is null
+                ? await s.UnknownFieldAsync(m.Groups["field"].Value)
+                : await s.BuildAsync("reset_to_default", new JsonObject { ["element"] = $"{s.Entity}/{field.Key}" }, $"Reset {field.Label} to the default definition. Validate the draft to see anything that depended on the customization.", invalidates: true);
+        }
+
         if (UndoPattern().IsMatch(clause))
         {
             return await UndoAsync(s);
@@ -951,6 +959,9 @@ public sealed partial class ScriptedPlanner : IPlanner
 
     [GeneratedRegex(@"^add\s+(?:an?\s+|the\s+)?(?:options?|choices?|values?)\s+(?<opt>.+?)\s+to\s+(?:the\s+)?(?<field>.+?)(?:\s+(?:field|list|dropdown))?$", RegexOptions.IgnoreCase)]
     private static partial Regex AddOptionPattern();
+
+    [GeneratedRegex(@"^(?:please\s+)?(?:reset|revert|restore)\s+(?:the\s+)?(?<field>.+?)(?:\s+field)?\s+(?:back\s+)?to\s+(?:the\s+)?(?:default|original|standard)(?:\s+(?:definition|settings|version))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex ResetPattern();
 
     [GeneratedRegex(@"^(?:please\s+)?undo(?:\s+(?:that|it|the last (?:change|step)|your last change))?$", RegexOptions.IgnoreCase)]
     private static partial Regex UndoPattern();

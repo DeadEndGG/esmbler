@@ -51,6 +51,7 @@ public static class BuilderEndpoints
         c.MapGet("/publish-requests/pending", async (ClaimsPrincipal u, PublishService publisher, CancellationToken ct) =>
             await publisher.PendingAsync(Ctx(u), ct) is { } p ? Results.Ok(p) : Results.NoContent());
         c.MapPost("/publish", (PublishRequest body, ClaimsPrincipal u, PublishService publisher, CancellationToken ct) => publisher.PublishAsync(Ctx(u), body.ArtifactHash, body.ExpectedRevision, ct));
+        c.MapGet("/customizations", (ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.CustomizationsAsync(Ctx(u), ct));
         c.MapGet("/revisions", (ClaimsPrincipal u, PublishService publisher, CancellationToken ct) => publisher.RevisionsAsync(Ctx(u), ct));
         c.MapPost("/rollback", (RollbackRequest body, ClaimsPrincipal u, PublishService publisher, CancellationToken ct) => publisher.RollbackAsync(Ctx(u), body.ToRevision, body.ExpectedRevision, ct));
 

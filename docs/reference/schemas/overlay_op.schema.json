@@ -866,6 +866,19 @@
         "field",
         "access"
       ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "element.reset"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ]
     }
   ]
 }

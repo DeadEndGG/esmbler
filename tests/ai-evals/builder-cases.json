@@ -186,6 +186,20 @@
           "kind": "noChanges"
         }
       ]
+    },
+    {
+      "id": "reset-to-default",
+      "tags": [
+        "scripted",
+        "fields"
+      ],
+      "prompt": "Rename Category to Request type. Reset the category field to default",
+      "checks": [
+        {
+          "kind": "field",
+          "label": "Category"
+        }
+      ]
     }
   ]
 }

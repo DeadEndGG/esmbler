@@ -57,6 +57,39 @@ public class OverlayTests
     }
 
     [Fact]
+    public void Reset_restores_the_default_definition_of_a_customized_base_field()
+    {
+        var relabel = new UpdateField { Entity = Ticket, Field = "category", Set = new FieldPatch { Label = "Request type" } };
+        var customized = Compile("1.0.0", relabel);
+        Assert.Equal("Request type", customized.Config.FindEntity(Ticket)!.FindField("category")!.Label);
+
+        var reset = Compile("1.0.0", relabel, new ResetElement { Target = $"{Ticket}/category" });
+        Assert.True(reset.Succeeded);
+        Assert.Equal("Category", reset.Config.FindEntity(Ticket)!.FindField("category")!.Label);
+        Assert.DoesNotContain($"{Ticket}/category", reset.Config.Customized);
+        Assert.Equal(OpStatus.Reset, reset.Composition.Outcomes[0].Status);
+    }
+
+    [Fact]
+    public void Resetting_a_tenant_field_shows_its_dependents_as_impact()
+    {
+        var ops = CanonicalCustomization().Append(new ResetElement { Target = $"{Ticket}/tenant__justification" }).ToArray();
+        var result = Compile("1.0.0", ops);
+        Assert.Null(result.Config.FindEntity(Ticket)!.FindField("tenant__justification"));
+        // The rule that requires the field still references it: the draft cannot be published until it is handled too.
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, e => e.Message.Contains("tenant__justification", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Resetting_an_element_without_customizations_is_redundant()
+    {
+        var result = Compile("1.0.0", new ResetElement { Target = $"{Ticket}/title" });
+        Assert.True(result.Succeeded);
+        Assert.Equal(OpStatus.Redundant, result.Composition.Outcomes[0].Status);
+    }
+
+    [Fact]
     public void Tenant_field_without_namespace_is_rejected_with_suggestion()
     {
         var result = Compile("1.0.0", new AddField { Entity = Ticket, Field = new FieldSpec { Key = "vendor", Type = "short_text", Label = "Vendor name" } });
