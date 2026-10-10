@@ -194,7 +194,7 @@ export class RecordPage {
     this.ctx.saving.update((s) => new Set([...s, ...keys]));
     this.ctx.record.set({ ...record, data: { ...record.data, ...changes } });
     try {
-      const saved = await this.api.patch<RecordView>(`/api/records/${record.entity}/${record.id}`, { revision: record.revision, changes, configRevision: record.configRevision });
+      const saved = await this.api.patch<RecordView>(`/api/records/${record.entity}/${record.id}`, { revision: record.revision, changes, configRevision: this.ctx.spec()?.configRevision ?? record.configRevision });
       this.ctx.record.set(saved);
       this.ctx.errors.set({});
     } catch (e) {
@@ -209,7 +209,7 @@ export class RecordPage {
     const record = this.ctx.record();
     if (!record || this.ctx.mode() === 'draft') return;
     try {
-      const saved = await this.api.post<RecordView>(`/api/records/${record.entity}/${record.id}/transitions/${id}`, { revision: record.revision, changes: this.ctx.draftValues(), configRevision: record.configRevision });
+      const saved = await this.api.post<RecordView>(`/api/records/${record.entity}/${record.id}/transitions/${id}`, { revision: record.revision, changes: this.ctx.draftValues(), configRevision: this.ctx.spec()?.configRevision ?? record.configRevision });
       this.ctx.record.set(saved);
       this.ctx.draftValues.set({});
       this.ctx.errors.set({});
@@ -228,7 +228,7 @@ export class RecordPage {
     if (e.problem.errors?.length) {
       this.ctx.errors.set(Object.fromEntries(e.problem.errors.map((x) => [x.field, x.message])));
       this.toasts.show(e.problem.errors.length === 1 ? e.problem.errors[0].message : `${e.problem.errors.length} fields need attention.`, 'warning');
-    } else if (e.code === 'revision_conflict' || e.code === 'config_conflict') {
+    } else if (e.code === 'record_conflict' || e.code === 'config_conflict') {
       this.toasts.show('This record changed since you opened it. Showing the latest version.', 'warning');
       this.builder.revision.update((r) => r + 1);
     } else {

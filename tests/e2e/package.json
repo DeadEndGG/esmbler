@@ -1,0 +1,11 @@
+{
+  "name": "esmbler-e2e",
+  "private": true,
+  "description": "Playwright acceptance suite. Runs against the docker compose stack (web on :8080).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}
