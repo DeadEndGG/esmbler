@@ -34,8 +34,8 @@ The master spec ("Architecture model") asks for a modular monolith with enforced
 | `packages/Esmbler.Expressions` | CEL-subset language ([ADR 0009](0009-rule-expression-language.md)) | Yes |
 | `packages/Esmbler.Sdk` | Specs, overlay ops, element registry, module API, event envelope | Yes (the public SDK) |
 | `packages/Esmbler.Kernel` | Configuration compiler, request context, record write pipeline (`RecordWriteEngine`, `IRecordWriteHook`), PDP, ports (`IRelationshipGraph`); no database or network | No |
-| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, record, draft, publish, upgrade and preview services, outbox dispatcher, job runner, notification consumer, audit writer | No |
-| `packages/Esmbler.Platform` | Write hooks: workflow (order 100), assignment (200), rules (300) | No |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, record, draft, publish, upgrade and preview services, workflow versions, outbox dispatcher, job runner, event consumers (notifications, fulfillment, approvals), approval service, audit writer | No |
+| `packages/Esmbler.Platform` | Write hooks: workflow (order 100), requests (150), assignment (200), rules (300) | No |
 | `packages/Esmbler.Assistant` | AI builder planners (`ScriptedPlanner`, `ClaudePlanner`) and the MCP client they act through ([ADR 0013](0013-ai-assistant-model-adapter.md)); no kernel access | No |
 | `packages/Esmbler.Hosting` | Composition root shared by hosts | No |
 | `modules/<name>/Esmbler.Modules.<Name>` (+ `.Contracts`) | Business module; declarative releases in `Releases/<version>/module.json` | Contracts only |
@@ -84,8 +84,10 @@ Implemented in [`tests/Esmbler.ArchitectureTests/BoundaryTests.cs`](../../tests/
 | `Kernel_does_not_depend_on_platform_modules_infrastructure_or_hosts` | Kernel has no dependency on Platform, Modules, Infrastructure, Hosting, hosts, `Npgsql`, `Microsoft.EntityFrameworkCore`, `OpenFga` |
 | `Platform_does_not_depend_on_modules_or_infrastructure` | Platform has no dependency on Modules, Infrastructure, Hosting, `Npgsql`, `OpenFga` |
 | `Assistant_changes_workspaces_only_through_mcp` | `Esmbler.Assistant` has no dependency on Kernel, Infrastructure, Platform, Hosting, hosts, Modules, Sdk, `Npgsql`, EF Core or `OpenFga`: it can act only through MCP tools |
+| `Only_the_assistant_calls_the_model_provider` | Only `Esmbler.Assistant` references the model provider SDK ([ADR 0013](0013-ai-assistant-model-adapter.md)) |
+| `Platform_code_does_not_hard_code_business_module_ids` | Kernel, Kernel.Infrastructure, Platform and the API, MCP and worker hosts contain no Tickets ID literals outside comments and description examples; module IDs come from specs, module Contracts, or `Esmbler.Hosting` |
 
-Not built yet: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel, Platform and Assistant are already covered above); only `Esmbler.Assistant` references `Anthropic` ([ADR 0013](0013-ai-assistant-model-adapter.md)); `apps/Esmbler.Mcp` exposes no tool parameter named `tenant` or `environment` ([ADR 0007](0007-mcp-server-design.md)).
+Not built yet: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel, Platform and Assistant are already covered above). That MCP tools take no tenant, environment or principal parameter ([ADR 0007](0007-mcp-server-design.md)) is checked by the integration test `Mcp.McpServerTests.No_tool_takes_tenant_environment_or_principal_arguments`.
 
 ### Data boundaries
 

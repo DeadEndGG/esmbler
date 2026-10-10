@@ -111,9 +111,9 @@ public class BoundaryTests
     [Fact]
     public void Platform_code_does_not_hard_code_business_module_ids()
     {
-        // ADR 0012: the kernel, platform services and MCP server know no business module. Module IDs belong in specs,
+        // ADR 0012: the kernel, platform services and hosts (API, MCP, worker) know no business module. Module IDs belong in specs,
         // module Contracts, or the composition root (Esmbler.Hosting). Comments and "e.g." text inside descriptions are fine.
-        string[] roots = ["packages/Esmbler.Kernel", "packages/Esmbler.Kernel.Infrastructure", "packages/Esmbler.Platform", "apps/Esmbler.Mcp"];
+        string[] roots = ["packages/Esmbler.Kernel", "packages/Esmbler.Kernel.Infrastructure", "packages/Esmbler.Platform", "apps/Esmbler.Mcp", "apps/Esmbler.Api", "apps/Esmbler.Worker"];
         var offenders = new List<string>();
         foreach (var root in roots)
         {
