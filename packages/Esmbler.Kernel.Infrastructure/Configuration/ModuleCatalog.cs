@@ -24,4 +24,20 @@ public sealed class ModuleCatalog
         ?? throw new KernelException("release_not_found", $"Module '{moduleId}' has no release {version}.", 404);
 
     public ModuleSpec Latest(string moduleId) => Get(moduleId).Releases[^1];
+
+    /// <summary>
+    /// Data migrations an upgrade from <paramref name="fromVersion"/> to <paramref name="toVersion"/> must run: those of
+    /// every release after the installed one, up to and including the target, in release order. Skipping a version never
+    /// skips its migrations.
+    /// </summary>
+    public IReadOnlyList<MigrationSpec> MigrationsBetween(string moduleId, string fromVersion, string toVersion)
+    {
+        var from = SemVer.Parse(fromVersion);
+        var to = SemVer.Parse(toVersion);
+        return Get(moduleId).Releases
+            .Where(r => SemVer.Parse(r.Version) > from && SemVer.Parse(r.Version) <= to)
+            .OrderBy(r => SemVer.Parse(r.Version))
+            .SelectMany(r => r.Migrations)
+            .ToList();
+    }
 }

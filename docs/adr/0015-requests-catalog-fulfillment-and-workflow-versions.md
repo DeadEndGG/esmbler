@@ -46,7 +46,7 @@ How are catalog items, variables, tasks and workflow versions modeled, and which
 - A task template (`FulfillmentTaskSpec`) has an ID unique within its item, a title, an optional description and assignment group key, `dependsOn` (other task IDs; acyclic), and an optional `when` condition over `variables` and `record`. Tasks whose condition is false are not created; dependencies on them count as satisfied.
 - `FulfillmentConsumer` (an outbox event consumer, so it inherits inbox deduplication and per-record ordering) reacts to request and task events:
   - **Start:** when a request enters a start state, create one task per applicable template, keyed by `(request, task key)`. Existing keys are skipped, so a replayed or duplicated event never creates a second task. Tasks start `blocked`; templates with no unmet dependencies are released at once.
-  - **Progress:** when a task reaches a `resolved`, `closed` or `cancelled` category state, release blocked siblings whose dependencies are all finished.
+  - **Progress:** when a task reaches a `resolved`, `closed` or `cancelled` category state, release blocked siblings whose dependencies are all finished. A skipped (cancelled) dependency counts as finished, so the remaining work can go on (ASM-041).
   - **Completion:** when every task is finished, fire the request's completion transition and set the outcome to `complete`, or `partial` when any task was cancelled (skipped). If every task was skipped, the outcome is `partial` too; the request owner decides what happens next.
   - **Rejection and cancellation:** when a request enters a `cancelled` category state, cancel its open and blocked tasks.
 - System writes use the record engine with a system actor (`WriteOperations.System` for field sets, a system transition for state changes) and expected revisions; a stale revision makes the consumer retry. A transition that is no longer valid (for example a second "complete" after the first won the race) is a no-op, so concurrent completions converge.
@@ -88,7 +88,7 @@ The MCP server exposes them as `add_catalog_item`, `update_catalog_item`, `add_w
 - Good: fulfillment is idempotent by construction (`(request, task key)`), so duplicate events and retries are safe.
 - Bad: fulfillment is eventually consistent; tasks appear a moment after "Start fulfillment" (typically well under a second with the worker's polling).
 - Bad: definitions of old workflow versions are kept as long as any record pins them.
-- Neutral: rollback of a configuration that removed a workflow version is blocked while records pin a version the target revision cannot run (existing rollback compatibility checks extend to workflow pins).
+- Neutral: rolling back re-registers the restored definitions by content, so they get their earlier version number back; records keep the version they are pinned to, because every version's definition is stored.
 
 ## Pros and cons of the options
 

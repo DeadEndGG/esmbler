@@ -22,7 +22,14 @@ public sealed record DraftState(
     IReadOnlyList<Diagnostic> Diagnostics,
     IReadOnlyList<ConfigChange> Changes,
     string? ArtifactHash,
-    bool PermissionImpact);
+    bool PermissionImpact,
+    IReadOnlyList<WorkflowImpact>? WorkflowImpact = null);
+
+/// <summary>
+/// What publishing a changed workflow does to its running instances (REQ-MIG-003): how many run now, how many the
+/// policy moves, and how many stay pinned to their version (with the states that have no target).
+/// </summary>
+public sealed record WorkflowImpact(string Workflow, string Entity, string EntityLabel, string Policy, int Running, int Moving, int StayingPinned, IReadOnlyList<string> UnmappedStates);
 
 public sealed record ApplyResult(int Version, int Seq, string Summary, IReadOnlyList<string> Targets, IReadOnlyList<Diagnostic> Warnings, DraftState Draft);
 
@@ -227,7 +234,58 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             compiled.Result.Diagnostics.ToList(),
             ConfigDiff.Compare(compiled.Published.Config, compiled.Result.Config),
             compiled.Result.Manifest?.ContentHash,
-            compiled.Result.Manifest?.PermissionImpact.Changed ?? false);
+            compiled.Result.Manifest?.PermissionImpact.Changed ?? false,
+            await WorkflowImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
+    }
+
+    private sealed record StateCount(string? State, int Count);
+
+    private static async Task<IReadOnlyList<WorkflowImpact>> WorkflowImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)
+    {
+        var result = new List<WorkflowImpact>();
+        foreach (var wf in draft.Workflows)
+        {
+            var old = published.Workflows.Find(w => w.Id == wf.Id);
+            if (old is null || WorkflowVersions.Hash(old) == WorkflowVersions.Hash(wf))
+            {
+                continue;
+            }
+
+            var counts = await db.Database.SqlQuery<StateCount>(
+                $"SELECT data->>{wf.StateField} AS \"State\", count(*)::int AS \"Count\" FROM kernel.records WHERE entity_id = {wf.Entity} AND deleted_at IS NULL GROUP BY 1").ToListAsync(ct);
+            var running = counts.Where(c => old.FindState(c.State ?? old.InitialState)?.Category is not (StateCategories.Resolved or StateCategories.Closed or StateCategories.Cancelled)).ToList();
+            var total = running.Sum(c => c.Count);
+            var policy = wf.ActiveInstances;
+            var moving = 0;
+            var unmapped = new List<string>();
+            foreach (var c in running)
+            {
+                var state = c.State ?? old.InitialState;
+                var target = policy.Policy switch
+                {
+                    ActiveInstancePolicies.Cancel => policy.CancelState,
+                    ActiveInstancePolicies.Migrate => policy.StateMap.TryGetValue(state, out var mapped) ? mapped : wf.FindState(state) is not null ? state : null,
+                    _ => null,
+                };
+                if (policy.Policy == ActiveInstancePolicies.Pin)
+                {
+                    continue;
+                }
+
+                if (target is not null && wf.FindState(target) is not null)
+                {
+                    moving += c.Count;
+                }
+                else
+                {
+                    unmapped.Add(state);
+                }
+            }
+
+            result.Add(new WorkflowImpact(wf.Id, wf.Entity, draft.FindEntity(wf.Entity)?.PluralLabel ?? wf.Entity, policy.Policy, total, moving, total - moving, unmapped));
+        }
+
+        return result;
     }
 
     private async Task<(ActiveArtifact Published, EffectivePermissions Perms)> RequireEditAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)

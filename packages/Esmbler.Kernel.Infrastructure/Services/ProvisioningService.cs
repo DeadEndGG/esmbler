@@ -194,7 +194,9 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
         const string Admin = PlatformModule.TenantAdminRole;
         const string Agent = "core.tickets.agent";
         const string Requester = "core.tickets.requester";
+        // Acme starts on Tickets 1.0.0 to demonstrate upgrades; Globex runs the newest release (service requests).
         (string, string)[] tickets = [("core.tickets", "1.0.0")];
+        (string, string)[] latest = [("core.tickets", catalog.Latest("core.tickets").Version)];
         await ProvisionAsync(new TenantSeed(
             "acme",
             "Acme Corp",
@@ -219,7 +221,7 @@ public sealed class ProvisioningService(Database database, IRelationshipGraph gr
                 new UserSeed("riley", "quinn@globex.example", "Quinn Patel", DemoPassword, [Requester], []),
             ],
             [new GroupSeed("service_desk", "Service Desk", [Agent]), new GroupSeed("network", "Network", [Agent])],
-            tickets), ct);
+            latest), ct);
         return true;
     }
 }

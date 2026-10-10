@@ -3400,7 +3400,8 @@
         "contact_email": "dana@example.com",
         "assignment_group": "@group:service_desk",
         "assignee": "@user:alex",
-        "estimated_effort": "about 3h"
+        "estimated_effort": "about 3h",
+        "impact": "high"
       },
       "activity": [
         {

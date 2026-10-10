@@ -277,6 +277,29 @@ public sealed class RecordRow
     public Guid UpdatedBy { get; set; }
 
     public DateTimeOffset? DeletedAt { get; set; }
+
+    /// <summary>Workflow definition version the record runs on (REQ-MIG-003); null only before its first pin.</summary>
+    public int? WorkflowVersion { get; set; }
+}
+
+/// <summary>An immutable, registered version of a workflow definition (ADR 0015).</summary>
+public sealed class WorkflowDefinitionRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public string WorkflowId { get; set; } = "";
+
+    public int Version { get; set; }
+
+    public string ContentHash { get; set; } = "";
+
+    public string Definition { get; set; } = "{}";
+
+    public int ConfigRevision { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public sealed class RecordSequenceRow

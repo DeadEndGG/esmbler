@@ -61,6 +61,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<RefreshTokenRow> RefreshTokens => Set<RefreshTokenRow>();
 
+    public DbSet<WorkflowDefinitionRow> WorkflowDefinitions => Set<WorkflowDefinitionRow>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.HasDefaultSchema("kernel");
@@ -78,6 +80,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<DraftCommandRow>().ToTable("draft_commands").HasKey(x => new { x.TenantId, x.EnvironmentId, x.DraftId, x.Seq });
         b.Entity<PublishRequestRow>().ToTable("publish_requests").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RecordRow>().ToTable("records").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<WorkflowDefinitionRow>().ToTable("workflow_definitions").HasKey(x => new { x.TenantId, x.EnvironmentId, x.WorkflowId, x.Version });
         b.Entity<RecordSequenceRow>().ToTable("record_sequences").HasKey(x => new { x.TenantId, x.EnvironmentId, x.EntityId });
         b.Entity<ActivityRow>().ToTable("activity").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<IdempotencyRow>().ToTable("idempotency_keys").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Key });
@@ -92,7 +95,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<NotificationRow>().ToTable("notifications").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
-        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report"];
+        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition"];
         foreach (var entity in b.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

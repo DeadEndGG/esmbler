@@ -152,7 +152,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
             var published = await configs.GetActiveAsync(db, tenantId, environmentId, ct);
             var result = Candidate(published, u.ModuleId, u.ToVersion);
             var r = await db.MigrationRuns.Where(x => x.UpgradeId == upgradeId).ToListAsync(ct);
-            return (u, r, result, catalog.Release(u.ModuleId, u.ToVersion).Migrations);
+            return (u, r, result, catalog.MigrationsBetween(u.ModuleId, u.FromVersion, u.ToVersion));
         }, ct);
 
         if (row.Status != "migrating")
@@ -216,7 +216,7 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         var affected = removed.SelectMany(graph.ImpactOf).Concat(errors.Select(e => e.Target).OfType<string>())
             .Where(k => Sdk.Overlay.Namespaces.IsTenantOwned(k) || published.Config.Customized.Contains(k)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         var migrations = new List<MigrationPlan>();
-        foreach (var m in target.Migrations)
+        foreach (var m in catalog.MigrationsBetween(moduleId, from.Version, toVersion))
         {
             var affectedRecords = await db.Records.CountAsync(r => r.EntityId == m.Entity && r.DeletedAt == null, ct);
             migrations.Add(new MigrationPlan(m.Id, m.Kind, m.Description ?? m.Id, affectedRecords));

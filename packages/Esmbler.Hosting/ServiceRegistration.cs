@@ -56,6 +56,7 @@ public static class ServiceRegistration
         services.AddSingleton<IRichTextSanitizer, RichTextSanitizer>();
         services.AddSingleton<FieldNormalizer>();
         services.AddSingleton<IRecordWriteHook, WorkflowHook>();
+        services.AddSingleton<IRecordWriteHook, Platform.Requests.RequestHook>();
         services.AddSingleton<IRecordWriteHook, AssignmentHook>();
         services.AddSingleton<IRecordWriteHook, RulesHook>();
         services.AddSingleton<RecordWriteEngine>();
@@ -66,6 +67,7 @@ public static class ServiceRegistration
         services.AddSingleton<AccessExplainer>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.RecordStateProjection>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.NotificationConsumer>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.FulfillmentConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
         services.AddSingleton<DraftService>();
         services.TryAddSingleton<IActivationHealthCheck, ActivationHealthCheck>();
@@ -74,8 +76,10 @@ public static class ServiceRegistration
         services.AddSingleton<IMigrationFaultInjector>(_ => new ConfiguredFaultInjector(configuration["Esmbler:FaultInjection:Migration"]));
         services.AddSingleton<MigrationExecutor>();
         services.AddSingleton<UpgradeService>();
+        services.AddSingleton<Kernel.Infrastructure.Configuration.WorkflowVersions>();
         services.AddSingleton<Kernel.Infrastructure.Events.JobRunner>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Events.UpgradeJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Events.WorkflowMigrationJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.OperationsService>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();

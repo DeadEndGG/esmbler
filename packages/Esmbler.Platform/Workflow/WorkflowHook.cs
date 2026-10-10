@@ -17,7 +17,7 @@ public sealed class WorkflowHook : IRecordWriteHook
 
     public ValueTask ApplyAsync(RecordWriteContext ctx, CancellationToken cancellationToken)
     {
-        var wf = ctx.Config.WorkflowFor(ctx.Entity.Id);
+        var wf = ctx.EffectiveWorkflow;
         if (wf is null)
         {
             if (ctx.Operation == WriteOperations.Transition)
@@ -45,13 +45,19 @@ public sealed class WorkflowHook : IRecordWriteHook
     public static IEnumerable<WorkflowTransition> Available(WorkflowSpec wf, JsonObject data, IReadOnlyCollection<string> roles)
     {
         var state = data[wf.StateField]?.GetValue<string>() ?? wf.InitialState;
-        return wf.Transitions.Where(t => (t.From.Contains(state) || t.From.Contains("*")) && (t.Roles.Count == 0 || t.Roles.Exists(roles.Contains)));
+        return wf.Transitions.Where(t => t.Enabled && !t.System && (t.From.Contains(state) || t.From.Contains("*")) && (t.Roles.Count == 0 || t.Roles.Exists(roles.Contains)));
     }
 
     private static void Transition(RecordWriteContext ctx, WorkflowSpec wf)
     {
-        var transition = wf.Transitions.Find(t => t.Id == ctx.TransitionId);
+        var transition = wf.Transitions.Find(t => t.Id == ctx.TransitionId && (!t.System || ctx.SystemActor));
         var current = ctx.Prior?[wf.StateField]?.GetValue<string>() ?? wf.InitialState;
+        if (transition is { Enabled: false })
+        {
+            ctx.Errors.Add(new FieldError(wf.StateField, "transition_disabled", $"'{transition.Label}' is turned off for this workspace."));
+            return;
+        }
+
         if (transition is null)
         {
             var available = Available(wf, ctx.Prior ?? [], ctx.Permissions.Roles).Select(t => t.Id).ToList();
@@ -61,12 +67,12 @@ public sealed class WorkflowHook : IRecordWriteHook
 
         if (!transition.From.Contains(current) && !transition.From.Contains("*"))
         {
-            var label = ctx.Config.FindChoiceList(ctx.Entity.FindField(wf.StateField)!.ChoiceList!)?.Find(current)?.Label ?? current;
+            var label = ctx.Entity.FindField(wf.StateField)?.ChoiceList is { } listId ? ctx.Config.FindChoiceList(listId)?.Find(current)?.Label ?? current : current;
             ctx.Errors.Add(new FieldError(wf.StateField, "invalid_transition", $"'{transition.Label}' is not available while the {ctx.Entity.Label.ToLowerInvariant()} is {label}."));
             return;
         }
 
-        if (transition.Roles.Count > 0 && !transition.Roles.Exists(ctx.Permissions.Roles.Contains))
+        if (!ctx.SystemActor && transition.Roles.Count > 0 && !transition.Roles.Exists(ctx.Permissions.Roles.Contains))
         {
             throw KernelException.Forbidden($"You cannot '{transition.Label}' this {ctx.Entity.Label.ToLowerInvariant()}.");
         }

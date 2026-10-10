@@ -34,6 +34,32 @@ public class UpgradeTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Skipping_a_release_still_runs_its_migrations_and_adds_the_catalog()
+    {
+        var t = await f.NewTenantAsync("skip");
+        var admin = f.As(t, "admin");
+        var records = f.Get<RecordService>();
+        await records.CreateAsync(f.As(t, "agent"), Ticket, new JsonObject { ["title"] = "Legacy effort", ["requester"] = t.Users["dana"].ToString(), ["estimated_effort"] = "2.5" }, null, null, default);
+
+        var upgrades = f.Get<UpgradeService>();
+        var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.2.0", default);
+        Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
+        Assert.Equal(["backfill_impact", "convert_effort"], plan.Migrations.Select(m => m.Id));
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.request" && c.Change == "added");
+
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.2.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        var done = await upgrades.GetAsync(admin, started.Id, default);
+        Assert.Equal("activated", done.Status);
+        Assert.All(done.Runs, r => Assert.Equal("completed", r.Status));
+
+        var legacy = await records.QueryAsync(admin, new RecordQuery { Entity = Ticket, Filters = ["record.title == 'Legacy effort'"] }, default);
+        Assert.Equal(2.5, legacy.Items.Single().Data["effort_hours"]!.GetValue<double>());
+        var app = await f.Get<ExperienceService>().AppAsync(admin, default);
+        Assert.Contains(app.Navigation, n => n.Entity == "core.tickets.request");
+    }
+
+    [Fact]
     public async Task Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure()
     {
         var t = await f.NewTenantAsync("tu");

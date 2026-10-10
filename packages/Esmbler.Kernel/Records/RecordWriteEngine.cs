@@ -53,10 +53,21 @@ public sealed class RecordWriteContext
 
     public required IRecordLookups Lookups { get; init; }
 
+    /// <summary>
+    /// The workflow definition this record is pinned to (REQ-MIG-003). Null means the current configuration's workflow.
+    /// Field validation, rules and permissions always use the current configuration.
+    /// </summary>
+    public WorkflowSpec? Workflow { get; init; }
+
+    /// <summary>A platform write (fulfillment, migrations): may fire system transitions.</summary>
+    public bool SystemActor { get; init; }
+
     /// <summary>Workflow state before and after a transition.</summary>
     public string? FromState { get; set; }
 
     public string? ToState { get; set; }
+
+    public WorkflowSpec? EffectiveWorkflow => Workflow ?? Config.WorkflowFor(Entity.Id);
 
     public Dictionary<string, object?> Variables() => Permissions.Variables(Entity, Data, Prior, Now);
 
@@ -106,7 +117,9 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
         string now,
         string? transitionId,
         IRecordLookups lookups,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        WorkflowSpec? workflow = null,
+        bool systemActor = false)
     {
         var data = prior?.DeepClone().AsObject() ?? new JsonObject();
         var ctx = new RecordWriteContext
@@ -120,6 +133,8 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
             Data = data,
             TransitionId = transitionId,
             Lookups = lookups,
+            Workflow = workflow,
+            SystemActor = systemActor,
         };
 
         foreach (var (key, value) in changes)
@@ -132,7 +147,7 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
                 continue;
             }
 
-            if (operation != WriteOperations.System)
+            if (operation != WriteOperations.System && !systemActor)
             {
                 if (field.System || field.Type == FieldTypes.AutoNumber)
                 {
@@ -142,7 +157,7 @@ public sealed class RecordWriteEngine(FieldNormalizer normalizer, IEnumerable<IR
 
                 if (field.ReadOnly)
                 {
-                    var hint = config.WorkflowFor(entity.Id)?.StateField == key ? "Use a workflow transition instead." : null;
+                    var hint = ctx.EffectiveWorkflow?.StateField == key ? "Use a workflow transition instead." : null;
                     ctx.Errors.Add(new FieldError(key, "read_only", $"{field.Label} is read-only.", hint));
                     continue;
                 }

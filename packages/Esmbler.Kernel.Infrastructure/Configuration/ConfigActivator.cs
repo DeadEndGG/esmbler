@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Esmbler.Kernel.Configuration;
+using Esmbler.Kernel.Infrastructure.Events;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Sdk.Events;
 using Esmbler.Sdk.Overlay;
@@ -12,7 +14,7 @@ namespace Esmbler.Kernel.Infrastructure.Configuration;
 /// Stores a compiled artifact immutably and atomically switches the environment's active pointer, guarded by the
 /// expected current revision (optimistic concurrency, REQ-CFG-007). The previous artifact stays for rollback.
 /// </summary>
-public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catalog, IActivationHealthCheck health)
+public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catalog, IActivationHealthCheck health, WorkflowVersions? workflows = null)
 {
     public CompileResult Compile(IReadOnlyList<(string ModuleId, string Version)> modules, IReadOnlyList<OverlayOp> overlay, EffectiveConfig? previous = null) =>
         compiler.Compile(modules.Select(m => catalog.Release(m.ModuleId, m.Version)).ToList(), overlay, previous);
@@ -74,6 +76,8 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
             active.ActivatedBy = approvedBy ?? createdBy;
         }
 
+        await RegisterWorkflowsAsync(db, tenantId, environmentId, active?.PreviousRevision, result.Config, revision, approvedBy ?? createdBy, ct);
+
         db.Outbox.Add(new OutboxRow
         {
             Id = Guid.NewGuid(),
@@ -95,5 +99,56 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
         }
 
         return revision;
+    }
+
+    /// <summary>
+    /// REQ-MIG-003: registers the new revision's workflow versions inside the activation transaction. Records that were
+    /// never pinned are first pinned to the definition of the revision they ran on, so a change never silently applies
+    /// to them. When a workflow gets a new version and its policy is migrate or cancel, a durable job moves running
+    /// instances after commit.
+    /// </summary>
+    private async Task RegisterWorkflowsAsync(KernelDbContext db, Guid tenantId, Guid environmentId, int? previousRevision, EffectiveConfig config, int revision, Guid? actor, CancellationToken ct)
+    {
+        if (workflows is null)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<string, int> before = new Dictionary<string, int>();
+        if (previousRevision is { } prev)
+        {
+            var previous = await db.ConfigArtifacts.AsNoTracking().Where(a => a.Revision == prev).Select(a => a.Config).FirstOrDefaultAsync(ct);
+            if (previous is not null)
+            {
+                var previousConfig = SpecJson.Deserialize<EffectiveConfig>(previous);
+                before = await workflows.RegisterAsync(db, tenantId, environmentId, previousConfig, prev, ct);
+                foreach (var wf in previousConfig.Workflows)
+                {
+                    var version = before[wf.Id];
+                    await db.Records.Where(r => r.EntityId == wf.Entity && r.WorkflowVersion == null && r.DeletedAt == null)
+                        .ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkflowVersion, version), ct);
+                }
+            }
+        }
+
+        var after = await workflows.RegisterAsync(db, tenantId, environmentId, config, revision, ct);
+        foreach (var wf in config.Workflows)
+        {
+            var changed = before.TryGetValue(wf.Id, out var old) && old != after[wf.Id];
+            if (changed && wf.ActiveInstances.Policy is ActiveInstancePolicies.Migrate or ActiveInstancePolicies.Cancel)
+            {
+                await JobScheduler.ScheduleAsync(db, tenantId, environmentId, new JobRequest(WorkflowMigrationJobHandler.JobKind, new JsonObject
+                {
+                    ["workflow"] = wf.Id,
+                    ["toVersion"] = after[wf.Id],
+                    ["revision"] = revision,
+                })
+                {
+                    DedupKey = $"workflow.migrate:{wf.Id}",
+                    ReplaceExisting = true,
+                    CreatedBy = actor,
+                }, ct);
+            }
+        }
     }
 }

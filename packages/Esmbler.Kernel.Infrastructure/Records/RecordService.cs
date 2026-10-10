@@ -28,7 +28,7 @@ namespace Esmbler.Kernel.Infrastructure.Records;
 /// pins one configuration revision, enforces entity/record/field permissions, runs the data-level write pipeline,
 /// and commits the record change, its audit entry, and its outbox event together.
 /// </summary>
-public sealed class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock)
+public sealed class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock, WorkflowVersions workflows)
 {
     private const int AuditValueLimit = 500;
 
@@ -54,6 +54,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             }
 
             StampSystemFields(entity, write.Data, now, created: true);
+            var (_, workflowVersion) = await workflows.ForRecordAsync(db, artifact, entity, null, ct);
             var row = new RecordRow
             {
                 TenantId = ctx.TenantId,
@@ -64,6 +65,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 Revision = 1,
                 Data = write.Data.ToJsonString(),
                 ConfigRevision = artifact.Revision,
+                WorkflowVersion = workflowVersion,
                 CreatedAt = now,
                 CreatedBy = ctx.PrincipalId,
                 UpdatedAt = now,
@@ -167,7 +169,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 throw KernelException.NotFound(entity.Label);
             }
 
-            return await ViewAsync(db, artifact.Config, entity, perms, row, data, [], ct);
+            var (pinned, _) = await workflows.ForRecordAsync(db, artifact, entity, row.WorkflowVersion, ct);
+            return await ViewAsync(db, artifact.Config, entity, perms, row, data, [], ct, pinned);
         }, ct);
 
     public Task<RecordPage> QueryAsync(RequestContext ctx, RecordQuery query, CancellationToken ct) =>
@@ -328,7 +331,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
     /// <summary>Platform-trusted write used by provisioning, sample data, and migrations (operation "system").</summary>
     public async Task<Guid> SystemCreateAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, EntitySpec entity, JsonObject data, CancellationToken ct)
     {
-        var perms = new EffectivePermissions(artifact.Config, AuthorizationFacts.None(ctx.PrincipalId) with { Roles = new Dictionary<string, IReadOnlyList<string>> { [PlatformModule.TenantAdminRole] = ["system"] } }, ctx);
+        var perms = SystemPermissions(artifact, ctx);
         var now = clock.UtcNow;
         var write = await engine.PrepareAsync(artifact.Config, entity, perms, WriteOperations.System, null, data, FieldNormalizer.FormatInstant(now), null, new Lookups(db), ct);
         var id = Guid.NewGuid();
@@ -345,6 +348,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         }
 
         StampSystemFields(entity, write.Data, now, created: true);
+        var (_, workflowVersion) = await workflows.ForRecordAsync(db, artifact, entity, null, ct);
         var row = new RecordRow
         {
             TenantId = ctx.TenantId,
@@ -355,6 +359,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             Revision = 1,
             Data = write.Data.ToJsonString(),
             ConfigRevision = artifact.Revision,
+            WorkflowVersion = workflowVersion,
             CreatedAt = now,
             CreatedBy = ctx.PrincipalId,
             UpdatedAt = now,
@@ -385,11 +390,47 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         }
 
         CheckRevision(row, expectedRevision, entity, changes, prior, perms);
-        var now = clock.UtcNow;
-        var write = await engine.PrepareAsync(artifact.Config, entity, perms, operation, prior, changes, FieldNormalizer.FormatInstant(now), transitionId, new Lookups(db), ct);
-        if (write.Changed.Count == 0 && operation == WriteOperations.Update)
+        var (write, written) = await WriteRowAsync(db, ctx, artifact, entity, perms, row, prior, changes, operation, transitionId, systemActor: false, ct);
+        return await ViewAsync(db, artifact.Config, entity, perms, row, written ? write.Data : prior, write.Messages, ct, write.Workflow);
+    }
+
+    /// <summary>
+    /// A platform write (fulfillment, workflow migration) in the caller's transaction: the full write pipeline runs
+    /// under the active configuration with platform rights, may fire system transitions, and takes the row lock, so
+    /// concurrent system writers serialize. Returns false when the transition is no longer valid from the record's
+    /// current state (another writer got there first), which callers treat as already done.
+    /// </summary>
+    public async Task<bool> SystemWriteAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, EntitySpec entity, Guid id, string? transitionId, JsonObject changes, CancellationToken ct)
+    {
+        var perms = SystemPermissions(artifact, ctx);
+        var row = await LockAsync(db, ctx, entity, id, ct);
+        var prior = JsonNode.Parse(row.Data)!.AsObject();
+        try
         {
-            return await ViewAsync(db, artifact.Config, entity, perms, row, prior, write.Messages, ct);
+            await WriteRowAsync(db, ctx, artifact, entity, perms, row, prior, changes, transitionId is null ? WriteOperations.System : WriteOperations.Transition, transitionId, systemActor: true, ct);
+            return true;
+        }
+        catch (ValidationFailedException ex) when (transitionId is not null && ex.Errors.All(e => e.Code is "invalid_transition" or "unknown_transition" or "transition_disabled"))
+        {
+            return false;
+        }
+    }
+
+    private static EffectivePermissions SystemPermissions(ActiveArtifact artifact, RequestContext ctx) =>
+        new(artifact.Config, AuthorizationFacts.None(ctx.PrincipalId) with { Roles = new Dictionary<string, IReadOnlyList<string>> { [PlatformModule.TenantAdminRole] = ["system"] } }, ctx);
+
+    private async Task<(RecordWriteContext Write, bool Written)> WriteRowAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, EntitySpec entity, EffectivePermissions perms, RecordRow row, JsonObject prior, JsonObject changes, string operation, string? transitionId, bool systemActor, CancellationToken ct)
+    {
+        var id = row.Id;
+        var now = clock.UtcNow;
+
+        // REQ-MIG-003: transitions run on the definition version the record is pinned to; rules, fields and
+        // permissions use the current configuration. Records created before versioning are pinned on their first write.
+        var (pinned, workflowVersion) = await workflows.ForRecordAsync(db, artifact, entity, row.WorkflowVersion, ct);
+        var write = await engine.PrepareAsync(artifact.Config, entity, perms, operation, prior, changes, FieldNormalizer.FormatInstant(now), transitionId, new Lookups(db), ct, pinned, systemActor);
+        if (write.Changed.Count == 0 && operation is WriteOperations.Update or WriteOperations.System)
+        {
+            return (write, false);
         }
 
         await ValidateReferencesAsync(db, artifact.Config, entity, write, perms, ct);
@@ -399,14 +440,20 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         var json = write.Data.ToJsonString();
         await db.Records.Where(r => r.Id == id).ExecuteUpdateAsync(
             s => s.SetProperty(r => r.Data, json).SetProperty(r => r.Revision, revision).SetProperty(r => r.ConfigRevision, artifact.Revision)
-                .SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId),
+                .SetProperty(r => r.UpdatedAt, now).SetProperty(r => r.UpdatedBy, ctx.PrincipalId).SetProperty(r => r.WorkflowVersion, workflowVersion),
             ct);
         row.Revision = revision;
         row.UpdatedAt = now;
         row.ConfigRevision = artifact.Revision;
+        row.WorkflowVersion = workflowVersion;
         await UpdateSearchAsync(db, artifact.Config, entity, row, write.Data, ct);
         var diff = write.Changed.Where(k => !JsonNode.DeepEquals(prior[k], write.Data[k])).ToDictionary(k => k, k => (From: prior[k], To: write.Data[k]));
         var payload = new JsonObject { ["changed"] = Keys(diff.Keys) };
+        if (systemActor)
+        {
+            payload["source"] = "system";
+        }
+
         string type;
         if (operation == WriteOperations.Transition)
         {
@@ -423,7 +470,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         AuditWriter.Add(db, ctx, operation == WriteOperations.Transition ? "record.transition" : "record.update", entity.Id, id.ToString(), artifact.Revision, AuditChanges(diff, transitionId));
         AddEvent(db, ctx, type, entity.Id, id, revision, artifact.Revision, payload);
         await db.SaveChangesAsync(ct);
-        return await ViewAsync(db, artifact.Config, entity, perms, row, write.Data, write.Messages, ct);
+        return (write, true);
     }
 
     private async Task<(ActiveArtifact Artifact, EntitySpec Entity, EffectivePermissions Perms)> PrepareAsync(KernelDbContext db, RequestContext ctx, string entityId, int? clientConfigRevision, CancellationToken ct)
@@ -491,6 +538,27 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
     private static async Task ValidateReferencesAsync(KernelDbContext db, EffectiveConfig config, EntitySpec entity, RecordWriteContext write, EffectivePermissions perms, CancellationToken ct)
     {
         var errors = new List<FieldError>();
+        if (entity.Request is { } binding && write.Changed.Contains(binding.VariablesField) && write.Data[binding.VariablesField] is JsonObject answers
+            && config.FindCatalogItem(write.Data[binding.CatalogItemField]?.GetValue<string>() ?? string.Empty) is { } item)
+        {
+            // People and groups named in request answers must exist in this workspace, like user and group fields.
+            foreach (var variable in item.Variables.Where(v => v.Type is FieldTypes.User or FieldTypes.Group))
+            {
+                if (answers[variable.Key] is not JsonValue av || !av.TryGetValue<string>(out var rawRef) || !Guid.TryParse(rawRef, out var refId))
+                {
+                    continue;
+                }
+
+                var exists = variable.Type == FieldTypes.User
+                    ? await db.Memberships.AnyAsync(m => m.PrincipalId == refId && m.TenantId == write.Permissions.Context.TenantId, ct)
+                    : await db.Groups.AnyAsync(g => g.Id == refId, ct);
+                if (!exists)
+                {
+                    errors.Add(new FieldError($"{binding.VariablesField}.{variable.Key}", variable.Type == FieldTypes.User ? "unknown_user" : "unknown_group", $"{variable.Label} must be an existing {(variable.Type == FieldTypes.User ? "member of this workspace" : "group")}."));
+                }
+            }
+        }
+
         foreach (var key in write.Changed)
         {
             var field = entity.FindField(key);
@@ -597,14 +665,14 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
 
     private static string StripTags(string html) => System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
-    private async Task<RecordView> ViewAsync(KernelDbContext db, EffectiveConfig config, EntitySpec entity, EffectivePermissions perms, RecordRow row, JsonObject data, IReadOnlyList<RuleMessage> messages, CancellationToken ct)
+    private async Task<RecordView> ViewAsync(KernelDbContext db, EffectiveConfig config, EntitySpec entity, EffectivePermissions perms, RecordRow row, JsonObject data, IReadOnlyList<RuleMessage> messages, CancellationToken ct, WorkflowSpec? pinned = null)
     {
         var fieldAccess = perms.FieldAccessMap(entity);
         var display = await DisplayAsync(db, config, entity, perms, [data], ct);
         var states = RuleEvaluator.Evaluate(config, entity, perms.Variables(entity, data, null, FieldNormalizer.FormatInstant(clock.UtcNow)));
         var hiddenByPermission = fieldAccess.Where(f => f.Value == FieldAccessLevels.Hidden).Select(f => f.Key);
         var canUpdate = perms.CanUpdate(entity, data);
-        var wf = config.WorkflowFor(entity.Id);
+        var wf = pinned ?? config.WorkflowFor(entity.Id);
         var transitions = wf is null || !canUpdate
             ? []
             : WorkflowHook.Available(wf, data, perms.Roles).Select(t => new TransitionView(t.Id, t.Label, t.Tone, t.RequiredFields)).ToList();

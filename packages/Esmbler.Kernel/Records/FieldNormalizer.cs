@@ -46,6 +46,10 @@ public sealed partial class FieldNormalizer(IRichTextSanitizer sanitizer)
                 FieldTypes.MultiSelect => MultiChoice(field, input, config),
                 FieldTypes.Lookup or FieldTypes.User or FieldTypes.Group => Reference(field, input),
                 FieldTypes.AutoNumber => (null, Error(field, "read_only", $"{field.Label} is assigned automatically.")),
+                FieldTypes.CatalogItem => CatalogItem(field, input, config),
+                FieldTypes.Variables => input is JsonObject obj
+                    ? (obj.DeepClone(), null)
+                    : (null, Error(field, "invalid_type", $"{field.Label} must be an object of answers keyed by question.", "Send {\"question_key\": value}.")),
                 _ => (null, Error(field, "unknown_type", $"{field.Label} has an unsupported type.")),
             };
         }
@@ -248,6 +252,19 @@ public sealed partial class FieldNormalizer(IRichTextSanitizer sanitizer)
         return Guid.TryParse(s, out var id)
             ? (JsonValue.Create(id.ToString()), null)
             : (null, Error(field, "invalid_reference", $"{field.Label} must reference a {(field.Type == FieldTypes.Lookup ? "record" : field.Type)} by ID."));
+    }
+
+    private static (JsonNode?, FieldError?) CatalogItem(FieldSpec field, JsonNode input, SpecCatalog config)
+    {
+        var id = input.GetValue<string>().Trim();
+        if (id.Length == 0)
+        {
+            return (null, null);
+        }
+
+        return config.FindCatalogItem(id) is null
+            ? (null, Error(field, "unknown_catalog_item", $"There is no catalog item '{id}'.", Expression.Suggest(id, config.CatalogItems.Where(c => c.Active).Select(c => c.Id))))
+            : (JsonValue.Create(id), null);
     }
 
     private static string Hint(FieldSpec field) => field.Type switch
