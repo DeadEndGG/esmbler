@@ -5,6 +5,7 @@ import { DraftCommands } from '../builder/draft-commands';
 import { NodeSpec } from '../core/models';
 import { ActivityFeed, AuditHistory } from './activity';
 import { ActionButton, ActionMenu, TransitionButtons } from './actions';
+import { ApprovalsPanel } from './approvals';
 import { FieldPlacement } from './field';
 import { RelatedList } from './related-list';
 import { RenderContext } from './render-context';
@@ -20,7 +21,7 @@ const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'displa
  */
 @Component({
   selector: 'esm-node',
-  imports: [Icon, FieldPlacement, ActivityFeed, AuditHistory, TransitionButtons, ActionButton, ActionMenu, RelatedList, CdkDropList, CdkDrag, CdkDragHandle],
+  imports: [Icon, FieldPlacement, ActivityFeed, AuditHistory, ApprovalsPanel, TransitionButtons, ActionButton, ActionMenu, RelatedList, CdkDropList, CdkDrag, CdkDragHandle],
   templateUrl: './node.html',
   styleUrl: './node.scss',
 })

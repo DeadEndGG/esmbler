@@ -2,14 +2,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { signIn } from './helpers';
 
-/** REQ-BIZ-004: service catalog, typed request form, and fulfillment tasks with dependencies (ADR 0015). */
+/** REQ-BIZ-004: service catalog, typed request form, approvals, and fulfillment tasks with dependencies (ADR 0015, ADR 0016). */
 async function audit(page: Page, name: string): Promise<void> {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(blocking.map((v) => `${name}: ${v.id} ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([]);
 }
 
-test('@REQ-BIZ-004 a requester orders a laptop and an agent fulfils it task by task', async ({ browser }) => {
+test('@REQ-BIZ-004 a requester orders a laptop, a manager approves it, and an agent fulfils it task by task', async ({ browser }) => {
   const requesterContext = await browser.newContext();
   const requester = await requesterContext.newPage();
   await signIn(requester, 'taylor@globex.example', 'Globex');
@@ -35,15 +35,36 @@ test('@REQ-BIZ-004 a requester orders a laptop and an agent fulfils it task by t
   const url = requester.url();
   await expect(requester.locator('.answer', { hasText: 'Model' })).toContainText('MacBook');
   await expect(requester.locator('.answer', { hasText: 'Accessories' })).toContainText('Docking station');
-  await expect(requester.locator('.t-display-badge').first()).toContainText('Submitted');
+  // The laptop needs a manager's approval first (ADR 0016).
+  await expect(async () => {
+    await requester.reload({ waitUntil: 'networkidle' });
+    await expect(requester.locator('.t-display-badge').first()).toContainText('Awaiting approval', { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(requester.getByRole('region', { name: 'Approvals' })).toContainText('Manager approval');
   await requesterContext.close();
+
+  const approverContext = await browser.newContext();
+  const approver = await approverContext.newPage();
+  await signIn(approver, 'jamie@globex.example', 'Globex');
+  await approver.getByRole('link', { name: /Approvals/ }).click();
+  await expect(approver.getByRole('heading', { name: 'Approvals', level: 1 })).toBeVisible();
+  const card = approver.getByRole('listitem').filter({ hasText: 'Video editing for the launch campaign' });
+  await expect(card).toContainText('Requested by Taylor Brooks');
+  await expect(card).toContainText('MacBook');
+  await audit(approver, 'approvals inbox');
+  await card.getByRole('button', { name: 'Approve' }).click();
+  await expect(approver.getByText('Approved: fulfillment starts now.')).toBeVisible();
+  await approverContext.close();
 
   const agentContext = await browser.newContext();
   const agent = await agentContext.newPage();
   await signIn(agent, 'morgan@globex.example', 'Globex');
   await agent.goto(url);
-  await agent.getByRole('button', { name: 'Start fulfillment' }).click();
-  await expect(agent.locator('.t-display-badge').first()).toContainText('In fulfillment');
+  await expect(async () => {
+    await agent.reload({ waitUntil: 'networkidle' });
+    await expect(agent.locator('.t-display-badge').first()).toContainText('In fulfillment', { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(agent.getByRole('region', { name: 'Approvals' })).toContainText('Approved by Jamie Ortiz');
 
   // Tasks are created by the fulfillment worker; the first one is ready, the rest wait for it.
   const tasks = agent.getByRole('tabpanel');

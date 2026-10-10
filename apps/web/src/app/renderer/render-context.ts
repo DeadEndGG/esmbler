@@ -23,6 +23,8 @@ export class RenderContext {
   /** Handlers installed by the page. */
   commitField: (key: string, value: unknown) => Promise<void> = async () => undefined;
   runTransition: (id: string) => Promise<void> = async () => undefined;
+  /** Reloads the record from the server (after a change made outside the record engine, e.g. an approval decision). */
+  refreshRecord: () => Promise<void> = async () => undefined;
 
   readonly entity = computed<EntityClientSpec | null>(() => this.spec()?.entity ?? null);
 
@@ -99,6 +101,8 @@ export class RenderContext {
         return this.record()?.display[key] ?? this.entity()?.catalogItems?.find((i) => i.id === v)?.label ?? String(v);
       case 'variables':
         return '';
+      case 'principals':
+        return this.record()?.display[key] ?? '';
       case 'toggle':
         return v ? 'Yes' : 'No';
       case 'date_time':
@@ -116,28 +120,8 @@ export class RenderContext {
    * A request's answers as label and display text, in the order of its catalog item's questions (ADR 0015).
    * People and groups resolve through the directory names the caller passes in.
    */
-  answers(names: (type: string, id: string) => string | undefined): { key: string; label: string; text: string; empty: boolean }[] {
-    const entity = this.entity();
-    const values = this.values();
-    const itemField = entity?.entity.fields.find((f) => f.type === 'catalog_item')?.key;
-    const varsField = entity?.entity.fields.find((f) => f.type === 'variables')?.key;
-    const item = entity?.catalogItems?.find((i) => i.id === values[itemField ?? '']);
-    const answers = (values[varsField ?? ''] ?? {}) as Record<string, unknown>;
-    if (!item) return [];
-    const label = (list: string | undefined, id: unknown) => entity?.choiceLists.find((c) => c.id === list)?.options.find((o) => o.id === id)?.label ?? String(id);
-    return item.variables.map((v) => {
-      const a = answers[v.key];
-      let text: string;
-      if (a === undefined || a === null || a === '' || (Array.isArray(a) && !a.length)) text = '';
-      else if (v.type === 'single_select') text = label(v.choiceList, a);
-      else if (v.type === 'multi_select') text = (a as string[]).map((x) => label(v.choiceList, x)).join(', ');
-      else if (v.type === 'toggle') text = a ? 'Yes' : 'No';
-      else if (v.type === 'date') text = new Date(a + 'T00:00:00').toLocaleDateString(undefined, { dateStyle: 'medium' });
-      else if (v.type === 'date_time') text = new Date(String(a)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-      else if (v.type === 'user' || v.type === 'group') text = names(v.type, String(a)) ?? 'Someone';
-      else text = String(a);
-      return { key: v.key, label: v.label, text, empty: text === '' };
-    });
+  answers(names: (type: string, id: string) => string | undefined): Answer[] {
+    return answersOf(this.entity(), this.values(), names);
   }
 
   tone(field: FieldSpec | undefined, value: unknown): string {
@@ -160,4 +144,34 @@ export class RenderContext {
 
 function unique(list: string[]): string[] {
   return [...new Set(list)];
+}
+
+export interface Answer {
+  key: string;
+  label: string;
+  text: string;
+  empty: boolean;
+}
+
+/** A request's answers as label and text pairs, in the order of its catalog item's questions (ADR 0015). */
+export function answersOf(entity: EntityClientSpec | null | undefined, values: Record<string, any>, names: (type: string, id: string) => string | undefined): Answer[] {
+  const itemField = entity?.entity.fields.find((f) => f.type === 'catalog_item')?.key;
+  const varsField = entity?.entity.fields.find((f) => f.type === 'variables')?.key;
+  const item = entity?.catalogItems?.find((i) => i.id === values[itemField ?? '']);
+  const answers = (values[varsField ?? ''] ?? {}) as Record<string, unknown>;
+  if (!item) return [];
+  const label = (list: string | undefined, id: unknown) => entity?.choiceLists.find((c) => c.id === list)?.options.find((o) => o.id === id)?.label ?? String(id);
+  return item.variables.map((v) => {
+    const a = answers[v.key];
+    let text: string;
+    if (a === undefined || a === null || a === '' || (Array.isArray(a) && !a.length)) text = '';
+    else if (v.type === 'single_select') text = label(v.choiceList, a);
+    else if (v.type === 'multi_select') text = (a as string[]).map((x) => label(v.choiceList, x)).join(', ');
+    else if (v.type === 'toggle') text = a ? 'Yes' : 'No';
+    else if (v.type === 'date') text = new Date(a + 'T00:00:00').toLocaleDateString(undefined, { dateStyle: 'medium' });
+    else if (v.type === 'date_time') text = new Date(String(a)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    else if (v.type === 'user' || v.type === 'group') text = names(v.type, String(a)) ?? 'Someone';
+    else text = String(a);
+    return { key: v.key, label: v.label, text, empty: text === '' };
+  });
 }

@@ -31,6 +31,76 @@ export interface AppBootstrap {
   workspaces: Workspace[];
   /** The workspace has a service catalog the user may request from. */
   catalog?: boolean;
+  /** The workspace runs approvals (ADR 0016); shows the Approvals inbox. */
+  approvals?: boolean;
+}
+
+/** One approver's step in a stage (ADR 0016). */
+export interface ApprovalStep {
+  id: string;
+  approverKind: 'user' | 'group' | 'role';
+  approver: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled' | 'skipped';
+  decidedBy?: string | null;
+  onBehalfOf?: string | null;
+  comment?: string | null;
+  decidedAt?: string | null;
+  dueAt?: string | null;
+  escalation: boolean;
+  canDecide: boolean;
+}
+
+export interface ApprovalStage {
+  id: string;
+  label: string;
+  mode: 'all' | 'any';
+  status: 'waiting' | 'pending' | 'approved' | 'rejected' | 'skipped' | 'cancelled';
+  steps: ApprovalStep[];
+}
+
+export interface RecordApproval {
+  id: string;
+  policyId: string;
+  policyLabel: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  stageIndex: number;
+  outcomeReason?: string | null;
+  createdAt: string;
+  decidedAt?: string | null;
+  stages: ApprovalStage[];
+}
+
+export interface ApprovalInboxItem {
+  stepId: string;
+  approvalId: string;
+  entity: string;
+  recordId: string;
+  policy: string;
+  stage: string;
+  status: ApprovalStep['status'];
+  dueAt?: string | null;
+  escalation: boolean;
+  requester?: string | null;
+  onBehalfOf?: string | null;
+  comment?: string | null;
+  decidedAt?: string | null;
+  record?: RecordView | null;
+}
+
+export interface ApprovalInbox {
+  pending: ApprovalInboxItem[];
+  decided: ApprovalInboxItem[];
+}
+
+export interface Delegation {
+  id: string;
+  delegatorId: string;
+  delegator: string;
+  delegateId: string;
+  delegate: string;
+  startsAt: string;
+  endsAt: string;
+  active: boolean;
 }
 
 export interface VariableSpec {

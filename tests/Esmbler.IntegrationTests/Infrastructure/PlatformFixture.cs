@@ -43,6 +43,9 @@ public sealed class PlatformFixture : IAsyncLifetime
     {
         var slug = $"{prefix}-{Guid.NewGuid().ToString("N")[..6]}";
         string Email(string user) => $"{user}@{slug}.example";
+
+        // Approvers (ADR 0016) exist from Tickets 1.3.0; on older releases they are plain members.
+        string[] Approver(params string[] roles) => string.CompareOrdinal(ticketsVersion, "1.3.0") >= 0 ? [.. roles, "core.tickets.approver"] : roles;
         var tenant = await Get<ProvisioningService>().ProvisionAsync(new TenantSeed(
             slug,
             slug,
@@ -55,6 +58,8 @@ public sealed class PlatformFixture : IAsyncLifetime
                 new UserSeed("riley", Email("riley"), "Riley " + slug, ProvisioningService.DemoPassword, ["core.tickets.requester"], []),
                 new UserSeed("sam", Email("sam"), "Sam " + slug, ProvisioningService.DemoPassword, [], ["service_desk"]),
                 new UserSeed("alex", Email("alex"), "Alex " + slug, ProvisioningService.DemoPassword, [], ["service_desk"]),
+                new UserSeed("jamie", Email("jamie"), "Jamie " + slug, ProvisioningService.DemoPassword, Approver("core.tickets.requester"), []),
+                new UserSeed("quinn", Email("quinn"), "Quinn " + slug, ProvisioningService.DemoPassword, Approver(), []),
             ],
             [new GroupSeed("service_desk", "Service Desk", ["core.tickets.agent"]), new GroupSeed("network", "Network", ["core.tickets.agent"])],
             [("core.tickets", ticketsVersion)]), default);

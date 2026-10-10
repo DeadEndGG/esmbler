@@ -39,7 +39,8 @@ public sealed record AppBootstrap(
     IReadOnlyList<object> Modules,
     IReadOnlyList<NavItem> Navigation,
     IReadOnlyList<TenantChoice> Workspaces,
-    bool Catalog = false);
+    bool Catalog = false,
+    bool Approvals = false);
 
 /// <summary>Entity definition as one viewer may see it (hidden fields and rules that read them are removed).</summary>
 public sealed record EntityClientSpec(
@@ -91,7 +92,8 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 artifact.Lockfile.Where(m => m.Id != PlatformModule.ModuleId).Select(m => (object)new { m.Id, m.Version }).ToList(),
                 nav,
                 workspaces,
-                catalog);
+                catalog,
+                ctx.AgentId is null && artifact.Config.Entities.Exists(e => e.Request?.Approval is not null));
         }, ct);
     }
 

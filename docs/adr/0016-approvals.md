@@ -47,6 +47,7 @@ The request binding gains the approval state, three system transitions (into app
 - On create, if the item has a policy, `ApprovalConsumer` fires the "into approval" transition and starts the approval. A request whose stages are all skipped is approved at once.
 - When the last stage is approved, the "approved" transition moves the request into fulfillment, so the fulfillment consumer creates its tasks.
 - When a stage is rejected or expires without escalation, the "declined" transition rejects the request.
+- People cannot move a request whose item needs approval from the initial state into fulfillment: `RequestHook` refuses it (`approval_required`), so only the approval engine starts fulfillment.
 - The approvers field (type `principals`, a platform-maintained list of user and group IDs) is an access field with relation `approver`. Approvers therefore see the request they decide on, with the field permissions of their own roles, and cannot edit it.
 
 ### Storage and engine
@@ -102,4 +103,4 @@ The MCP server exposes `list_approval_policies`, `add_approval_policy` and the `
 ## More information
 
 - Related: [ADR 0015](0015-requests-catalog-fulfillment-and-workflow-versions.md) (requests and fulfillment), [ADR 0005](0005-job-and-workflow-execution.md) (jobs and timers), [ADR 0004](0004-authorization-engine.md) (authorization).
-- Verification: `Approvals.ApprovalTests`, `Api.ApprovalApiTests`, `Configuration.CatalogOverlayTests`, Playwright `approvals.spec.ts`.
+- Verification: `Requests.ApprovalTests`, `Api.ApprovalApiTests`, `Mcp.McpServerTests.Agent_adds_an_approval_policy_but_cannot_remove_an_items_approval`, unit `Configuration.ApprovalPolicyTests`, Playwright `requests.spec.ts`.

@@ -28,7 +28,7 @@ export class FieldPlacement {
   protected readonly editing = signal(false);
   protected readonly alwaysEditable = computed(() => this.ctx.mode() !== 'view');
   /** Request answers and the catalog item are set when the request is submitted, not edited inline. */
-  protected readonly editable = computed(() => this.ctx.canEdit(this.key()) && !this.node().props['readOnly'] && !['variables', 'catalog_item'].includes(this.spec()?.type ?? ''));
+  protected readonly editable = computed(() => this.ctx.canEdit(this.key()) && !this.node().props['readOnly'] && !['variables', 'catalog_item', 'principals'].includes(this.spec()?.type ?? ''));
   protected readonly value = computed(() => this.ctx.values()[this.key()]);
   protected readonly error = computed(() => this.ctx.errors()[this.key()]);
   protected readonly required = computed(() => this.ctx.isRequired(this.key()));

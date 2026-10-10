@@ -51,6 +51,34 @@ public sealed class CatalogVariableInput
     public string? ChoiceList { get; set; }
 }
 
+/// <summary>One approval stage for add_approval_policy (ADR 0016).</summary>
+public sealed class ApprovalStageInput
+{
+    [Description("Stage name people see, e.g. \"Manager approval\".")]
+    public required string Label { get; set; }
+
+    [Description("all (every approver must approve) or any (the first approval decides). Default all.")]
+    public string? Mode { get; set; }
+
+    [Description("Role IDs whose holders may approve, e.g. core.tickets.approver.")]
+    public List<string>? Roles { get; set; }
+
+    [Description("Group keys whose members may approve, e.g. service_desk.")]
+    public List<string>? Groups { get; set; }
+
+    [Description("Fields naming the approver: record.<user or group field> or variables.<user or group question>.")]
+    public List<string>? Fields { get; set; }
+
+    [Description("Optional condition over record and variables; the stage is skipped when false, e.g. variables.access_level == 'admin'.")]
+    public string? When { get; set; }
+
+    [Description("Hours until the stage expires; omit to wait indefinitely.")]
+    public int? ExpiresAfterHours { get; set; }
+
+    [Description("Group keys that receive the request when the stage expires (escalation). Without them the request is declined on expiry.")]
+    public List<string>? EscalateToGroups { get; set; }
+}
+
 public sealed class CatalogTaskInput
 {
     [Description("What the fulfiller does, e.g. \"Issue the permit\".")]
@@ -320,9 +348,54 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         string? label = null,
         string? description = null,
         string? category = null,
-        bool? active = null) =>
+        bool? active = null,
+        [Description("Approval policy ID from list_approval_policies that requests for this item pass before fulfillment. Removing an approval is an administrator's decision and is refused here.")] string? approval_policy = null) =>
         runner.RunAsync("update_catalog_item", AgentScopes.ConfigEdit, item, async ctx =>
-            await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active } }], expected_version));
+            await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active, ApprovalPolicy = approval_policy } }], expected_version));
+
+    [McpServerTool(Name = "add_approval_policy"), Description("Add an approval policy: stages that run in order, each with approvers (roles, groups, or fields naming a person) who decide in parallel. Point a catalog item at it with update_catalog_item (approval_policy). The requester never approves their own request, and AI agents never approve.")]
+    public Task<CallToolResult> AddApprovalPolicy(
+        [Description("Policy name, e.g. \"Finance approval\".")] string label,
+        [Description("Stages in order.")] ApprovalStageInput[] stages,
+        int expected_version,
+        string? description = null,
+        [Description("Request entity; defaults to the workspace's request entity with approvals when there is exactly one.")] string? request_entity = null) =>
+        runner.RunAsync("add_approval_policy", AgentScopes.ConfigEdit, label, async ctx =>
+        {
+            if (request_entity is null)
+            {
+                var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+                var candidates = config.Entities.Where(e => e.Request?.Approval is not null).Select(e => e.Id).ToList();
+                request_entity = candidates.Count == 1
+                    ? candidates[0]
+                    : throw new KernelException("request_entity_required", candidates.Count == 0 ? "No entity in this workspace takes approvals." : "More than one entity takes approvals.", 400, "request_entity", candidates.Count == 0 ? "Install a module release with approvals first." : $"Pass request_entity, one of: {string.Join(", ", candidates)}.");
+            }
+
+            var slug = Slug(label);
+            var policy = new ApprovalPolicySpec { Id = Namespaces.TenantPrefix + slug[..Math.Min(40, slug.Length)], Label = label, Description = description, Entity = request_entity };
+            foreach (var s in stages)
+            {
+                var id = Slug(s.Label);
+                policy.Stages.Add(new ApprovalStageSpec
+                {
+                    Id = id[..Math.Min(40, id.Length)],
+                    Label = s.Label,
+                    Mode = s.Mode ?? ApprovalModes.All,
+                    Approvers =
+                    [
+                        .. (s.Roles ?? []).Select(r => new ApproverSpec { Kind = ApproverKinds.Role, Ref = r }),
+                        .. (s.Groups ?? []).Select(g => new ApproverSpec { Kind = ApproverKinds.Group, Ref = g }),
+                        .. (s.Fields ?? []).Select(x => new ApproverSpec { Kind = ApproverKinds.Field, Ref = x }),
+                    ],
+                    When = s.When,
+                    ExpiresAfterHours = s.ExpiresAfterHours,
+                    OnExpiry = s.EscalateToGroups is { Count: > 0 } ? ApprovalExpiry.Escalate : ApprovalExpiry.Reject,
+                    EscalateTo = (s.EscalateToGroups ?? []).Select(g => new ApproverSpec { Kind = ApproverKinds.Group, Ref = g }).ToList(),
+                });
+            }
+
+            return await ApplyAllAsync(ctx, [new AddApprovalPolicy { Policy = policy }], expected_version);
+        });
 
     [McpServerTool(Name = "add_workflow_state"), Description("Add a state to a workflow (it also becomes a status option). Category is one of new, active, pending, resolved, closed, cancelled. Add transitions into and out of it with add_transition.")]
     public Task<CallToolResult> AddWorkflowState(

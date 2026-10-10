@@ -87,6 +87,7 @@ app.MapGet("/health/ready", async (Database db, CancellationToken ct) =>
 app.MapAuth();
 app.MapAppAndConfig();
 app.MapRecords();
+app.MapApprovals();
 app.MapBuilder();
 app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");

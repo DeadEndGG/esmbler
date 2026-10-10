@@ -14,6 +14,8 @@ export class Session {
   readonly canPublish = computed(() => this.app()?.actions.includes('config.publish') ?? false);
   readonly canManageModules = computed(() => this.app()?.actions.includes('modules.manage') ?? false);
   readonly isAdmin = computed(() => this.app()?.actions.includes('permissions.admin') ?? false);
+  /** Approval steps waiting for the signed-in person (navigation badge, ADR 0016). */
+  readonly pendingApprovals = signal(0);
 
   async load(): Promise<AppBootstrap> {
     const app = await this.api.get<AppBootstrap>('/api/app');
@@ -22,7 +24,17 @@ export class Session {
       this.entities.clear();
     }
     this.app.set(app);
+    this.refreshApprovals();
     return app;
+  }
+
+  /** Re-reads the approvals badge; failures leave the last value. */
+  refreshApprovals(): void {
+    if (!this.app()?.approvals) {
+      this.pendingApprovals.set(0);
+      return;
+    }
+    this.api.get<{ pending: number }>('/api/approvals/count').then((c) => this.pendingApprovals.set(c.pending), () => undefined);
   }
 
   /** Call after a publish/rollback/upgrade: drop cached specs and reload the bootstrap. */

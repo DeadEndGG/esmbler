@@ -39,6 +39,12 @@ import { Icon, IconName } from '../ui/icon';
         @if (session.app()?.catalog) {
           <a class="nav-item" routerLink="/catalog" routerLinkActive="active"><esm-icon name="store" /><span class="flex-1">Service catalog</span></a>
         }
+        @if (session.app()?.approvals) {
+          <a class="nav-item" routerLink="/approvals" routerLinkActive="active">
+            <esm-icon name="stamp" /><span class="flex-1">Approvals</span>
+            @if (session.pendingApprovals()) { <span class="nav-count" [attr.aria-label]="session.pendingApprovals() + ' waiting for you'">{{ session.pendingApprovals() }}</span> }
+          </a>
+        }
         @for (n of session.app()?.navigation ?? []; track n.entity) {
           <a class="nav-item" [routerLink]="['/records', n.entity]" routerLinkActive="active">
             <esm-icon [name]="navIcon(n.entity, n.requests)" />
@@ -93,6 +99,8 @@ import { Icon, IconName } from '../ui/icon';
     .nav-item.active { background: var(--esm-surface-raised); box-shadow: var(--esm-shadow-xs); outline: 1px solid var(--esm-border-subtle); outline-offset: -1px; }
     .nav-item.active esm-icon { color: var(--esm-accent-brand); }
     .nav-item kbd { box-shadow: none; }
+    .nav-count { min-width: 20px; height: 18px; padding: 0 6px; border-radius: var(--esm-radius-full); display: inline-grid; place-items: center;
+      background: var(--esm-accent-brand); color: var(--esm-text-on-accent); font: var(--esm-text-caption); font-weight: 600; }
   `,
 })
 export class Shell {

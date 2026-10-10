@@ -40,12 +40,15 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy" })
         {
             Assert.Contains(expected, tools);
         }
 
         Assert.DoesNotContain(tools, t => t is "publish" or "set_permissions");
+
+        // Approvals are human decisions (ADR 0016): no tool decides or delegates them.
+        Assert.DoesNotContain(tools, t => t.Contains("approve", StringComparison.Ordinal) || t.Contains("decide", StringComparison.Ordinal) || t.Contains("delegat", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -149,6 +152,42 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var parking = catalog!["items"]!.AsArray().Single(i => i!["label"]!.GetValue<string>() == "Parking permit")!;
         Assert.Equal(["licence_plate", "vehicle_type"], parking["variables"]!.AsArray().Select(v => v!["key"]!.GetValue<string>()));
         Assert.True(parking["steps"]!.AsArray().Single(st => st!["id"]!.GetValue<string>() == "charger")!["conditional"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Agent_adds_an_approval_policy_but_cannot_remove_an_items_approval()
+    {
+        var tenant = await platform.NewTenantAsync("mappr", "1.3.0");
+        var (api, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var policies = await Call(client, "list_approval_policies");
+        Assert.Contains(policies["policies"]!.AsArray(), p => p!["id"]!.GetValue<string>() == "core.tickets.approval.manager" && p["usedBy"]!.AsArray().Count == 1);
+
+        var added = await Call(client, "add_approval_policy", new
+        {
+            label = "Finance approval",
+            stages = new object[]
+            {
+                new { label = "Manager", mode = "any", roles = new[] { "core.tickets.approver" }, expiresAfterHours = 48, escalateToGroups = new[] { "service_desk" } },
+                new { label = "Finance", groups = new[] { "network" }, when = "variables.model == 'mac'" },
+            },
+            expected_version = version,
+        });
+        version = added["version"]!.GetValue<int>();
+        version = (await Call(client, "update_catalog_item", new { item = "core.tickets.catalog.new_laptop", approval_policy = "tenant__finance_approval", expected_version = version }))["version"]!.GetValue<int>();
+
+        var weaken = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_catalog_item", new { item = "core.tickets.catalog.software_access", approval_policy = "", expected_version = version }));
+        Assert.Contains("forbidden", weaken.Body);
+
+        await Call(client, "request_publish");
+        var pending = await api.GetFromJsonAsync<JsonObject>("/api/config/publish-requests/pending", ApiFactory.Json);
+        (await api.PostAsJsonAsync("/api/config/publish", new { artifactHash = pending!["artifactHash"]!.GetValue<string>(), expectedRevision = 1 })).EnsureSuccessStatusCode();
+        var after = await Call(client, "list_approval_policies");
+        var finance = after["policies"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "tenant__finance_approval")!;
+        Assert.Equal(["core.tickets.catalog.new_laptop"], finance["usedBy"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Equal(2, finance["stages"]!.AsArray().Count);
     }
 
     [Fact]

@@ -37,6 +37,26 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
             };
         });
 
+    [McpServerTool(Name = "list_approval_policies", ReadOnly = true), Description("Approval policies in the open draft: stages in order with their approvers, conditions and expiry, and which catalog items use each policy.")]
+    public Task<CallToolResult> ListApprovalPolicies() =>
+        runner.RunAsync("list_approval_policies", AgentScopes.ConfigRead, null, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            return new
+            {
+                draftVersion,
+                policies = config.ApprovalPolicies.Select(p => new
+                {
+                    p.Id,
+                    p.Label,
+                    p.Entity,
+                    customized = config.Customized.Contains(p.Id),
+                    usedBy = config.CatalogItems.Where(i => i.ApprovalPolicy == p.Id).Select(i => i.Id),
+                    stages = p.Stages.Select(s => new { s.Id, s.Label, s.Mode, approvers = s.Approvers.Select(a => $"{a.Kind}:{a.Ref}"), s.When, s.ExpiresAfterHours, s.OnExpiry, escalateTo = s.EscalateTo.Select(a => $"{a.Kind}:{a.Ref}") }),
+                }),
+            };
+        });
+
     [McpServerTool(Name = "list_catalog_items", ReadOnly = true), Description("Service catalog items in the open draft: questions (variables with types), fulfillment tasks with dependencies and conditions, and whether each can be requested.")]
     public Task<CallToolResult> ListCatalogItems() =>
         runner.RunAsync("list_catalog_items", AgentScopes.ConfigRead, null, async ctx =>
@@ -52,6 +72,7 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
                     i.Category,
                     i.Active,
                     i.RequestEntity,
+                    i.ApprovalPolicy,
                     customized = config.Customized.Contains(i.Id),
                     variables = i.Variables.Select(v => new { v.Key, v.Label, v.Type, v.Required, v.ChoiceList }),
                     tasks = i.Tasks.Select(t => new { t.Id, t.Title, t.DependsOn, t.When, t.AssignmentGroup }),

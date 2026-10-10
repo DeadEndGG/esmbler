@@ -302,6 +302,98 @@ public sealed class WorkflowDefinitionRow
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>An approval of one record (ADR 0016). <see cref="PolicySnapshot"/> is the policy it started under.</summary>
+public sealed class ApprovalRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    public string EntityId { get; set; } = "";
+
+    public string PolicyId { get; set; } = "";
+
+    public string PolicySnapshot { get; set; } = "{}";
+
+    public string Status { get; set; } = "pending";
+
+    public int StageIndex { get; set; }
+
+    public Guid? Requester { get; set; }
+
+    public string? OutcomeReason { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? DecidedAt { get; set; }
+}
+
+/// <summary>One approver's step in one stage. Kind user, group or role; <see cref="ApproverRef"/> is the ID or role.</summary>
+public sealed class ApprovalStepRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid ApprovalId { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    public int StageIndex { get; set; }
+
+    public string StageId { get; set; } = "";
+
+    public string ApproverKind { get; set; } = "";
+
+    public string ApproverRef { get; set; } = "";
+
+    public string Status { get; set; } = "pending";
+
+    public Guid? DecidedBy { get; set; }
+
+    public Guid? OnBehalfOf { get; set; }
+
+    public string? Comment { get; set; }
+
+    public DateTimeOffset? DecidedAt { get; set; }
+
+    public DateTimeOffset? DueAt { get; set; }
+
+    public bool Escalation { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>An out-of-office delegation of approvals from one person to another for a period.</summary>
+public sealed class ApprovalDelegationRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid Delegator { get; set; }
+
+    public Guid Delegate { get; set; }
+
+    public DateTimeOffset StartsAt { get; set; }
+
+    public DateTimeOffset EndsAt { get; set; }
+
+    public DateTimeOffset? RevokedAt { get; set; }
+
+    public Guid CreatedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class RecordSequenceRow
 {
     public Guid TenantId { get; set; }

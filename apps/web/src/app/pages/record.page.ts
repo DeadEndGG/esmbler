@@ -139,6 +139,11 @@ export class RecordPage {
   constructor() {
     this.ctx.commitField = (key, value) => this.save({ [key]: value });
     this.ctx.runTransition = (id) => this.transition(id);
+    this.ctx.refreshRecord = async () => {
+      const id = this.id();
+      if (!id || this.preview()) return;
+      this.ctx.record.set(await this.api.get<RecordView>(`/api/records/${this.entity()}/${id}`));
+    };
 
     effect(() => {
       const entity = this.entity();

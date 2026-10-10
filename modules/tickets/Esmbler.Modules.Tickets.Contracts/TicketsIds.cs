@@ -12,6 +12,7 @@ public static class TicketsIds
     public const string AgentRole = "core.tickets.agent";
     public const string RequesterRole = "core.tickets.requester";
     public const string AdminRole = "core.tickets.admin";
+    public const string ApproverRole = "core.tickets.approver";
     public const string Request = "core.tickets.request";
     public const string RequestTask = "core.tickets.request_task";
     public const string RequestWorkflow = "core.tickets.request_lifecycle";

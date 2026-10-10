@@ -726,6 +726,21 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         {
             foreach (var field in entity.Fields)
             {
+                if (field.Type == FieldTypes.Principals && data[field.Key] is JsonArray list)
+                {
+                    // Users and groups share one list; resolve both and let whichever matches name it.
+                    foreach (var item in list.OfType<JsonValue>())
+                    {
+                        if (item.TryGetValue<string>(out var s) && Guid.TryParse(s, out var pid))
+                        {
+                            users.Add(pid);
+                            groups.Add(pid);
+                        }
+                    }
+
+                    continue;
+                }
+
                 if (data[field.Key] is not JsonValue v || !v.TryGetValue<string>(out var raw) || !Guid.TryParse(raw, out var id))
                 {
                     continue;
@@ -793,6 +808,14 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             if (fieldAccess.GetValueOrDefault(field.Key) != FieldAccessLevels.Hidden && data[field.Key] is JsonValue item && item.TryGetValue<string>(out var itemId))
             {
                 result[field.Key] = config.FindCatalogItem(itemId)?.Label ?? itemId;
+            }
+        }
+
+        foreach (var field in entity.Fields.Where(f => f.Type == FieldTypes.Principals))
+        {
+            if (fieldAccess.GetValueOrDefault(field.Key) != FieldAccessLevels.Hidden && data[field.Key] is JsonArray list)
+            {
+                result[field.Key] = string.Join(", ", list.OfType<JsonValue>().Select(v => display.GetValueOrDefault(v.GetValue<string>(), "Unknown")));
             }
         }
 

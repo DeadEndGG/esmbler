@@ -723,8 +723,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             d.Add(Diagnostic.Error("config.duplicate_id", $"Approval policy '{policy.Label}' has two stages '{dup.Key}'.", policy.Id));
         }
 
-        // Stage conditions see the request and, when every item using the policy shares them, nothing more: variables
-        // differ per item, so they are checked against each item that uses the policy.
+        // Stage conditions see the request (record) and its answers (variables), checked against each item using the policy.
         var items = config.CatalogItems.Where(i => i.ApprovalPolicy == policy.Id).ToList();
         foreach (var stage in policy.Stages)
         {
@@ -770,7 +769,9 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
             if (!string.IsNullOrWhiteSpace(stage.When))
             {
-                var schemas = items.Count == 0 ? [EntitySchema.ForRequest(entity, new CatalogItemSpec { Id = policy.Id, Label = policy.Label, RequestEntity = entity.Id })] : items.Select(i => EntitySchema.ForRequest(entity, i));
+                // Questions differ per item: until an item uses the policy only the syntax is checked; then the
+                // condition is checked against every item that uses it.
+                IEnumerable<ExpressionSchema?> schemas = items.Count == 0 ? [null] : items.Select(i => (ExpressionSchema?)EntitySchema.ForRequest(entity, i));
                 foreach (var schema in schemas)
                 {
                     try

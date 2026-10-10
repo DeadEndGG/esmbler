@@ -13,7 +13,8 @@ namespace Esmbler.Platform.Requests;
 /// <c>variables.&lt;key&gt;</c> so forms can show them next to the question. Answers can change only while the
 /// request is still in its workflow's initial state: once it moves on (triage, approval, fulfillment), task conditions
 /// and reviews depend on them. Fulfillment task links (request and task key) are written only by fulfillment, so
-/// nobody can fake or move a finished prerequisite.
+/// nobody can fake or move a finished prerequisite. Requests whose item names an approval policy cannot be moved into
+/// fulfillment by people; the approval engine does that once every stage is approved (ADR 0016).
 /// </summary>
 public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
 {
@@ -54,6 +55,14 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
         if (ctx.Prior is null && !item.Active)
         {
             ctx.Errors.Add(new FieldError(binding.CatalogItemField, "inactive_catalog_item", $"'{item.Label}' can no longer be requested.", "Choose another item from the catalog."));
+            return ValueTask.CompletedTask;
+        }
+
+        // Requests whose item needs approval reach fulfillment only through the approval engine (ADR 0016).
+        if (ctx.Operation == WriteOperations.Transition && !ctx.SystemActor && binding.Approval is not null && item.ApprovalPolicy is not null
+            && ctx.EffectiveWorkflow is { } flow && ctx.FromState == flow.InitialState && ctx.ToState is { } to && binding.StartStates.Contains(to))
+        {
+            ctx.Errors.Add(new FieldError(flow.StateField, "approval_required", $"'{item.Label}' needs approval before fulfillment starts.", "It moves on by itself once the approvers sign off."));
             return ValueTask.CompletedTask;
         }
 
