@@ -1,0 +1,103 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.kpi_tile",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 2,
+  "label": "KPI tile",
+  "description": "One figure from a metric, such as \"12 unassigned tickets\", with its label. Selecting it opens the explorer filtered to exactly the records the figure counts, so the figure and the list always agree for the viewer.",
+  "usage": [
+    "Put the most important three or four figures in the first row of a dashboard.",
+    "Pick a tone only when it carries meaning (critical for breaches), not for decoration.",
+    "Use a metric without groups; grouped metrics belong in a bar chart or metric table."
+  ],
+  "constraints": [
+    "metric is required and must exist; it must not be grouped.",
+    "The figure is computed on the server under the viewer's permissions; viewers who may not see the metric see nothing.",
+    "label overrides the metric's label (at most 60 characters)."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "metric"
+    ],
+    "properties": {
+      "metric": {
+        "type": "string",
+        "description": "Metric ID, e.g. core.tickets.metric.unassigned."
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "tone": {
+        "enum": [
+          "neutral",
+          "info",
+          "success",
+          "warning",
+          "critical"
+        ],
+        "default": "neutral"
+      },
+      "drill": {
+        "type": "boolean",
+        "default": true,
+        "description": "Open the explorer with the figure's filter."
+      }
+    }
+  },
+  "allowedParents": [
+    "layout.column",
+    "layout.card",
+    "layout.tab"
+  ],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": {
+    "kind": "metric",
+    "description": "Evaluates the metric for the viewer."
+  },
+  "events": [
+    "drill"
+  ],
+  "ruleHooks": [],
+  "tokens": [
+    "surface.raised",
+    "radius.lg",
+    "space.3",
+    "space.4",
+    "text.body",
+    "text.body-sm",
+    "text.title-sm",
+    "text.muted",
+    "border.subtle",
+    "accent.blue",
+    "accent.green",
+    "accent.amber",
+    "accent.red"
+  ],
+  "accessibility": {
+    "role": "link",
+    "keyboard": "Tab focuses the tile; Enter opens the filtered explorer.",
+    "notes": "The accessible name reads the figure and label, e.g. \"12 Unassigned, open in the list\"."
+  },
+  "responsive": "Tiles keep their column span; the figure shrinks one step below 480px.",
+  "examples": [
+    {
+      "description": "Unassigned tickets",
+      "spec": {
+        "id": "core.tickets.dashboard.kpi_unassigned",
+        "type": "display.kpi_tile",
+        "props": {
+          "metric": "core.tickets.metric.unassigned",
+          "tone": "warning"
+        },
+        "children": []
+      }
+    }
+  ]
+}

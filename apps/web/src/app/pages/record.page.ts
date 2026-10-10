@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { BuilderState } from '../builder/builder-state';
 import { DraftCommands, findNode } from '../builder/draft-commands';
 import { Api, ApiError } from '../core/api';
+import { ExplorerState } from '../core/explorer-state';
 import { DraftViewSpec, NodeSpec, RecordView } from '../core/models';
 import { Session } from '../core/session';
 import { Shortcuts } from '../core/shortcuts';
@@ -41,7 +42,7 @@ interface SlashItem {
         </div>
       }
       <nav class="crumbs" aria-label="Breadcrumb">
-        <a class="crumb-link" [routerLink]="['/records', entity()]"><esm-icon name="arrow-left" [size]="14" /> {{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
+        <a class="crumb-link" [routerLink]="returnTree()"><esm-icon name="arrow-left" [size]="14" /> {{ s?.entity?.entity?.pluralLabel ?? 'Records' }}</a>
         <esm-icon name="chevron-right" [size]="14" />
         <span class="mono text-fg">{{ preview() ? 'Sample record' : (ctx.record()?.number ?? '…') }}</span>
         <span class="flex"></span>
@@ -53,7 +54,7 @@ interface SlashItem {
       @if (error(); as err) {
         <div class="callout tone-red" role="alert">
           <strong>{{ err }}</strong>
-          @if (notFound()) { <p><a [routerLink]="['/records', entity()]">Back to the list</a></p> }
+          @if (notFound()) { <p><a [routerLink]="returnTree()">Back to the list</a></p> }
         </div>
       } @else if (s && ctx.record()) {
         @for (m of ctx.states().messages; track $index) {
@@ -125,6 +126,9 @@ export class RecordPage {
   private readonly commands = inject(DraftCommands);
   private readonly toasts = inject(Toasts);
   private readonly router = inject(Router);
+  private readonly explorer = inject(ExplorerState);
+  /** The explorer this record was opened from, with its filters (REQ-WS-003). */
+  protected readonly returnTree = computed(() => this.router.parseUrl(this.explorer.returnUrl(this.entity())));
 
   protected readonly error = signal<string | null>(null);
   protected readonly notFound = signal(false);
@@ -343,7 +347,7 @@ export class RecordPage {
     if (!record || !window.confirm(`Delete ${record.number ?? 'this record'}? You can undo this for 30 days.`)) return;
     try {
       await this.api.delete(`/api/records/${record.entity}/${record.id}`, { revision: record.revision });
-      await this.router.navigate(['/records', record.entity]);
+      await this.router.navigateByUrl(this.explorer.returnUrl(record.entity));
       this.toasts.show(`${record.number ?? 'Record'} deleted.`, 'info', {
         label: 'Undo',
         run: () =>
@@ -358,7 +362,7 @@ export class RecordPage {
   }
 
   protected back(): void {
-    void this.router.navigate(['/records', this.entity()]);
+    void this.router.navigateByUrl(this.explorer.returnUrl(this.entity()));
   }
 }
 

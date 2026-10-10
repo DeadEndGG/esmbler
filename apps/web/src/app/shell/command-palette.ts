@@ -85,6 +85,9 @@ export class CommandPalette {
   private readonly commands = computed<Command[]>(() => {
     const app = this.session.app();
     const list: Command[] = [];
+    for (const d of app?.dashboards ?? []) {
+      list.push({ id: 'dash:' + d.view, label: `Go to ${d.label}`, section: 'Navigate', run: () => this.router.navigate(['/dashboards', d.view]) });
+    }
     for (const n of app?.navigation ?? []) {
       list.push({ id: 'go:' + n.entity, label: `Go to ${n.pluralLabel}`, hint: n.entity === 'core.tickets.ticket' ? 'G T' : undefined, section: 'Navigate', run: () => this.router.navigate(['/records', n.entity]) });
       if (n.canCreate) list.push({ id: 'new:' + n.entity, label: `New ${n.label.toLowerCase()}`, hint: 'C', section: 'Create', run: () => (n.requests ? this.router.navigate(['/catalog']) : this.router.navigate(['/records', n.entity, 'new'])) });

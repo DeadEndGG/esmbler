@@ -20,6 +20,16 @@ const workspaceGuard: CanActivateFn = async () => {
   return true;
 };
 
+/** Home: the first dashboard the person can see, otherwise their first list. */
+const homeGuard: CanActivateFn = () => {
+  const session = inject(Session);
+  const router = inject(Router);
+  const dashboard = session.app()?.dashboards?.[0];
+  if (dashboard) return router.createUrlTree(['/dashboards', dashboard.view]);
+  const first = session.app()?.navigation[0];
+  return router.createUrlTree(first ? ['/records', first.entity] : ['/catalog']);
+};
+
 const signedInGuard: CanActivateFn = async () => {
   const auth = inject(Auth);
   if (auth.signedIn() || (await auth.restore())) return true;
@@ -34,7 +44,8 @@ export const routes: Routes = [
     canActivate: [workspaceGuard],
     loadComponent: () => import('./shell/shell').then((m) => m.Shell),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'records/core.tickets.ticket' },
+      { path: '', pathMatch: 'full', canActivate: [homeGuard], children: [] },
+      { path: 'dashboards/:view', loadComponent: () => import('./pages/dashboard.page').then((m) => m.DashboardPage) },
       { path: 'records/:entity', loadComponent: () => import('./pages/list.page').then((m) => m.ListPage) },
       { path: 'records/:entity/new', loadComponent: () => import('./pages/create.page').then((m) => m.CreatePage) },
       { path: 'records/:entity/preview', loadComponent: () => import('./pages/record.page').then((m) => m.RecordPage), data: { preview: true } },

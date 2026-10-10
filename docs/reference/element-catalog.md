@@ -540,10 +540,13 @@ Accessibility: role `group`; Each answer is an ordinary form control with its ow
 | Element | Gate | Placeable | Description |
 | --- | --- | --- | --- |
 | `display.badge` | 1 | yes | A small pill showing a short status-like value: a choice field's option (status, priority, category) with its tone, or fixed text such as "VIP". |
+| `display.bar_chart` | 2 | yes | A grouped metric as bars, such as open tickets by team or tickets resolved per week. |
 | `display.callout` | 1 | yes | A short, prominent message box with a tone (info, success, warning, critical) that gives readers context about the record, such as "P1 — follow the major incident process". |
 | `display.empty_state` | 1 | yes | A friendly placeholder that explains why an area has no content and what to do next, such as "No child tickets yet — split large work into child tickets". |
 | `display.heading` | 1 | yes | A read-only heading inside a column, tab, or card, either with fixed text ("Customer impact") or bound to a field so it shows that field's value (typically the record's title). |
+| `display.kpi_tile` | 2 | yes | One figure from a metric, such as "12 unassigned tickets", with its label. |
 | `display.label_value` | 1 | yes | A compact, always read-only pair of a label and a value — either a field's display value or fixed text. |
+| `display.metric_table` | 2 | yes | A grouped metric as a small report table: each group, its figure and a link to the records behind it. |
 
 ### Badge (`display.badge`)
 
@@ -564,6 +567,26 @@ Constraints:
 - tone applies to text badges (default neutral); color is never the only cue — the text always carries the meaning.
 
 Accessibility: role `none`; Not focusable.
+
+### Bar chart (`display.bar_chart`)
+
+A grouped metric as bars, such as open tickets by team or tickets resolved per week. Every bar opens the explorer filtered to exactly the records it counts. A table with the same numbers is available to screen readers and on request.
+
+| Prop | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `metric` | string | yes |  |
+| `title` | string | no |  |
+| `orientation` | "horizontal" \| "vertical" | no |  |
+| `showTable` | boolean | no | Show the numbers as a table below the chart. |
+
+Parents: `layout.column`, `layout.card`, `layout.tab`. Children: none.
+
+Constraints:
+
+- metric is required, must exist and must be grouped.
+- Values are computed on the server under the viewer's permissions.
+
+Accessibility: role `figure`; Tab moves between bars; Enter opens the filtered explorer for a bar.
 
 ### Callout (`display.callout`)
 
@@ -625,6 +648,27 @@ Constraints:
 
 Accessibility: role `heading`; Not focusable.
 
+### KPI tile (`display.kpi_tile`)
+
+One figure from a metric, such as "12 unassigned tickets", with its label. Selecting it opens the explorer filtered to exactly the records the figure counts, so the figure and the list always agree for the viewer.
+
+| Prop | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `metric` | string | yes | Metric ID, e.g. core.tickets.metric.unassigned. |
+| `label` | string | no |  |
+| `tone` | "neutral" \| "info" \| "success" \| "warning" \| "critical" | no |  |
+| `drill` | boolean | no | Open the explorer with the figure's filter. |
+
+Parents: `layout.column`, `layout.card`, `layout.tab`. Children: none.
+
+Constraints:
+
+- metric is required and must exist; it must not be grouped.
+- The figure is computed on the server under the viewer's permissions; viewers who may not see the metric see nothing.
+- label overrides the metric's label (at most 60 characters).
+
+Accessibility: role `link`; Tab focuses the tile; Enter opens the filtered explorer.
+
 ### Label and value (`display.label_value`)
 
 A compact, always read-only pair of a label and a value — either a field's display value or fixed text. Use it for summary sidebars and headers where values should be scanned, not edited ("Requester: Ana Ruiz"). Use a field placement when the value should be editable.
@@ -644,6 +688,23 @@ Constraints:
 - Lookup values the viewer cannot read show "Restricted record".
 
 Accessibility: role `group`; Not focusable unless the value is a link (user, lookup, email), which takes Tab and Enter.
+
+### Metric table (`display.metric_table`)
+
+A grouped metric as a small report table: each group, its figure and a link to the records behind it. Use it for basic reports.
+
+| Prop | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `metric` | string | yes |  |
+| `title` | string | no |  |
+
+Parents: `layout.column`, `layout.card`, `layout.tab`. Children: none.
+
+Constraints:
+
+- metric is required, must exist and must be grouped.
+
+Accessibility: role `table`; Tab moves between the links in each row.
 
 ## Collections
 
@@ -687,6 +748,8 @@ A dense, keyboard-navigable list of records of one entity with sortable columns,
 | `sort` | object | no |  |
 | `filter` | string | no | Base filter expression (CEL subset over record), e.g. record.status != 'closed'. |
 | `inlineEdit` | boolean | no |  |
+| `groupBy` | string | no | Field the rows are grouped by when the list opens (choice, status, priority, user, group or toggle). |
+| `groupOptions` | array | no | Fields people can group the list by. |
 
 Parents: `layout.column`, `layout.tab`. Children: `collection.column`.
 
@@ -1037,6 +1100,7 @@ Accessibility: role `status`; Toasts never take focus. Alt+T moves focus to the 
 | `spec_object.field_definition` | 1 | no | The definition of one field of an entity (FieldSpec): a stable key, a field type (one of the field.<type> elements), a label, and the constraint props that apply to that type, plus flags such as required, readOnly, hidden, deprecated, and system. |
 | `spec_object.form` | 1 | no | A ViewSpec of kind form: a compact create or edit form for an entity, used for quick create dialogs (action.button with action quick_create:<view id>) and portal request forms. |
 | `spec_object.list_view` | 1 | no | A ViewSpec of kind list: the page for finding and working many records of an entity, typically saved views, a filter bar, and a data table with columns. |
+| `spec_object.metric` | 2 | no | A named, reusable figure such as "Open", "Unassigned", "SLA breaches" or "Average resolution time": which records it counts (an entity and a filter), what it measures (count, sum, average, minimum, maximum or average duration), optional groups (a choice, user, group or toggle field, or date buckets), an optional date range, an optional SLA breach condition, and who may see it. |
 | `spec_object.notification_template` | 1 | no | An email/in-app notification sent when a record event happens (record.created, record.transitioned, ...) to recipients named by user fields of the entity or the watchers. |
 | `spec_object.permission_set` | 1 | no | Grants roles access: per entity (create, read and update scopes none/related/all, delete, optional ABAC update condition), per field (hidden, read, write), and platform actions (config.edit, audit.read, records.export, ...). |
 | `spec_object.record_view` | 1 | no | A ViewSpec of kind record: the page for viewing and editing one record of an entity. |
@@ -1191,6 +1255,19 @@ Constraints:
 - Node IDs are unique within the view and stable; props validate against each element's propsSchema.
 
 Accessibility: role `none`; Not rendered directly.
+
+### Metric (`spec_object.metric`)
+
+A named, reusable figure such as "Open", "Unassigned", "SLA breaches" or "Average resolution time": which records it counts (an entity and a filter), what it measures (count, sum, average, minimum, maximum or average duration), optional groups (a choice, user, group or toggle field, or date buckets), an optional date range, an optional SLA breach condition, and who may see it. Dashboards and the explorer use the same definition, so a figure and the list it opens always agree for the same viewer.
+
+Constraints:
+
+- id is unique; tenant metrics start with tenant__. Default metrics can be changed but not removed; a metric that a dashboard or saved view shows cannot be removed.
+- The filter uses the list filter language (record fields, user.id, user.groups, user.roles, comparisons, in, &&, ||, !, has/size/contains/startsWith/endsWith).
+- Groups: choice, status, priority, user, group or toggle fields, or date fields with day/week/month buckets and a date range; at most 25 groups and 52 buckets.
+- Figures never widen access: each viewer's figure counts only records they can read; a metric reading a field hidden from a viewer is shown to them as restricted.
+
+Accessibility: role `none`; Not rendered directly; KPI tiles, bar charts and metric tables show metrics.
 
 ### Notification template (`spec_object.notification_template`)
 

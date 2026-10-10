@@ -25,13 +25,15 @@ public static class RecordEndpoints
     {
         var g = app.MapGroup("/api/records/{entity}").WithTags("Records").RequireAuthorization();
 
-        g.MapGet("/", (string entity, [FromQuery(Name = "filter")] string[]? filter, string? search, string? sort, string? dir, int? offset, int? size, ClaimsPrincipal user, RecordService records, CancellationToken ct) =>
+        g.MapGet("/", (string entity, [FromQuery(Name = "filter")] string[]? filter, [FromQuery(Name = "sla")] string[]? sla, string? search, string? sort, string? dir, string? group, int? offset, int? size, ClaimsPrincipal user, RecordService records, CancellationToken ct) =>
             records.QueryAsync(Ctx(user), new RecordQuery
             {
                 Entity = entity,
                 Filters = filter ?? [],
+                Sla = [.. (sla ?? []).Take(5).Select(SlaFilter.Parse)],
                 Search = search,
                 Sort = sort is null ? null : new SortSpec(sort, dir is "desc"),
+                GroupBy = group,
                 Offset = offset ?? 0,
                 PageSize = size ?? 50,
             }, ct));

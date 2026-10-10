@@ -40,6 +40,8 @@ public class SpecCatalog
 
     public List<SlaPolicySpec> SlaPolicies { get; set; } = [];
 
+    public List<MetricSpec> Metrics { get; set; } = [];
+
     public EntitySpec? FindEntity(string id) => Entities.Find(e => e.Id == id);
 
     public ChoiceListSpec? FindChoiceList(string id) => ChoiceLists.Find(c => c.Id == id);
@@ -59,6 +61,8 @@ public class SpecCatalog
     public BusinessCalendarSpec? FindBusinessCalendar(string id) => BusinessCalendars.Find(c => c.Id == id);
 
     public SlaPolicySpec? FindSlaPolicy(string id) => SlaPolicies.Find(p => p.Id == id);
+
+    public MetricSpec? FindMetric(string id) => Metrics.Find(m => m.Id == id);
 
     /// <summary>The entity whose request binding names <paramref name="taskEntityId"/> as its task entity.</summary>
     public EntitySpec? RequestEntityForTask(string taskEntityId) => Entities.Find(e => e.Request?.TaskEntity == taskEntityId);

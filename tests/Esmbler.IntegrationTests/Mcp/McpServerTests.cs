@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals", "list_metrics", "describe_metric_fields", "add_metric", "update_metric", "remove_metric", "add_dashboard_tile", "evaluate_metric" })
         {
             Assert.Contains(expected, tools);
         }
@@ -285,6 +285,53 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         // Mistakes come back as structured errors with a fix.
         var bad = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_business_calendar", new { calendar = "tenant__london_office_hours", time_zone = "London", expected_version = version }));
         Assert.Contains("bad_time_zone", bad.Body);
+    }
+
+    [Fact]
+    public async Task Agent_defines_a_metric_and_puts_it_on_the_dashboard()
+    {
+        // REQ-WS-004 (ADR 0019): metrics and dashboard tiles are configuration the AI builder edits in the draft.
+        var tenant = await platform.NewTenantAsync("mmet", "1.6.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var fields = await Call(client, "describe_metric_fields", new { entity = "core.tickets.ticket" });
+        Assert.Contains(fields["groupable"]!.AsArray(), f => f!["key"]!.GetValue<string>() == "priority");
+        var listed = await Call(client, "list_metrics");
+        var dashboard = listed["dashboards"]!.AsArray().Single(d => d!["id"]!.GetValue<string>() == "core.tickets.dashboard")!;
+        var column = dashboard["containers"]!.AsArray().First()!.GetValue<string>();
+
+        version = (await Call(client, "add_metric", new
+        {
+            entity = "core.tickets.ticket",
+            label = "Open by priority",
+            filter = "!(record.status in ['resolved', 'closed', 'cancelled'])",
+            options = new { groupBy = "priority" },
+            expected_version = version,
+        }))["version"]!.GetValue<int>();
+        version = (await Call(client, "add_dashboard_tile", new { view = "core.tickets.dashboard", parent = column, metric = "tenant__metric_open_by_priority", kind = "bar", expected_version = version }))["version"]!.GetValue<int>();
+
+        var after = await Call(client, "list_metrics");
+        var metric = after["metrics"]!.AsArray().Single(m => m!["id"]!.GetValue<string>() == "tenant__metric_open_by_priority")!;
+        Assert.Equal("priority", metric["groupBy"]!.GetValue<string>());
+        Assert.Single(metric["usedBy"]!.AsArray());
+
+        // A metric in use cannot be removed, a KPI tile needs an ungrouped metric, and filters must be queries.
+        var inUse = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "remove_metric", new { metric = "tenant__metric_open_by_priority", expected_version = version }));
+        Assert.Contains("in_use", inUse.Body);
+        var badTile = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_dashboard_tile", new { view = "core.tickets.dashboard", parent = column, metric = "tenant__metric_open_by_priority", kind = "kpi", expected_version = version }));
+        Assert.Contains("bad_metric", badTile.Body);
+        var badFilter = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_metric", new { entity = "core.tickets.ticket", label = "Reopened", filter = "prior.status == 'resolved'", expected_version = version }));
+        Assert.Contains("bad_filter", badFilter.Body);
+
+        // Evaluating real figures needs the records:read scope (T-23).
+        var noScope = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "evaluate_metric", new { metric = "core.tickets.metric.open" }));
+        Assert.Contains("scope", noScope.Body, StringComparison.OrdinalIgnoreCase);
+        var (_, reader) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant), "config:read", "records:read");
+        await using var readClient = await Mcp.ConnectAsync(reader);
+        var open = await Call(readClient, "evaluate_metric", new { metric = "core.tickets.metric.open" });
+        Assert.NotNull(open["untrusted_data"]);
     }
 
     [Fact]

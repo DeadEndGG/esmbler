@@ -1,0 +1,97 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.bar_chart",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 2,
+  "label": "Bar chart",
+  "description": "A grouped metric as bars, such as open tickets by team or tickets resolved per week. Every bar opens the explorer filtered to exactly the records it counts. A table with the same numbers is available to screen readers and on request.",
+  "usage": [
+    "Horizontal bars for categories (teams, categories, priorities); vertical bars for time (weeks, months).",
+    "Keep to the 12 largest groups; the metric decides the limit."
+  ],
+  "constraints": [
+    "metric is required, must exist and must be grouped.",
+    "Values are computed on the server under the viewer's permissions."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "metric"
+    ],
+    "properties": {
+      "metric": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "orientation": {
+        "enum": [
+          "horizontal",
+          "vertical"
+        ],
+        "default": "horizontal"
+      },
+      "showTable": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show the numbers as a table below the chart."
+      }
+    }
+  },
+  "allowedParents": [
+    "layout.column",
+    "layout.card",
+    "layout.tab"
+  ],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": {
+    "kind": "metric",
+    "description": "Evaluates the grouped metric for the viewer."
+  },
+  "events": [
+    "drill"
+  ],
+  "ruleHooks": [],
+  "tokens": [
+    "surface.raised",
+    "radius.lg",
+    "space.3",
+    "space.4",
+    "text.body",
+    "text.body-sm",
+    "text.title-sm",
+    "text.muted",
+    "border.subtle",
+    "accent.blue",
+    "accent.green",
+    "accent.amber",
+    "accent.red"
+  ],
+  "accessibility": {
+    "role": "figure",
+    "keyboard": "Tab moves between bars; Enter opens the filtered explorer for a bar.",
+    "notes": "Each bar is a link named \"Network: 7\"; a visually hidden table repeats all values."
+  },
+  "responsive": "Vertical charts scroll horizontally inside their card below 480px; labels truncate with a tooltip.",
+  "examples": [
+    {
+      "description": "Workload by team",
+      "spec": {
+        "id": "core.tickets.dashboard.workload",
+        "type": "display.bar_chart",
+        "props": {
+          "metric": "core.tickets.metric.workload_by_team",
+          "orientation": "horizontal"
+        },
+        "children": []
+      }
+    }
+  ]
+}

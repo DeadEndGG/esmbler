@@ -108,6 +108,7 @@ public static class Composer
             config.EventTypes.AddRange(copy.EventTypes);
             config.BusinessCalendars.AddRange(copy.BusinessCalendars);
             config.SlaPolicies.AddRange(copy.SlaPolicies);
+            config.Metrics.AddRange(copy.Metrics);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -188,6 +189,11 @@ public static class Composer
         foreach (var p in catalog.SlaPolicies)
         {
             yield return p.Id;
+        }
+
+        foreach (var m in catalog.Metrics)
+        {
+            yield return m.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -424,6 +430,46 @@ public static class Composer
 
                 ctx.Config.SlaPolicies.Remove(removedSla);
                 ctx.Config.Provenance.Remove(removedSla.Id);
+                break;
+            case AddMetric am:
+                RequireTenantId(am.Metric.Id, "metric");
+                if (ctx.Config.FindMetric(am.Metric.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"Metric '{am.Metric.Id}' already exists.", am.Metric.Id, "Choose a new ID.");
+                }
+
+                ctx.Config.Metrics.Add(SpecJson.Clone(am.Metric));
+                ctx.Mark(am.Metric.Id);
+                break;
+            case UpdateMetric um:
+                var metric = ctx.Config.FindMetric(um.Metric) ?? throw Missing("metric", um.Metric, Expression.Suggest(um.Metric, ctx.Config.Metrics.Select(m => m.Id)));
+                var metricTenant = IsTenant(ctx, metric.Id);
+                CheckExpected(ctx, um.Metric, SpecJson.ToNode(metric)!.AsObject(), um.Expected, SpecJson.ToNode(um.Set)!.AsObject());
+                metric.Label = um.Set.Label ?? metric.Label;
+                metric.Description = um.Set.Description ?? metric.Description;
+                metric.Filter = um.Set.Filter ?? metric.Filter;
+                metric.Measure = um.Set.Measure is { } measure ? SpecJson.Clone(measure) : metric.Measure;
+                metric.GroupBy = um.Set.GroupBy is { } group ? SpecJson.Clone(group) : metric.GroupBy;
+                metric.DateRange = um.Set.DateRange is { } range ? SpecJson.Clone(range) : metric.DateRange;
+                metric.Sla = um.Set.Sla is { } metricSla ? SpecJson.Clone(metricSla) : metric.Sla;
+                metric.Roles = um.Set.Roles?.ToList() ?? metric.Roles;
+                metric.Format = um.Set.Format ?? metric.Format;
+                ctx.Mark(metric.Id, keepLayer: !metricTenant);
+                break;
+            case RemoveMetric rm:
+                var removedMetric = ctx.Config.FindMetric(rm.Metric) ?? throw Missing("metric", rm.Metric, Expression.Suggest(rm.Metric, ctx.Config.Metrics.Select(m => m.Id)));
+                if (!IsTenant(ctx, removedMetric.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Metric '{removedMetric.Label}' comes from {ctx.Layer(removedMetric.Id)} and cannot be removed.", rm.Metric, "Remove its tiles from dashboards with node.remove instead.");
+                }
+
+                if (MetricUsers(ctx.Config, removedMetric.Id).FirstOrDefault() is { } metricUser)
+                {
+                    throw new OverlayException("overlay.in_use", $"'{metricUser}' still shows metric '{removedMetric.Label}'.", rm.Metric, $"Remove '{metricUser}' first.");
+                }
+
+                ctx.Config.Metrics.Remove(removedMetric);
+                ctx.Config.Provenance.Remove(removedMetric.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
@@ -842,6 +888,13 @@ public static class Composer
 
         ctx.Mark(policy.Id, keepLayer: !tenant);
     }
+
+    /// <summary>Layout nodes and saved views that reference a metric.</summary>
+    public static IEnumerable<string> MetricUsers(SpecCatalog config, string metricId) =>
+        config.Views.SelectMany(v => v.Layout.Descendants()).Where(n =>
+            (n.Props.TryGetPropertyValue("metric", out var m) && m?.GetValueKind() == System.Text.Json.JsonValueKind.String && m.GetValue<string>() == metricId)
+            || (n.Props.TryGetPropertyValue("views", out var views) && views is JsonArray list && list.Any(i => i?["metric"]?.GetValueKind() == System.Text.Json.JsonValueKind.String && i["metric"]!.GetValue<string>() == metricId)))
+            .Select(n => n.Id);
 
     private static void ApplyUpdateBusinessCalendar(OpContext ctx, UpdateBusinessCalendar op)
     {

@@ -36,6 +36,9 @@ import { Icon, IconName } from '../ui/icon';
         </button>
 
         <div class="nav-group">Workspace</div>
+        @for (d of session.app()?.dashboards ?? []; track d.view) {
+          <a class="nav-item" [routerLink]="['/dashboards', d.view]" routerLinkActive="active"><esm-icon name="layout-dashboard" /><span class="flex-1">{{ d.label }}</span></a>
+        }
         @if (session.app()?.catalog) {
           <a class="nav-item" routerLink="/catalog" routerLinkActive="active"><esm-icon name="store" /><span class="flex-1">Service catalog</span></a>
         }

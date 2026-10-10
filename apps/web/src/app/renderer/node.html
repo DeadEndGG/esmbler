@@ -115,6 +115,9 @@
       @case ('action.transition_buttons') { <esm-transition-buttons [node]="n" /> }
       @case ('action.button') { <esm-action-button [node]="n" /> }
       @case ('action.action_menu') { <esm-action-menu [node]="n" /> }
+      @case ('display.kpi_tile') { <esm-kpi-tile [node]="n" /> }
+      @case ('display.bar_chart') { <esm-bar-chart [node]="n" /> }
+      @case ('display.metric_table') { <esm-metric-table [node]="n" /> }
       @default {
         <div class="unknown muted">{{ n.type }}</div>
       }

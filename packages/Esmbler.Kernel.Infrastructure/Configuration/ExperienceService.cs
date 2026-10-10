@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Esmbler.Expressions;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
@@ -10,6 +11,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Esmbler.Kernel.Infrastructure.Configuration;
 
 /// <param name="Requests">The entity receives catalog requests: "New" opens the service catalog instead of a form.</param>
+/// <summary>A dashboard in the navigation (ADR 0019).</summary>
+public sealed record DashboardNavItem(string View, string Label, string Entity);
+
+/// <summary>What the client needs to know about a metric a view shows (only metrics the viewer may see).</summary>
+public sealed record MetricClientView(string Id, string Label, string Entity, string? Filter, IReadOnlyList<string> Sla, string Measure, string? Format, string? GroupBy);
+
 public sealed record NavItem(string Entity, string Label, string PluralLabel, string? ListView, string? RecordView, string? QuickCreateView, bool CanCreate, bool Requests = false);
 
 /// <summary>A catalog item as the catalog and request forms show it: questions, plus the fulfillment steps as titles.</summary>
@@ -40,7 +47,8 @@ public sealed record AppBootstrap(
     IReadOnlyList<NavItem> Navigation,
     IReadOnlyList<TenantChoice> Workspaces,
     bool Catalog = false,
-    bool Approvals = false);
+    bool Approvals = false,
+    IReadOnlyList<DashboardNavItem>? Dashboards = null);
 
 /// <summary>Entity definition as one viewer may see it (hidden fields and rules that read them are removed).</summary>
 public sealed record EntityClientSpec(
@@ -54,7 +62,7 @@ public sealed record EntityClientSpec(
     int ConfigRevision,
     IReadOnlyList<CatalogItemView>? CatalogItems = null);
 
-public sealed record ViewClientSpec(ViewSpec View, EntityClientSpec Entity, IReadOnlyDictionary<string, EntityClientSpec> RelatedEntities, int ConfigRevision);
+public sealed record ViewClientSpec(ViewSpec View, EntityClientSpec Entity, IReadOnlyDictionary<string, EntityClientSpec> RelatedEntities, int ConfigRevision, IReadOnlyDictionary<string, MetricClientView>? Metrics = null);
 
 /// <summary>Serves permission-filtered configuration to clients: pages follow permissions automatically (REQ-AUTHZ-004).</summary>
 public sealed class ExperienceService(Database database, ConfigStore configs, AccessService access, IdentityService identity)
@@ -82,6 +90,11 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                     e.Request is not null))
                 .ToList();
             var catalog = artifact.Config.CatalogItems.Any(i => i.Active && artifact.Config.FindEntity(i.RequestEntity) is { } re && perms.CanCreate(re));
+            var dashboards = artifact.Config.Views
+                .Where(v => v.Kind == ViewKinds.Dashboard && perms.Entity(v.Entity).Read != RecordScopes.None)
+                .Where(v => v.Layout.Descendants().Any(n => !n.Hidden && n.StringProp("metric") is { } m && artifact.Config.FindMetric(m) is { } metric && !Metrics.MetricService.Restricted(artifact.Config, perms, artifact.Config.FindEntity(metric.Entity)!, metric)))
+                .Select(v => new DashboardNavItem(v.Id, v.Label ?? v.Id, v.Entity))
+                .ToList();
             return new AppBootstrap(
                 new { tenant.Id, tenant.Slug, tenant.Name },
                 new { env.Id, env.Key, env.Name, env.Kind },
@@ -93,7 +106,8 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 nav,
                 workspaces,
                 catalog,
-                ctx.AgentId is null && artifact.Config.Entities.Exists(e => e.Request?.Approval is not null));
+                ctx.AgentId is null && artifact.Config.Entities.Exists(e => e.Request?.Approval is not null),
+                dashboards);
         }, ct);
     }
 
@@ -174,7 +188,20 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
         var copy = SpecJson.Clone(view);
         var related = new Dictionary<string, EntityClientSpec>(StringComparer.Ordinal);
         Prune(copy.Layout, config, entity, perms, related, revision);
-        return new ViewClientSpec(copy, ForEntity(config, entity, perms, revision), related, revision);
+        var metrics = new Dictionary<string, MetricClientView>(StringComparer.Ordinal);
+        foreach (var node in copy.Layout.Descendants())
+        {
+            var ids = node.Props["views"] is JsonArray items ? items.Select(i => i?["metric"]).OfType<JsonValue>().Select(v => v.ToString()) : [];
+            foreach (var id in ids.Append(node.StringProp("metric")).OfType<string>())
+            {
+                if (config.FindMetric(id) is { } m)
+                {
+                    metrics[id] = new MetricClientView(m.Id, m.Label, m.Entity, m.Filter, m.Sla is { } s ? [$"{s.Policy}{(s.Target is null ? string.Empty : "/" + s.Target)}:{s.State}"] : [], m.Measure.Kind, m.Format, m.GroupBy?.Field);
+                }
+            }
+        }
+
+        return new ViewClientSpec(copy, ForEntity(config, entity, perms, revision), related, revision, metrics);
     }
 
     public static EntityClientSpec ForEntity(EffectiveConfig config, EntitySpec entity, EffectivePermissions perms, int revision)
@@ -232,6 +259,21 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
         var nodeEntity = node.StringProp("entity") is { } eid ? config.FindEntity(eid) ?? entity : entity;
         foreach (var child in node.Children.ToList())
         {
+            // Figures the viewer may not see are removed, not shown empty (ADR 0019).
+            if (child.StringProp("metric") is { } metricId && (config.FindMetric(metricId) is not { } metric || config.FindEntity(metric.Entity) is not { } metricEntity || Metrics.MetricService.Restricted(config, perms, metricEntity, metric)))
+            {
+                node.Children.Remove(child);
+                continue;
+            }
+
+            if (child.Props["views"] is JsonArray savedViews)
+            {
+                foreach (var item in savedViews.ToList().Where(i => i?["metric"] is JsonValue v && (config.FindMetric(v.ToString()) is not { } sm || config.FindEntity(sm.Entity) is not { } se || Metrics.MetricService.Restricted(config, perms, se, sm))))
+                {
+                    savedViews.Remove(item);
+                }
+            }
+
             var fieldEntity = child.Type == "collection.column" ? nodeEntity : entity;
             if (child.StringProp("field") is { } field && (fieldEntity.FindField(field) is not { Hidden: false } || perms.FieldAccess(fieldEntity, field) == FieldAccessLevels.Hidden))
             {

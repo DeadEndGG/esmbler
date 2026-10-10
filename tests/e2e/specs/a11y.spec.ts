@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { openFirstTicket, signIn } from './helpers';
+import { openFirstTicket, signIn, openTickets } from './helpers';
 
 /** REQ-DS-003: WCAG 2.2 AA checks on the main screens, including draft mode. Serious and critical issues fail. */
 async function audit(page: Page, name: string): Promise<void> {
@@ -14,7 +14,7 @@ test('@REQ-DS-003 sign-in, list, record and draft pages have no serious accessib
   await audit(page, 'login');
 
   await signIn(page, 'alex@acme.example', 'Acme');
-  await expect(page.locator('tbody tr').first()).toBeVisible();
+  await openTickets(page);
   await audit(page, 'list');
 
   await openFirstTicket(page);
@@ -39,7 +39,7 @@ test.describe('dark mode', () => {
     await audit(page, 'login (dark)');
 
     await signIn(page, 'alex@acme.example', 'Acme');
-    await expect(page.locator('tbody tr').first()).toBeVisible();
+    await openTickets(page);
     await page.keyboard.press('j');
     await audit(page, 'list (dark)');
 

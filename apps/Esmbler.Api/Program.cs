@@ -88,6 +88,7 @@ app.MapAuth();
 app.MapAppAndConfig();
 app.MapRecords();
 app.MapApprovals();
+app.MapMetrics();
 app.MapBuilder();
 app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");

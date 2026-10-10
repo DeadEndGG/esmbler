@@ -93,6 +93,54 @@ public class UpgradeTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks()
+    {
+        // REQ-WS-004 (ADR 0019): 1.6.0 adds metrics, the Overview dashboard and metric-backed saved views. A customized
+        // workspace with running SLA clocks upgrades without losing either, and its figures count its records.
+        var t = await f.NewTenantAsync("updash", "1.5.0");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var v = (await drafts.OpenAsync(admin, default)).Version;
+        foreach (var op in ConfigLifecycleTests.Customization())
+        {
+            v = (await drafts.ApplyAsync(admin, op, v, "ui", default)).Version;
+        }
+
+        var state = await drafts.CurrentAsync(admin, default);
+        await f.Get<PublishService>().PublishAsync(admin, state!.ArtifactHash!, state.PublishedRevision, default);
+
+        var records = f.Get<RecordService>();
+        var p1 = await records.CreateAsync(f.As(t, "agent"), Ticket, new JsonObject { ["title"] = "Upgrade during an outage", ["requester"] = t.Users["dana"].ToString(), ["priority"] = "p1", ["impact"] = "high", ["tenant__vendor"] = "Contoso" }, null, null, default);
+        var db = f.Get<Database>();
+        async Task<List<(Guid Id, DateTimeOffset? Due, int? Revision)>> TimersAsync() =>
+            (await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.Where(s => s.RecordId == p1.Id).OrderBy(s => s.TargetId).Select(s => new { s.Id, s.DueAt, s.ConfigRevision }).ToListAsync(), default))
+            .Select(s => (s.Id, s.DueAt, s.ConfigRevision)).ToList();
+        var before = await TimersAsync();
+        Assert.NotEmpty(before);
+
+        var upgrades = f.Get<UpgradeService>();
+        var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.6.0", default);
+        Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
+        Assert.All(plan.Overlay, o => Assert.Equal(OpStatus.Applied, o.Status));
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.dashboard" && c.Change == "added");
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.6.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);
+
+        // Running clocks keep their snapshot; the customization is still there.
+        Assert.Equal(before, await TimersAsync());
+        var kept = await records.GetAsync(admin, Ticket, p1.Id, default);
+        Assert.Equal("Contoso", kept.Data["tenant__vendor"]!.GetValue<string>());
+
+        var app = await f.Get<ExperienceService>().AppAsync(f.As(t, "agent"), default);
+        Assert.Contains(app.Dashboards!, d => d.View == "core.tickets.dashboard");
+        var open = await f.Get<Kernel.Infrastructure.Metrics.MetricService>().EvaluateAsync(f.As(t, "agent"), "core.tickets.metric.open", null, default);
+        var listed = await records.QueryAsync(f.As(t, "agent"), new RecordQuery { Entity = Ticket, Filters = open.Drill!.Filters, PageSize = 1 }, default);
+        Assert.Equal(listed.Total, open.Count);
+        Assert.True(open.Count >= 1);
+    }
+
+    [Fact]
     public async Task Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure()
     {
         var t = await f.NewTenantAsync("tu");

@@ -160,6 +160,40 @@ public sealed partial class DependencyGraph
             }
         }
 
+        foreach (var metric in config.Metrics)
+        {
+            g.Add(metric.Id, metric.Entity, "metric_entity");
+            g.AddExpression(metric.Id, metric.Entity, metric.Filter, "metric_filter");
+            foreach (var key in new[] { metric.Measure.Field, metric.Measure.From, metric.Measure.To }.OfType<string>())
+            {
+                g.Add(metric.Id, $"{metric.Entity}/{key}", "metric_measure");
+            }
+
+            if (metric.GroupBy is { } group)
+            {
+                g.Add(metric.Id, $"{metric.Entity}/{group.Field}", "metric_group");
+            }
+
+            if (metric.DateRange is { } range)
+            {
+                g.Add(metric.Id, $"{metric.Entity}/{range.Field}", "metric_date");
+                if (range.Calendar is { } calendar)
+                {
+                    g.Add(metric.Id, calendar, "metric_calendar");
+                }
+            }
+
+            if (metric.Sla is { } metricSla)
+            {
+                g.Add(metric.Id, metricSla.Policy, "metric_sla");
+            }
+
+            foreach (var role in metric.Roles)
+            {
+                g.Add(metric.Id, role, "metric_role");
+            }
+        }
+
         foreach (var sla in config.SlaPolicies)
         {
             g.Add(sla.Id, sla.Entity, "sla_entity");
@@ -208,11 +242,32 @@ public sealed partial class DependencyGraph
             {
                 g.Add(node.Id, view.Id, "node_of");
                 var entity = node.StringProp("entity") ?? view.Entity;
-                foreach (var prop in new[] { "field" })
+                foreach (var prop in new[] { "field", "groupBy" })
                 {
                     if (node.StringProp(prop) is { } field)
                     {
                         g.Add(node.Id, $"{entity}/{field}", "binds_field");
+                    }
+                }
+
+                if (node.StringProp("metric") is { } metricId)
+                {
+                    g.Add(node.Id, metricId, "binds_metric");
+                }
+
+                if (node.Props["groupOptions"] is JsonArray groupOptions)
+                {
+                    foreach (var f in groupOptions.OfType<JsonValue>().Select(v => v.GetValue<string>()))
+                    {
+                        g.Add(node.Id, $"{entity}/{f}", "binds_field");
+                    }
+                }
+
+                if (node.Props["views"] is JsonArray savedViews)
+                {
+                    foreach (var savedMetric in savedViews.Select(v => v?["metric"]).OfType<JsonValue>().Select(v => v.GetValue<string>()))
+                    {
+                        g.Add(node.Id, savedMetric, "binds_metric");
                     }
                 }
 

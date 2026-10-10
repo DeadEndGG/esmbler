@@ -44,6 +44,9 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddSlaPolicy), "sla_policy.add")]
 [JsonDerivedType(typeof(UpdateSlaPolicy), "sla_policy.update")]
 [JsonDerivedType(typeof(RemoveSlaPolicy), "sla_policy.remove")]
+[JsonDerivedType(typeof(AddMetric), "metric.add")]
+[JsonDerivedType(typeof(UpdateMetric), "metric.update")]
+[JsonDerivedType(typeof(RemoveMetric), "metric.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -679,4 +682,60 @@ public sealed class RemoveSlaPolicy : OverlayOp
     public override string Describe() => $"Remove SLA policy {Policy}";
 
     public override IEnumerable<string> Targets() => [Policy];
+}
+
+/// <summary>Adds a tenant metric (ADR 0019). Metrics only count what each viewer can already read.</summary>
+public sealed class AddMetric : OverlayOp
+{
+    public required MetricSpec Metric { get; set; }
+
+    public override string Describe() => $"Add metric \"{Metric.Label}\" ({Metric.Measure.Kind} of {Metric.Entity}{(Metric.GroupBy is null ? string.Empty : $" by {Metric.GroupBy.Field}")})";
+
+    public override IEnumerable<string> Targets() => [Metric.Id];
+}
+
+/// <summary>Changes a metric, the module's or the tenant's.</summary>
+public sealed class UpdateMetric : OverlayOp
+{
+    public required string Metric { get; set; }
+
+    public required MetricPatch Set { get; set; }
+
+    /// <summary>Values the tenant saw when making the change; an upgrade that changed them reports a conflict.</summary>
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change metric {Metric}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Metric];
+}
+
+public sealed class MetricPatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Filter { get; set; }
+
+    public MetricMeasureSpec? Measure { get; set; }
+
+    public MetricGroupSpec? GroupBy { get; set; }
+
+    public MetricDateRangeSpec? DateRange { get; set; }
+
+    public MetricSlaSpec? Sla { get; set; }
+
+    public List<string>? Roles { get; set; }
+
+    public string? Format { get; set; }
+}
+
+/// <summary>Removes a tenant metric that no dashboard or saved view uses.</summary>
+public sealed class RemoveMetric : OverlayOp
+{
+    public required string Metric { get; set; }
+
+    public override string Describe() => $"Remove metric {Metric}";
+
+    public override IEnumerable<string> Targets() => [Metric];
 }

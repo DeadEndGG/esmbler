@@ -136,7 +136,7 @@ public class EventTypeTests
         var record = Compile("1.4.0", Emit("reopen", new EventEmitSpec { Type = Sdk.Events.EventTypes.RecordTransitioned, Payload = new() { ["to"] = "'resolved'" } }));
         Assert.Contains(record.Errors, e => e.Code == "config.platform_event");
 
-        var tickets = Tickets("1.4.0");
+        var tickets = SpecJson.Clone(Tickets("1.4.0")); // releases are shared; never mutate them
         tickets.EventTypes.Add(new EventTypeSpec { Id = "platform.approval.bypassed", Label = "Bypassed" });
         tickets.EventTypes.Add(new EventTypeSpec { Id = "core.billing.invoice.paid", Label = "Paid" });
         var billing = new ModuleSpec

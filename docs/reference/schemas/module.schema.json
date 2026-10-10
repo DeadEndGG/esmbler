@@ -1569,6 +1569,163 @@
           "entity"
         ]
       }
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity": {
+            "type": "string"
+          },
+          "filter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "measure": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "field": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unit": {
+                "type": "string"
+              }
+            }
+          },
+          "groupBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "bucket": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "includeEmpty": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "field"
+            ]
+          },
+          "dateRange": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "last": {
+                "type": "integer"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "calendar": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeZone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "field",
+              "last"
+            ]
+          },
+          "sla": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "policy": {
+                "type": "string"
+              },
+              "target": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "entity"
+        ]
+      }
     }
   },
   "required": [

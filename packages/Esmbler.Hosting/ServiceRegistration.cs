@@ -71,6 +71,7 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.FulfillmentConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Approvals.ApprovalService>();
         services.AddSingleton<Kernel.Infrastructure.Sla.SlaService>();
+        services.AddSingleton<Kernel.Infrastructure.Metrics.MetricService>();
         services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Approvals.ApprovalConsumer>();
         services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
         services.AddSingleton<DraftService>();

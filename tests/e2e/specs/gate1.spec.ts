@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ask, openFirstTicket, run, signIn } from './helpers';
+import { ask, openFirstTicket, run, signIn, openTickets } from './helpers';
 
 const vendor = `Vendor ${run}`;
 
@@ -7,7 +7,7 @@ test.describe.configure({ mode: 'serial' });
 
 test('@REQ-ACC-01 @REQ-LIVE-002 tenant customizes Tickets with the AI builder, sees it live, publishes, and operates records', async ({ page }) => {
   await signIn(page, 'alex@acme.example', 'Acme');
-  await expect(page.locator('tbody tr').first()).toBeVisible();
+  await openTickets(page);
 
   await openFirstTicket(page);
   await page.getByRole('button', { name: /AI builder/ }).click();
@@ -152,7 +152,7 @@ test('@REQ-LIVE-003 @REQ-LAY-003 point at a card, ask for a field there, and und
 
 test('@REQ-DS-002 keyboard-first: command palette, list navigation, quick create, and dark mode', async ({ page }) => {
   await signIn(page, 'alex@acme.example', 'Acme');
-  await expect(page.locator('tbody tr').first()).toBeVisible();
+  await openTickets(page);
 
   // J/K move the row cursor; Enter opens the row.
   await page.locator('body').press('j');

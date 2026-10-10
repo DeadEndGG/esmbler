@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Esmbler.Kernel;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
+using Esmbler.Kernel.Infrastructure.Metrics;
 using Esmbler.Kernel.Infrastructure.Records;
 using Esmbler.Kernel.Tenancy;
 using ModelContextProtocol.Protocol;
@@ -13,7 +14,7 @@ namespace Esmbler.Mcp.Tools;
 
 /// <summary>Review and lifecycle tools. Simulations have no side effects; publishing needs a person.</summary>
 [McpServerToolType]
-public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishService publisher, PreviewService preview, AccessExplainer explainer, RecordService records, IConfiguration configuration)
+public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishService publisher, PreviewService preview, AccessExplainer explainer, RecordService records, MetricService metrics, IConfiguration configuration)
 {
     [McpServerTool(Name = "validate_draft", ReadOnly = true), Description("Validate the draft. Returns every error and warning with what is wrong, where, and a valid alternative.")]
     public Task<CallToolResult> ValidateDraft() =>
@@ -47,6 +48,27 @@ public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishS
         {
             var page = await records.QueryAsync(ctx, new RecordQuery { Entity = entity, PageSize = Math.Clamp(limit, 1, 10) }, default);
             return ToolRunner.Untrusted(page.Items.Select(r => new { r.Number, r.Data }));
+        });
+
+    [McpServerTool(Name = "evaluate_metric", ReadOnly = true), Description("The current value of a published metric for the current user (only records they can read), with its groups and the list filter each figure counts. Draft metrics are not evaluated until published.")]
+    public Task<CallToolResult> EvaluateMetric(string metric) =>
+        runner.RunAsync("evaluate_metric", AgentScopes.RecordsRead, metric, async ctx =>
+        {
+            var result = await metrics.EvaluateAsync(ctx, metric, null, default);
+            return ToolRunner.Untrusted(new
+            {
+                result.Id,
+                result.Label,
+                result.Status,
+                result.Measure,
+                result.Unit,
+                result.Value,
+                result.Count,
+                result.Capped,
+                groups = result.Buckets.Select(b => new { b.Label, b.Value, b.Count }),
+                result.MoreGroups,
+                drill = result.Drill is null ? null : new { result.Drill.Filters, result.Drill.Sla },
+            });
         });
 
     [McpServerTool(Name = "request_publish"), Description("Ask a person to publish the draft. You cannot publish yourself; a builder reviews the exact changes and publishes with one click.")]

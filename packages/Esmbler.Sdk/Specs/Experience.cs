@@ -7,6 +7,9 @@ public static class ViewKinds
     public const string Record = "record";
     public const string List = "list";
     public const string Form = "form";
+
+    /// <summary>Figures and charts built from metrics (ADR 0019); <see cref="ViewSpec.Entity"/> is its home entity.</summary>
+    public const string Dashboard = "dashboard";
 }
 
 public sealed class ViewSpec

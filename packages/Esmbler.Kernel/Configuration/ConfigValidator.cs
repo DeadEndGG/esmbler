@@ -89,6 +89,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             ValidateSlaPolicy(config, sla, d);
         }
 
+        foreach (var metric in config.Metrics)
+        {
+            ValidateMetric(config, metric, d);
+        }
+
         foreach (var wf in config.Workflows)
         {
             ValidateWorkflow(config, wf, d);
@@ -146,6 +151,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Check(config.Entities.Select(e => e.Id), "entity");
         Check(config.BusinessCalendars.Select(c => c.Id), "business calendar");
         Check(config.SlaPolicies.Select(p => p.Id), "SLA policy");
+        Check(config.Metrics.Select(m => m.Id), "metric");
         Check(config.ChoiceLists.Select(c => c.Id), "choice list");
         Check(config.Rules.Select(r => r.Id), "rule");
         Check(config.Views.Select(v => v.Id), "view");
@@ -1141,6 +1147,197 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
     }
 
+    private static readonly HashSet<string> GroupableTypes = [FieldTypes.SingleSelect, FieldTypes.Status, FieldTypes.Priority, FieldTypes.User, FieldTypes.Group, FieldTypes.Toggle];
+    private static readonly HashSet<string> DateTypes = [FieldTypes.Date, FieldTypes.DateTime];
+
+    /// <summary>Whether a field can group a metric or the explorer (one value per record, compared with ==).</summary>
+    public static bool IsGroupable(FieldSpec field) => GroupableTypes.Contains(field.Type);
+
+    private static void ValidateMetric(SpecCatalog config, MetricSpec metric, List<Diagnostic> d)
+    {
+        if (!Namespaces.IsValidId(metric.Id))
+        {
+            d.Add(Diagnostic.Error("config.invalid_id", $"'{metric.Id}' is not a valid metric ID.", metric.Id));
+        }
+
+        if (string.IsNullOrWhiteSpace(metric.Label) || metric.Label.Length > 60)
+        {
+            d.Add(Diagnostic.Error("config.bad_label", $"Metric '{metric.Id}' needs a label of 1–60 characters.", metric.Id));
+        }
+
+        if (config.FindEntity(metric.Entity) is not { } entity)
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' counts unknown entity '{metric.Entity}'.", metric.Id, Expression.Suggest(metric.Entity, config.Entities.Select(e => e.Id))));
+            return;
+        }
+
+        if (CheckExpression(entity, metric.Filter, metric.Id, "filter", d) is { } filter && Records.QueryFilterSupport.Unsupported(filter.Root) is { } unsupported)
+        {
+            d.Add(Diagnostic.Error("config.bad_filter", $"The filter of metric '{metric.Label}' uses {unsupported}, which lists and dashboards cannot query.", metric.Id, "Use record fields, user.id, user.groups or user.roles, comparisons, in, &&, ||, ! and has/size/contains/startsWith/endsWith."));
+        }
+
+        FieldSpec? Field(string? key, string what)
+        {
+            if (key is null)
+            {
+                return null;
+            }
+
+            var field = entity.FindField(key);
+            if (field is null)
+            {
+                d.Add(Diagnostic.Error("config.unknown_field", $"Metric '{metric.Label}' {what} '{key}', which {entity.Label} does not have.", metric.Id, Expression.Suggest(key, entity.Fields.Select(f => f.Key))));
+            }
+
+            return field;
+        }
+
+        var measure = metric.Measure;
+        switch (measure.Kind)
+        {
+            case MetricMeasures.Count:
+                break;
+            case MetricMeasures.Sum or MetricMeasures.Avg or MetricMeasures.Min or MetricMeasures.Max:
+                if (measure.Field is null)
+                {
+                    d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' needs a number field to {measure.Kind}.", metric.Id));
+                }
+                else if (Field(measure.Field, "measures") is { } number && number.Type is not (FieldTypes.Integer or FieldTypes.Decimal))
+                {
+                    d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' takes the {measure.Kind} of '{number.Key}', which is a {number.Type} field.", metric.Id, "Use an integer or decimal field."));
+                }
+
+                break;
+            case MetricMeasures.Duration:
+                foreach (var (key, what) in new[] { (measure.From, "measures from"), (measure.To, "measures to") })
+                {
+                    if (key is null)
+                    {
+                        d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' needs both ends of the duration (from and to).", metric.Id));
+                    }
+                    else if (Field(key, what) is { } instant && instant.Type != FieldTypes.DateTime)
+                    {
+                        d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' measures time with '{instant.Key}', which is a {instant.Type} field.", metric.Id, "Use date and time fields such as created_at."));
+                    }
+                }
+
+                if (measure.Unit is not ("minutes" or "hours" or "days"))
+                {
+                    d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' has duration unit '{measure.Unit}'.", metric.Id, "minutes, hours or days"));
+                }
+
+                break;
+            default:
+                d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' has measure '{measure.Kind}'.", metric.Id, Expression.Suggest(measure.Kind, MetricMeasures.All) ?? string.Join(", ", MetricMeasures.All)));
+                break;
+        }
+
+        if (metric.DateRange is { } range)
+        {
+            if (Field(range.Field, "limits dates by") is { } dateField && !DateTypes.Contains(dateField.Type))
+            {
+                d.Add(Diagnostic.Error("config.bad_date_range", $"Metric '{metric.Label}' limits dates by '{dateField.Key}', which is a {dateField.Type} field.", metric.Id, "Use a date or date and time field."));
+            }
+
+            if (range.Last is < 1 or > 366 || !MetricBuckets.All.Contains(range.Unit))
+            {
+                d.Add(Diagnostic.Error("config.bad_date_range", $"Metric '{metric.Label}' covers the last {range.Last} {range.Unit}(s); use 1–366 days, weeks or months.", metric.Id));
+            }
+
+            if (range.Calendar is { } calendar && config.FindBusinessCalendar(calendar) is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' aligns dates to unknown calendar '{calendar}'.", metric.Id, Expression.Suggest(calendar, config.BusinessCalendars.Select(c => c.Id))));
+            }
+
+            if (range.TimeZone is { } zone && !TimeZoneInfo.TryFindSystemTimeZoneById(zone, out _))
+            {
+                d.Add(Diagnostic.Error("config.bad_time_zone", $"Metric '{metric.Label}' has time zone '{zone}'.", metric.Id, "Use an IANA name such as Europe/London."));
+            }
+        }
+
+        if (metric.GroupBy is { } group && Field(group.Field, "groups by") is { } groupField)
+        {
+            if (group.Bucket is null && !IsGroupable(groupField))
+            {
+                d.Add(Diagnostic.Error("config.bad_group", $"Metric '{metric.Label}' groups by '{groupField.Key}', a {groupField.Type} field.", metric.Id, DateTypes.Contains(groupField.Type) ? "Add a bucket (day, week or month) and a date range." : "Group by a choice, status, priority, user, group or toggle field."));
+            }
+
+            if (group.Bucket is { } bucket)
+            {
+                if (!DateTypes.Contains(groupField.Type) || !MetricBuckets.All.Contains(bucket) || metric.DateRange is null)
+                {
+                    d.Add(Diagnostic.Error("config.bad_group", $"Metric '{metric.Label}' buckets '{groupField.Key}' by '{bucket}'; buckets need a date field, day/week/month and a date range.", metric.Id));
+                }
+                else if (Buckets(metric.DateRange, bucket) > 52)
+                {
+                    d.Add(Diagnostic.Error("config.too_large", $"Metric '{metric.Label}' would draw {Buckets(metric.DateRange, bucket)} {bucket} buckets; at most 52.", metric.Id, "Use a coarser bucket or a shorter range."));
+                }
+            }
+
+            if (group.Limit is < 1 or > 25)
+            {
+                d.Add(Diagnostic.Error("config.too_large", $"Metric '{metric.Label}' shows {group.Limit} groups; use 1–25.", metric.Id));
+            }
+        }
+
+        if (metric.Sla is { } sla)
+        {
+            if (config.FindSlaPolicy(sla.Policy) is not { } policy)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' counts breaches of unknown SLA policy '{sla.Policy}'.", metric.Id, Expression.Suggest(sla.Policy, config.SlaPolicies.Select(p => p.Id))));
+            }
+            else if (policy.Entity != entity.Id)
+            {
+                d.Add(Diagnostic.Error("config.bad_sla", $"Metric '{metric.Label}' counts {entity.Label} records, but SLA policy '{policy.Label}' measures {policy.Entity}.", metric.Id));
+            }
+            else if (sla.Target is { } target && policy.FindTarget(target) is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"SLA policy '{policy.Label}' has no target '{target}'.", metric.Id, Expression.Suggest(target, policy.Targets.Select(t => t.Id))));
+            }
+
+            if (sla.State != "breached")
+            {
+                d.Add(Diagnostic.Error("config.bad_sla", $"Metric '{metric.Label}' counts SLA state '{sla.State}'; only 'breached' is supported.", metric.Id));
+            }
+        }
+
+        foreach (var role in metric.Roles.Where(r => config.Roles.All(x => x.Id != r)))
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' is for unknown role '{role}'.", metric.Id, Expression.Suggest(role, config.Roles.Select(r => r.Id))));
+        }
+
+        if (metric.Format is not (null or "number" or "duration" or "percent"))
+        {
+            d.Add(Diagnostic.Error("config.bad_format", $"Metric '{metric.Label}' has format '{metric.Format}'.", metric.Id, "number, duration or percent"));
+        }
+
+        // Fields some people may not see make the figure restricted for them (it is never shown with their data).
+        var reads = new[] { measure.Field, measure.From, measure.To, metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>().ToList();
+        if (metric.Filter is not null)
+        {
+            try
+            {
+                reads.AddRange(Expression.Compile(metric.Filter).References.Where(r => r.StartsWith("record.", StringComparison.Ordinal)).Select(r => r["record.".Length..]));
+            }
+            catch (ExpressionException)
+            {
+                // Reported above.
+            }
+        }
+
+        var hiddenFor = config.PermissionSets.Where(p => p.Fields.Any(f => f.Entity == entity.Id && f.Access == FieldAccessLevels.Hidden && reads.Contains(f.Field))).SelectMany(p => p.Roles).Distinct().ToList();
+        if (hiddenFor.Count > 0)
+        {
+            d.Add(Diagnostic.Warning("metric.restricted_field", $"Metric '{metric.Label}' reads fields that {string.Join(", ", hiddenFor)} cannot see; they see the figure as restricted.", metric.Id));
+        }
+    }
+
+    private static int Buckets(MetricDateRangeSpec range, string bucket)
+    {
+        var days = range.Unit switch { MetricBuckets.Week => range.Last * 7, MetricBuckets.Month => range.Last * 31, _ => range.Last };
+        return bucket switch { MetricBuckets.Week => (days + 6) / 7, MetricBuckets.Month => (days + 30) / 31, _ => days };
+    }
+
     private static void CheckCalendar(SpecCatalog config, string? calendar, string where, List<Diagnostic> d)
     {
         if (calendar is not null && calendar != SlaCalendars.AroundTheClock && config.FindBusinessCalendar(calendar) is null)
@@ -1538,6 +1735,69 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
                 foreach (var c in cols.OfType<JsonValue>().Select(v => v.ToString()).Where(c => child.FindField(c) is null))
                 {
                     d.Add(Diagnostic.Error("layout.unknown_field", $"'{node.Id}' lists column '{c}', which {child.Label} does not have.", node.Id));
+                }
+            }
+        }
+
+        if (view.Kind == ViewKinds.Dashboard && !node.Type.StartsWith("layout.", StringComparison.Ordinal) && !node.Type.StartsWith("display.", StringComparison.Ordinal))
+        {
+            d.Add(Diagnostic.Error("layout.bad_dashboard", $"Dashboards show figures, not records: {element.Label} ({node.Id}) cannot be on dashboard '{view.Label}'.", node.Id, "Use layout and display elements such as display.kpi_tile."));
+        }
+
+        if (node.StringProp("metric") is { } metricId)
+        {
+            if (config.FindMetric(metricId) is not { } metric)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"'{node.Id}' shows unknown metric '{metricId}'.", node.Id, Expression.Suggest(metricId, config.Metrics.Select(m => m.Id))));
+            }
+            else if (node.Type is "display.bar_chart" or "display.metric_table" && metric.GroupBy is null)
+            {
+                d.Add(Diagnostic.Error("layout.bad_metric", $"{element.Label} '{node.Id}' needs a grouped metric; '{metric.Label}' has no groups.", node.Id, "Use display.kpi_tile, or add groupBy to the metric."));
+            }
+            else if (node.Type == "display.kpi_tile" && metric.GroupBy is not null)
+            {
+                d.Add(Diagnostic.Error("layout.bad_metric", $"A KPI tile shows one figure; metric '{metric.Label}' is grouped.", node.Id, "Use display.bar_chart or display.metric_table."));
+            }
+        }
+
+        if (node.Type == "collection.data_table")
+        {
+            var listEntity = nodeEntity ?? entity;
+            var groups = new List<string>();
+            if (node.StringProp("groupBy") is { } groupBy)
+            {
+                groups.Add(groupBy);
+            }
+
+            if (node.Props["groupOptions"] is JsonArray options)
+            {
+                groups.AddRange(options.OfType<JsonValue>().Select(v => v.ToString()));
+            }
+
+            foreach (var key in groups.Distinct(StringComparer.Ordinal))
+            {
+                if (listEntity.FindField(key) is not { } field)
+                {
+                    d.Add(Diagnostic.Error("layout.unknown_field", $"'{node.Id}' groups by '{key}', which {listEntity.Label} does not have.", node.Id, Expression.Suggest(key, listEntity.Fields.Select(f => f.Key))));
+                }
+                else if (!IsGroupable(field))
+                {
+                    d.Add(Diagnostic.Error("layout.bad_group", $"'{node.Id}' groups by '{key}', a {field.Type} field.", node.Id, "Group by a choice, status, priority, user, group or toggle field."));
+                }
+            }
+        }
+
+        if (node.Type == "collection.saved_views" && node.Props["views"] is JsonArray savedViews)
+        {
+            foreach (var savedMetric in savedViews.Select(v => v?["metric"]).OfType<JsonValue>().Select(v => v.ToString()))
+            {
+                if (config.FindMetric(savedMetric) is not { } metric)
+                {
+                    d.Add(Diagnostic.Error("config.not_found", $"A saved view in '{node.Id}' uses unknown metric '{savedMetric}'.", node.Id, Expression.Suggest(savedMetric, config.Metrics.Select(m => m.Id))));
+                }
+                else if (metric.Entity != entity.Id || metric.GroupBy is not null || metric.DateRange is not null)
+                {
+                    d.Add(Diagnostic.Error("layout.bad_metric", $"A saved view in '{node.Id}' uses metric '{metric.Label}', which must count {entity.Label} records without groups or date ranges.", node.Id));
                 }
             }
         }

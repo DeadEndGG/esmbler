@@ -1,7 +1,7 @@
 {
   "$schema": "../../Schemas/element.schema.json",
   "id": "collection.data_table",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "collection",
   "gate": 1,
   "label": "Data table",
@@ -35,7 +35,9 @@
         }
       },
       "filter": { "type": "string", "maxLength": 500, "description": "Base filter expression (CEL subset over record), e.g. record.status != 'closed'." },
-      "inlineEdit": { "type": "boolean", "default": true }
+      "inlineEdit": { "type": "boolean", "default": true },
+      "groupBy": { "type": "string", "description": "Field the rows are grouped by when the list opens (choice, status, priority, user, group or toggle)." },
+      "groupOptions": { "type": "array", "maxItems": 12, "items": { "type": "string" }, "description": "Fields people can group the list by." }
     }
   },
   "allowedParents": ["layout.column", "layout.tab"],

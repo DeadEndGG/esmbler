@@ -211,7 +211,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
 
             var countParams = QueryCompiler.Compile(query, artifact.Config, entity, perms);
             long total;
-            await using (var cmd = Command(conn, tx, $"SELECT count(*) FROM (SELECT 1 FROM kernel.records r WHERE {countParams.Where} LIMIT {QueryCompiler.MaxOffset + 1}) capped", countParams.Parameters))
+            await using (var cmd = Command(conn, tx, $"SELECT count(*) FROM (SELECT 1 FROM kernel.records r WHERE {countParams.Where} LIMIT {QueryCompiler.MaxCount + 1}) capped", countParams.Parameters))
             {
                 total = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
@@ -231,7 +231,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 CreatedAt = p.Row.CreatedAt,
                 UpdatedAt = p.Row.UpdatedAt,
             }).ToList();
-            return new RecordPage(items, (int)Math.Min(total, QueryCompiler.MaxOffset), total > QueryCompiler.MaxOffset, offset, size, artifact.Revision);
+            return new RecordPage(items, (int)Math.Min(total, QueryCompiler.MaxCount), total > QueryCompiler.MaxCount, offset, size, artifact.Revision);
         }, ct);
 
     public Task<ActivityView> AddActivityAsync(RequestContext ctx, string entityId, Guid id, string kind, string body, IRichTextSanitizer sanitizer, CancellationToken ct) =>

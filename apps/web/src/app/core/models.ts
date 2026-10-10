@@ -33,6 +33,74 @@ export interface AppBootstrap {
   catalog?: boolean;
   /** The workspace runs approvals (ADR 0016); shows the Approvals inbox. */
   approvals?: boolean;
+  /** Dashboards the user can see at least one figure on (ADR 0019). */
+  dashboards?: DashboardNavItem[];
+}
+
+export interface DashboardNavItem {
+  view: string;
+  label: string;
+  entity: string;
+}
+
+/** A metric as the view needs it: what it counts, so saved views and tiles can drill into the same query. */
+export interface MetricClientView {
+  id: string;
+  label: string;
+  entity: string;
+  filter?: string | null;
+  sla: string[];
+  measure: string;
+  format?: string | null;
+  groupBy?: string | null;
+}
+
+/** The explorer query a figure counts: open it to see exactly those records. */
+export interface DrillQuery {
+  entity: string;
+  filters: string[];
+  sla: string[];
+  label: string;
+}
+
+export interface MetricBucket {
+  key: string;
+  label: string;
+  value?: number | null;
+  count: number;
+  drill: DrillQuery;
+}
+
+/** A metric evaluated for the signed-in person (ADR 0019). */
+export interface MetricResult {
+  id: string;
+  label: string;
+  status: 'ok' | 'restricted' | 'timeout';
+  measure: string;
+  format?: string | null;
+  unit?: string | null;
+  value?: number | null;
+  count: number;
+  capped: boolean;
+  buckets: MetricBucket[];
+  moreGroups: boolean;
+  drill?: DrillQuery | null;
+  asOf: string;
+  configRevision: number;
+}
+
+export interface DashboardData {
+  view: string;
+  configRevision: number;
+  metrics: MetricResult[];
+}
+
+/** An explorer group header. */
+export interface GroupCount {
+  key?: string | null;
+  label: string;
+  count: number;
+  filter: string;
 }
 
 /** One approver's step in a stage (ADR 0016). */
@@ -286,6 +354,8 @@ export interface ViewClientSpec {
   entity: EntityClientSpec;
   relatedEntities: Record<string, EntityClientSpec>;
   configRevision: number;
+  /** Metrics the view's tiles and saved views use. */
+  metrics?: Record<string, MetricClientView> | null;
 }
 
 export interface FieldStates {

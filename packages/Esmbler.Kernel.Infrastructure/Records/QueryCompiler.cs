@@ -24,6 +24,28 @@ public sealed class RecordQuery
     public int Offset { get; init; }
 
     public int PageSize { get; init; } = 25;
+
+    /// <summary>Only records with a recorded SLA breach (drill-down from SLA metrics, ADR 0019).</summary>
+    public IReadOnlyList<SlaFilter> Sla { get; init; } = [];
+
+    /// <summary>Group rows by this field: the group key is sorted first, in choice order (explorer grouping).</summary>
+    public string? GroupBy { get; init; }
+}
+
+/// <summary>An SLA condition in a query: records whose timer of <see cref="Policy"/> (and <see cref="Target"/>) recorded a breach.</summary>
+public sealed record SlaFilter(string Policy, string? Target, string State = "breached")
+{
+    /// <summary>Parses <c>policy[/target]:breached</c>, the form used in explorer URLs.</summary>
+    public static SlaFilter Parse(string value)
+    {
+        var colon = value.LastIndexOf(':');
+        var state = colon > 0 ? value[(colon + 1)..] : "breached";
+        var target = colon > 0 ? value[..colon] : value;
+        var slash = target.IndexOf('/', StringComparison.Ordinal);
+        return slash > 0 ? new SlaFilter(target[..slash], target[(slash + 1)..], state) : new SlaFilter(target, null, state);
+    }
+
+    public override string ToString() => $"{Policy}{(Target is null ? string.Empty : "/" + Target)}:{State}";
 }
 
 public sealed record CompiledQuery(string Where, IReadOnlyList<NpgsqlParameter> Parameters, string OrderBy);
@@ -39,36 +61,40 @@ public sealed class QueryCompiler
 {
     public const int MaxPageSize = 100;
     public const int MaxOffset = 10_000;
+
+    /// <summary>Totals and metric counts stop counting here ("100,000+"), the same for the explorer and dashboards.</summary>
+    public const int MaxCount = 100_000;
     public const int MaxFilterNodes = 64;
     private static readonly ExpressionLimits Limits = new(MaxLength: 1000, MaxDepth: 16, MaxNodes: MaxFilterNodes);
 
     public static CompiledQuery Compile(RecordQuery query, SpecCatalog config, EntitySpec entity, EffectivePermissions permissions)
     {
         var ctx = new Ctx(config, entity, permissions);
+        var where = Where(query, config, entity, permissions, ctx);
+        var order = OrderBy(query.Sort, entity, permissions, ctx);
+        if (query.GroupBy is { } group && GroupKey(entity, permissions, ctx, group) is { } key)
+        {
+            order = $"{key.Order} NULLS LAST, {order}";
+        }
+
+        return new CompiledQuery(where, ctx.Parameters, order);
+    }
+
+    /// <summary>
+    /// The WHERE clause of a query: entity, not deleted, the viewer's permission predicate, the filters, SLA conditions
+    /// and search. Lists and metrics both use it, so a figure always counts exactly the records the explorer lists.
+    /// </summary>
+    public static string Where(RecordQuery query, SpecCatalog config, EntitySpec entity, EffectivePermissions permissions, Ctx ctx)
+    {
         var where = new List<string> { "r.entity_id = " + ctx.Param(entity.Id), "r.deleted_at IS NULL", "(" + PermissionPredicate(entity, permissions, ctx) + ")" };
         foreach (var filter in query.Filters.Where(f => !string.IsNullOrWhiteSpace(f)))
         {
-            CompiledExpression compiled;
-            try
-            {
-                compiled = Expression.Compile(filter, EntitySchema.For(entity), Limits);
-            }
-            catch (ExpressionException ex)
-            {
-                throw new KernelException("invalid_filter", $"The filter is invalid: {ex.Message}", 400, filter, ex.Suggestion);
-            }
+            where.Add(ctx.Filter(filter));
+        }
 
-            foreach (var reference in compiled.References.Where(r => r.StartsWith("record.", StringComparison.Ordinal)))
-            {
-                var key = reference[7..];
-                if (key != "id" && permissions.FieldAccess(entity, key) == FieldAccessLevels.Hidden)
-                {
-                    // Filtering on a hidden field would leak its values through result membership and counts.
-                    throw new KernelException("invalid_filter", $"You cannot filter on {entity.FindField(key)?.Label ?? key}.", 400, filter);
-                }
-            }
-
-            where.Add(ctx.Bool(compiled.Root));
+        foreach (var sla in query.Sla)
+        {
+            where.Add(SlaPredicate(sla, config, entity, ctx));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Search))
@@ -79,7 +105,36 @@ public sealed class QueryCompiler
             where.Add(numberMatch.Success ? $"({search} OR r.number = {ctx.Param(long.Parse(numberMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))})" : search);
         }
 
-        return new CompiledQuery(string.Join(" AND ", where), ctx.Parameters, OrderBy(query.Sort, entity, permissions, ctx));
+        return string.Join(" AND ", where);
+    }
+
+    /// <summary>Records of the entity whose timer of the policy (and target) recorded a breach; RLS scopes the timers.</summary>
+    private static string SlaPredicate(SlaFilter sla, SpecCatalog config, EntitySpec entity, Ctx ctx)
+    {
+        var policy = config.FindSlaPolicy(sla.Policy);
+        if (policy is null || policy.Entity != entity.Id || (sla.Target is { } target && policy.FindTarget(target) is null) || sla.State != "breached")
+        {
+            throw new KernelException("invalid_filter", $"'{sla}' is not an SLA condition of {entity.Label}.", 400, sla.ToString(), "Use <policy>[/<target>]:breached.");
+        }
+
+        var targetSql = sla.Target is null ? string.Empty : $" AND t.target_id = {ctx.Param(sla.Target)}";
+        return $"EXISTS (SELECT 1 FROM kernel.sla_timers t WHERE t.tenant_id = r.tenant_id AND t.environment_id = r.environment_id AND t.record_id = r.id AND t.policy_id = {ctx.Param(sla.Policy)}{targetSql} AND t.status <> 'cancelled' AND t.breached_at IS NOT NULL)";
+    }
+
+    /// <summary>
+    /// The SQL value records are grouped by (the same expression an == filter compares, so a group's count equals its
+    /// drill-down) and its order (choice order for choice fields). Null when the field cannot group or is hidden.
+    /// </summary>
+    public static (string Key, string Order)? GroupKey(EntitySpec entity, EffectivePermissions permissions, Ctx ctx, string fieldKey)
+    {
+        if (entity.FindField(fieldKey) is not { } field || !ConfigValidator.IsGroupable(field) || permissions.FieldAccess(entity, field.Key) == FieldAccessLevels.Hidden)
+        {
+            return null;
+        }
+
+        var key = ctx.GroupKeySql(field.Key);
+        var order = FieldTypes.UsesChoiceList(field.Type) && ctx.ChoiceOrder(field) is { } choices ? $"array_position({choices}, {key})" : key;
+        return (key, order);
     }
 
     public static string PermissionPredicate(EntitySpec entity, EffectivePermissions permissions, Ctx ctx)
@@ -167,6 +222,43 @@ public sealed class QueryCompiler
         /// <summary>Choice fields sort by option order (p1 before p4), not alphabetically.</summary>
         public string? ChoiceOrder(FieldSpec field) =>
             field.ChoiceList is not null && config.FindChoiceList(field.ChoiceList) is { } list ? Param(list.Options.Select(o => o.Id).ToArray()) : null;
+
+        /// <summary>Boolean SQL for one filter expression; refuses filters on fields the viewer cannot see.</summary>
+        public string Filter(string filter)
+        {
+            CompiledExpression compiled;
+            try
+            {
+                compiled = Expression.Compile(filter, EntitySchema.For(entity), Limits);
+            }
+            catch (ExpressionException ex)
+            {
+                throw new KernelException("invalid_filter", $"The filter is invalid: {ex.Message}", 400, filter, ex.Suggestion);
+            }
+
+            foreach (var reference in compiled.References.Where(r => r.StartsWith("record.", StringComparison.Ordinal)))
+            {
+                var key = reference[7..];
+                if (key != "id" && permissions.FieldAccess(entity, key) == FieldAccessLevels.Hidden)
+                {
+                    // Filtering on a hidden field would leak its values through result membership and counts.
+                    throw new KernelException("invalid_filter", $"You cannot filter on {entity.FindField(key)?.Label ?? key}.", 400, filter);
+                }
+            }
+
+            return Bool(compiled.Root);
+        }
+
+        /// <summary>The SQL value of a field for grouping; toggles are never null so they group as true/false.</summary>
+        public string GroupKeySql(string key) => Field(key) switch
+        {
+            (var sql, "bool") => sql,
+            (var sql, "number") => $"({sql})::text",
+            (var sql, _) => sql,
+        };
+
+        /// <summary>Raw SQL value of a field and its kind (text, number, bool, jsonarray).</summary>
+        public (string Sql, string Kind) FieldSql(string key) => Field(key);
 
         /// <summary>Boolean SQL for a node, never NULL.</summary>
         public string Bool(Node node) => node switch

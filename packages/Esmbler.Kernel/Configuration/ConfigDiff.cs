@@ -26,6 +26,12 @@ public static class ConfigDiff
         Diff(changes, "permission_set", before.PermissionSets, after.PermissionSets, p => p.Id, p => p.Label, p => SpecJson.ToNode(p)!.AsObject());
         Diff(changes, "assignment_rule", before.AssignmentRules, after.AssignmentRules, a => a.Id, a => a.Description ?? a.Id, a => SpecJson.ToNode(a)!.AsObject());
         Diff(changes, "notification_template", before.NotificationTemplates, after.NotificationTemplates, n => n.Id, n => n.Subject, n => SpecJson.ToNode(n)!.AsObject());
+        Diff(changes, "catalog_item", before.CatalogItems, after.CatalogItems, c => c.Id, c => c.Label, c => SpecJson.ToNode(c)!.AsObject());
+        Diff(changes, "approval_policy", before.ApprovalPolicies, after.ApprovalPolicies, p => p.Id, p => p.Label, p => SpecJson.ToNode(p)!.AsObject());
+        Diff(changes, "event_type", before.EventTypes, after.EventTypes, e => e.Id, e => e.Label, e => SpecJson.ToNode(e)!.AsObject());
+        Diff(changes, "business_calendar", before.BusinessCalendars, after.BusinessCalendars, c => c.Id, c => c.Label, c => SpecJson.ToNode(c)!.AsObject());
+        Diff(changes, "sla_policy", before.SlaPolicies, after.SlaPolicies, p => p.Id, p => p.Label, p => SpecJson.ToNode(p)!.AsObject());
+        Diff(changes, "metric", before.Metrics, after.Metrics, m => m.Id, m => m.Label, m => SpecJson.ToNode(m)!.AsObject());
         foreach (var view in after.Views)
         {
             var oldView = before.FindView(view.Id);

@@ -1,0 +1,82 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "display.metric_table",
+  "version": "1.0.0",
+  "category": "display",
+  "gate": 2,
+  "label": "Metric table",
+  "description": "A grouped metric as a small report table: each group, its figure and a link to the records behind it. Use it for basic reports.",
+  "usage": [
+    "Use when people compare exact numbers more than shapes."
+  ],
+  "constraints": [
+    "metric is required, must exist and must be grouped."
+  ],
+  "placeable": true,
+  "propsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "metric"
+    ],
+    "properties": {
+      "metric": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      }
+    }
+  },
+  "allowedParents": [
+    "layout.column",
+    "layout.card",
+    "layout.tab"
+  ],
+  "allowedChildren": [],
+  "maxChildren": 0,
+  "binding": {
+    "kind": "metric",
+    "description": "Evaluates the grouped metric for the viewer."
+  },
+  "events": [
+    "drill"
+  ],
+  "ruleHooks": [],
+  "tokens": [
+    "surface.raised",
+    "radius.lg",
+    "space.3",
+    "space.4",
+    "text.body",
+    "text.body-sm",
+    "text.title-sm",
+    "text.muted",
+    "border.subtle",
+    "accent.blue",
+    "accent.green",
+    "accent.amber",
+    "accent.red"
+  ],
+  "accessibility": {
+    "role": "table",
+    "keyboard": "Tab moves between the links in each row.",
+    "notes": "Column headers name the group field and the measure."
+  },
+  "responsive": "Scrolls horizontally inside its container on narrow screens.",
+  "examples": [
+    {
+      "description": "Open tickets by category",
+      "spec": {
+        "id": "core.tickets.dashboard.by_category",
+        "type": "display.metric_table",
+        "props": {
+          "metric": "core.tickets.metric.open_by_category"
+        },
+        "children": []
+      }
+    }
+  ]
+}

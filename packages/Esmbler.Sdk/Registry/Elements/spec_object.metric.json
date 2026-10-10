@@ -1,0 +1,48 @@
+{
+  "$schema": "../../Schemas/element.schema.json",
+  "id": "spec_object.metric",
+  "version": "1.0.0",
+  "category": "spec_object",
+  "gate": 2,
+  "label": "Metric",
+  "description": "A named, reusable figure such as \"Open\", \"Unassigned\", \"SLA breaches\" or \"Average resolution time\": which records it counts (an entity and a filter), what it measures (count, sum, average, minimum, maximum or average duration), optional groups (a choice, user, group or toggle field, or date buckets), an optional date range, an optional SLA breach condition, and who may see it. Dashboards and the explorer use the same definition, so a figure and the list it opens always agree for the same viewer.",
+  "usage": [
+    "Name metrics after what they count, from the reader's point of view.",
+    "Prefer a filter over several near-identical metrics; group instead of copying a metric per value.",
+    "Use roles to keep team-level figures for agents and managers."
+  ],
+  "constraints": [
+    "id is unique; tenant metrics start with tenant__. Default metrics can be changed but not removed; a metric that a dashboard or saved view shows cannot be removed.",
+    "The filter uses the list filter language (record fields, user.id, user.groups, user.roles, comparisons, in, &&, ||, !, has/size/contains/startsWith/endsWith).",
+    "Groups: choice, status, priority, user, group or toggle fields, or date fields with day/week/month buckets and a date range; at most 25 groups and 52 buckets.",
+    "Figures never widen access: each viewer's figure counts only records they can read; a metric reading a field hidden from a viewer is shown to them as restricted."
+  ],
+  "placeable": false,
+  "propsSchema": {
+    "$ref": "https://schemas.esmbler.dev/specs/metric.schema.json"
+  },
+  "allowedParents": [],
+  "allowedChildren": [],
+  "binding": {
+    "kind": "none",
+    "description": "Configuration object in a layer's spec catalog; not a layout node."
+  },
+  "accessibility": {
+    "role": "none",
+    "keyboard": "Not rendered directly; KPI tiles, bar charts and metric tables show metrics."
+  },
+  "examples": [
+    {
+      "description": "Unassigned open tickets",
+      "spec": {
+        "id": "core.tickets.metric.unassigned",
+        "label": "Unassigned",
+        "entity": "core.tickets.ticket",
+        "filter": "!(record.status in ['resolved', 'closed', 'cancelled']) && !has(record.assignee)",
+        "measure": {
+          "kind": "count"
+        }
+      }
+    }
+  ]
+}

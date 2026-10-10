@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using Esmbler.Kernel;
+using Esmbler.Kernel.Configuration;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Registry;
@@ -110,6 +112,60 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
                     week = c.Week.Select(w => $"{w.Day} {w.Start}-{w.End}"),
                     holidays = c.Holidays.Select(h => h.Label is null ? h.Date : $"{h.Date} {h.Label}"),
                 }),
+            };
+        });
+
+    [McpServerTool(Name = "list_metrics", ReadOnly = true), Description("Metrics in the open draft (what each counts or measures, its filter, grouping, date range, SLA condition and who sees it) and the dashboards with the tiles that show them. A tile and the list it opens always count the same records.")]
+    public Task<CallToolResult> ListMetrics() =>
+        runner.RunAsync("list_metrics", AgentScopes.ConfigRead, null, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            return new
+            {
+                draftVersion,
+                metrics = config.Metrics.Select(m => new
+                {
+                    m.Id,
+                    m.Label,
+                    m.Entity,
+                    m.Filter,
+                    measure = m.Measure.Kind == MetricMeasures.Duration ? $"duration {m.Measure.From} → {m.Measure.To} in {m.Measure.Unit}" : m.Measure.Field is null ? m.Measure.Kind : $"{m.Measure.Kind}({m.Measure.Field})",
+                    groupBy = m.GroupBy is null ? null : m.GroupBy.Bucket is null ? m.GroupBy.Field : $"{m.GroupBy.Field} by {m.GroupBy.Bucket}",
+                    dateRange = m.DateRange is null ? null : $"{m.DateRange.Field} in the last {m.DateRange.Last} {m.DateRange.Unit}(s)",
+                    sla = m.Sla is null ? null : $"{m.Sla.Policy}{(m.Sla.Target is null ? string.Empty : "/" + m.Sla.Target)}: {m.Sla.State}",
+                    m.Roles,
+                    customized = config.Customized.Contains(m.Id),
+                    usedBy = Composer.MetricUsers(config, m.Id).ToList(),
+                }),
+                dashboards = config.Views.Where(v => v.Kind == ViewKinds.Dashboard).Select(v => new
+                {
+                    v.Id,
+                    v.Label,
+                    v.Entity,
+                    tiles = v.Layout.Descendants().Where(n => n.StringProp("metric") is not null).Select(n => new { n.Id, n.Type, metric = n.StringProp("metric") }),
+                    containers = v.Layout.Descendants().Where(n => n.Type is "layout.column" or "layout.card").Select(n => n.Id),
+                }),
+            };
+        });
+
+    [McpServerTool(Name = "describe_metric_fields", ReadOnly = true), Description("What a metric on an entity can use: fields to group by (choice, status, priority, user, group, toggle), date fields for date ranges and trends, number fields to sum or average, and SLA policies whose breaches it can count.")]
+    public Task<CallToolResult> DescribeMetricFields(string entity) =>
+        runner.RunAsync("describe_metric_fields", AgentScopes.ConfigRead, entity, async ctx =>
+        {
+            var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, default);
+            var spec = config.FindEntity(entity) ?? throw KernelException.NotFound($"Entity '{entity}'");
+            var visible = spec.Fields.Where(f => !f.Hidden).ToList();
+            return new
+            {
+                draftVersion,
+                entity = spec.Id,
+                groupable = visible.Where(ConfigValidator.IsGroupable).Select(f => new { f.Key, f.Label, f.Type }),
+                dates = visible.Where(f => f.Type is FieldTypes.Date or FieldTypes.DateTime).Select(f => new { f.Key, f.Label, f.Type }).Prepend(new { Key = "updated_at", Label = "Updated", Type = FieldTypes.DateTime }).Prepend(new { Key = "created_at", Label = "Created", Type = FieldTypes.DateTime }),
+                numbers = visible.Where(f => f.Type is FieldTypes.Integer or FieldTypes.Decimal).Select(f => new { f.Key, f.Label, f.Type }),
+                slaPolicies = config.SlaPolicies.Where(p => p.Entity == spec.Id).Select(p => new { p.Id, p.Label, targets = p.Targets.Select(t => t.Id) }),
+                buckets = MetricBuckets.All,
+                measures = MetricMeasures.All,
+                hint = "Filters use the list filter language over record and user, e.g. !(record.status in ['resolved', 'closed']) && record.assignee == user.id.",
             };
         });
 

@@ -8,11 +8,18 @@ export async function signIn(page: Page, email: string, workspace: string): Prom
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/(workspaces|records)/);
+  await page.waitForURL(/\/(workspaces|records|dashboards|catalog)/);
   if (page.url().includes('/workspaces')) {
     await page.locator('li', { hasText: workspace }).getByRole('button').first().click();
   }
-  await page.waitForURL(/\/records\//);
+  // Home is the first dashboard the person can see (ADR 0019), otherwise their first list.
+  await page.waitForURL(/\/(records|dashboards|catalog)\b/);
+}
+
+/** Opens the ticket explorer. */
+export async function openTickets(page: Page): Promise<void> {
+  await page.goto('/records/core.tickets.ticket');
+  await expect(page.locator('tbody tr').first()).toBeVisible();
 }
 
 /** A short suffix so labels are unique when the suite runs again against the same stack. */

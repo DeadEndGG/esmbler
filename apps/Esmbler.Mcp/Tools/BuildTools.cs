@@ -149,6 +149,49 @@ public sealed class WorkingHoursInput
     public required string End { get; set; }
 }
 
+/// <summary>What a metric computes, for add_metric and update_metric (ADR 0019).</summary>
+public sealed class MetricInput
+{
+    [Description("count (default), sum, avg, min, max, or duration (average time between two date-time fields).")]
+    public string? Measure { get; set; }
+
+    [Description("sum/avg/min/max: a number field key.")]
+    public string? Field { get; set; }
+
+    [Description("duration: start field (a date_time field or created_at).")]
+    public string? From { get; set; }
+
+    [Description("duration: end field (a date_time field or updated_at).")]
+    public string? To { get; set; }
+
+    [Description("duration: minutes, hours (default) or days.")]
+    public string? Unit { get; set; }
+
+    [Description("Group by this field (choice, status, priority, user, group or toggle; see describe_metric_fields), or by a date field with group_bucket.")]
+    public string? GroupBy { get; set; }
+
+    [Description("day, week or month: group a date field into buckets (needs date_field and last).")]
+    public string? GroupBucket { get; set; }
+
+    [Description("At most this many groups, largest first (1-25, default 12).")]
+    public int? GroupLimit { get; set; }
+
+    [Description("Date field limiting the records to a rolling window, e.g. created_at.")]
+    public string? DateField { get; set; }
+
+    [Description("Window length: the last N days, weeks or months (including the current one).")]
+    public int? Last { get; set; }
+
+    [Description("day (default), week or month.")]
+    public string? LastUnit { get; set; }
+
+    [Description("Count only records with a recorded breach of this SLA policy (see list_sla_policies).")]
+    public string? SlaPolicy { get; set; }
+
+    [Description("Limit the SLA condition to one target, e.g. resolution.")]
+    public string? SlaTarget { get; set; }
+}
+
 public sealed class CatalogTaskInput
 {
     [Description("What the fulfiller does, e.g. \"Issue the permit\".")]
@@ -604,6 +647,153 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
 
             return await ApplyAllAsync(ctx, [new AddApprovalPolicy { Policy = policy }], expected_version);
         });
+
+    [McpServerTool(Name = "add_metric"), Description("Define a reusable metric, e.g. \"Unassigned P1 tickets\" or \"Open tickets by team\". Dashboards, tiles and saved views use it by ID; every figure is computed for the person looking at it and opens the list of exactly those records. Use describe_metric_fields for what can be grouped, dated or summed.")]
+    public Task<CallToolResult> AddMetric(
+        string entity,
+        string label,
+        int expected_version,
+        [Description("Which records count, in the list filter language over record and user, e.g. !(record.status in ['resolved', 'closed', 'cancelled']) && !has(record.assignee). Omit to count every record people can see.")] string? filter = null,
+        [Description("What to compute and how to group; omit for a plain count.")] MetricInput? options = null,
+        [Description("Role IDs that see the figure; omit for everyone who can read the records. Never widens what people can read.")] string[]? roles = null,
+        string? description = null) =>
+        runner.RunAsync("add_metric", AgentScopes.ConfigEdit, entity, async ctx =>
+        {
+            var slug = Slug(label);
+            var metric = new MetricSpec
+            {
+                Id = Namespaces.TenantPrefix + "metric_" + slug[..Math.Min(52, slug.Length)],
+                Label = label,
+                Description = description,
+                Entity = entity,
+                Filter = filter,
+                Roles = [.. roles ?? []],
+            };
+            Apply(metric, options);
+            return await ApplyAllAsync(ctx, [new AddMetric { Metric = metric }], expected_version);
+        });
+
+    [McpServerTool(Name = "update_metric"), Description("Change a metric (default or your own): label, filter, what it computes, grouping, date range, SLA condition or roles. Every tile and saved view using it follows the change.")]
+    public Task<CallToolResult> UpdateMetric(
+        string metric,
+        int expected_version,
+        string? label = null,
+        [Description("Replaces the filter (list filter language).")] string? filter = null,
+        [Description("Replaces what it computes and how it groups; omitted parts keep their current value.")] MetricInput? options = null,
+        [Description("Replaces the roles that see the figure.")] string[]? roles = null,
+        string? description = null) =>
+        runner.RunAsync("update_metric", AgentScopes.ConfigEdit, metric, async ctx =>
+        {
+            var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+            var current = SpecJson.Clone(config.FindMetric(metric) ?? throw KernelException.NotFound($"Metric '{metric}'"));
+            Apply(current, options);
+            var set = new MetricPatch
+            {
+                Label = label,
+                Description = description,
+                Filter = filter,
+                Roles = roles?.ToList(),
+                Measure = options is null ? null : current.Measure,
+                GroupBy = options?.GroupBy is null && options?.GroupBucket is null && options?.GroupLimit is null ? null : current.GroupBy,
+                DateRange = options?.DateField is null && options?.Last is null && options?.LastUnit is null ? null : current.DateRange,
+                Sla = options?.SlaPolicy is null && options?.SlaTarget is null ? null : current.Sla,
+            };
+            return await ApplyAllAsync(ctx, [new UpdateMetric { Metric = metric, Set = set }], expected_version);
+        });
+
+    [McpServerTool(Name = "remove_metric"), Description("Remove a metric this workspace added. Refused while a tile or saved view uses it (list_metrics shows usedBy); remove those first.")]
+    public Task<CallToolResult> RemoveMetric(string metric, int expected_version) =>
+        runner.RunAsync("remove_metric", AgentScopes.ConfigEdit, metric, async ctx =>
+            await ApplyAllAsync(ctx, [new RemoveMetric { Metric = metric }], expected_version));
+
+    [McpServerTool(Name = "add_dashboard_tile"), Description("Show a metric on a dashboard: kpi (one number; ungrouped metrics), bar (a bar per group; grouped metrics) or table (grouped metrics). Put it in a column or card of the dashboard (list_metrics lists dashboards and their containers).")]
+    public Task<CallToolResult> AddDashboardTile(
+        string view,
+        string parent,
+        string metric,
+        [Description("kpi, bar or table.")] string kind,
+        int expected_version,
+        [Description("Tile label or chart title; defaults to the metric's label.")] string? title = null,
+        [Description("kpi: neutral, info, success, warning or critical.")] string? tone = null,
+        [Description("bar: horizontal (categories, default) or vertical (time).")] string? orientation = null,
+        string? after = null) =>
+        runner.RunAsync("add_dashboard_tile", AgentScopes.ConfigEdit, view, async ctx =>
+        {
+            var props = new JsonObject { ["metric"] = metric };
+            var type = kind switch
+            {
+                "kpi" => "display.kpi_tile",
+                "bar" => "display.bar_chart",
+                "table" => "display.metric_table",
+                _ => throw new KernelException("invalid_kind", $"'{kind}' is not a tile kind.", 400, "kind", "Use kpi, bar or table."),
+            };
+            if (title is not null)
+            {
+                props[kind == "kpi" ? "label" : "title"] = title;
+            }
+
+            if (kind == "kpi" && tone is not null)
+            {
+                props["tone"] = tone;
+            }
+
+            if (kind == "bar" && orientation is not null)
+            {
+                props["orientation"] = orientation;
+            }
+
+            var node = new NodeSpec { Id = Namespaces.NewTenantNodeId(), Type = type, Props = props };
+            return await ApplyAllAsync(ctx, [new InsertNode { View = view, Parent = parent, Node = node, Anchor = after is null ? null : new Anchor { After = after } }], expected_version);
+        });
+
+    private static void Apply(MetricSpec metric, MetricInput? o)
+    {
+        if (o is null)
+        {
+            return;
+        }
+
+        if (o.Measure is not null || o.Field is not null || o.From is not null || o.To is not null || o.Unit is not null)
+        {
+            metric.Measure = new MetricMeasureSpec
+            {
+                Kind = o.Measure ?? metric.Measure.Kind,
+                Field = o.Field ?? metric.Measure.Field,
+                From = o.From ?? metric.Measure.From,
+                To = o.To ?? metric.Measure.To,
+                Unit = o.Unit ?? metric.Measure.Unit,
+            };
+        }
+
+        if (o.GroupBy is not null || o.GroupBucket is not null || o.GroupLimit is not null)
+        {
+            metric.GroupBy = new MetricGroupSpec
+            {
+                Field = o.GroupBy ?? metric.GroupBy?.Field ?? throw new KernelException("invalid_group", "group_bucket and group_limit need group_by.", 400, "group_by", "Name the field to group by."),
+                Bucket = o.GroupBucket ?? metric.GroupBy?.Bucket,
+                Limit = o.GroupLimit ?? metric.GroupBy?.Limit ?? 12,
+            };
+        }
+
+        if (o.DateField is not null || o.Last is not null || o.LastUnit is not null)
+        {
+            metric.DateRange = new MetricDateRangeSpec
+            {
+                Field = o.DateField ?? metric.DateRange?.Field ?? "created_at",
+                Last = o.Last ?? metric.DateRange?.Last ?? throw new KernelException("invalid_date_range", "A date range needs last (how many days, weeks or months).", 400, "last", "Set last, e.g. 30 with last_unit day."),
+                Unit = o.LastUnit ?? metric.DateRange?.Unit ?? MetricBuckets.Day,
+            };
+        }
+
+        if (o.SlaPolicy is not null || o.SlaTarget is not null)
+        {
+            metric.Sla = new MetricSlaSpec
+            {
+                Policy = o.SlaPolicy ?? metric.Sla?.Policy ?? throw new KernelException("invalid_sla", "sla_target needs sla_policy.", 400, "sla_policy", "Name the SLA policy (list_sla_policies)."),
+                Target = o.SlaTarget ?? metric.Sla?.Target,
+            };
+        }
+    }
 
     [McpServerTool(Name = "add_workflow_state"), Description("Add a state to a workflow (it also becomes a status option). Category is one of new, active, pending, resolved, closed, cancelled. Add transitions into and out of it with add_transition.")]
     public Task<CallToolResult> AddWorkflowState(

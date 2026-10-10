@@ -8,12 +8,13 @@ import { ActionButton, ActionMenu, TransitionButtons } from './actions';
 import { ApprovalsPanel } from './approvals';
 import { SlaPanel } from './sla';
 import { FieldPlacement } from './field';
+import { BarChart, KpiTile, MetricTable } from './metrics';
 import { RelatedList } from './related-list';
 import { RenderContext } from './render-context';
 import { visibleWhen } from './rules';
 import { Icon, IconName } from '../ui/icon';
 
-const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'display.heading', 'display.label_value', 'display.badge', 'display.callout', 'display.empty_state', 'collection.related_list', 'activity.feed', 'activity.audit_history', 'action.transition_buttons', 'action.button', 'action.action_menu']);
+const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'display.heading', 'display.label_value', 'display.badge', 'display.callout', 'display.empty_state', 'collection.related_list', 'activity.feed', 'activity.audit_history', 'action.transition_buttons', 'action.button', 'action.action_menu', 'display.kpi_tile', 'display.bar_chart', 'display.metric_table']);
 
 /**
  * Renders one layout node and its children (Composite pattern). Children are tracked by stable node ID, so a new
@@ -22,7 +23,7 @@ const BLOCK_TYPES = new Set(['layout.card', 'layout.tab_group', 'field', 'displa
  */
 @Component({
   selector: 'esm-node',
-  imports: [Icon, FieldPlacement, ActivityFeed, AuditHistory, ApprovalsPanel, SlaPanel, TransitionButtons, ActionButton, ActionMenu, RelatedList, CdkDropList, CdkDrag, CdkDragHandle],
+  imports: [Icon, FieldPlacement, ActivityFeed, AuditHistory, ApprovalsPanel, SlaPanel, TransitionButtons, ActionButton, ActionMenu, RelatedList, KpiTile, BarChart, MetricTable, CdkDropList, CdkDrag, CdkDragHandle],
   templateUrl: './node.html',
   styleUrl: './node.scss',
 })

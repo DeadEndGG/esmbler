@@ -1,10 +1,12 @@
-import { Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChildren } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, viewChildren } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { BuilderState } from '../builder/builder-state';
 import { Api, ApiError } from '../core/api';
 import { Directory } from '../core/directory';
-import { DraftViewSpec, FieldSpec, NodeSpec, RecordPage, RecordView, ViewClientSpec } from '../core/models';
+import { ExplorerState, mainScroller } from '../core/explorer-state';
+import { DraftViewSpec, FieldSpec, GroupCount, NodeSpec, RecordPage, RecordView, ViewClientSpec } from '../core/models';
 import { Session } from '../core/session';
 import { Shortcuts } from '../core/shortcuts';
 import { Toasts } from '../core/toast';
@@ -14,12 +16,22 @@ interface SavedView {
   id: string;
   label: string;
   filter?: string;
+  /** A metric whose records the view lists (ADR 0019): the tile and the view always agree. */
+  metric?: string;
   sort?: { field: string; direction: 'asc' | 'desc' };
 }
 
+interface Drill {
+  filters: string[];
+  sla: string[];
+  label: string;
+}
+
 /**
- * collection.data_table with its saved views and filter bar (REQ-UX-*): keyboard navigation (J/K, Enter, C),
- * sortable columns, search, inline status/priority edits with optimistic update and rollback.
+ * collection.data_table with its saved views and filter bar (REQ-UX-*, REQ-WS-003): keyboard navigation (J/K, Enter,
+ * C), sortable columns, search, grouping, a column picker, inline status/priority edits with optimistic update and
+ * rollback. The explorer state (view, filters, drill, search, sort, grouping, page) lives in the URL, so figures can
+ * link into it, links can be shared, and returning from a record restores the list and its scroll position.
  */
 @Component({
   selector: 'esm-list-page',
@@ -32,7 +44,7 @@ interface SavedView {
           <h1 class="text-title-lg">{{ s?.view?.layout?.props?.['title'] ?? nav()?.pluralLabel ?? 'Records' }}</h1>
           <p class="mt-0.5 text-body-sm text-muted">
             @if (page(); as p) {
-              {{ p.total }}{{ p.totalIsCapped ? '+' : '' }} {{ p.total === 1 ? s?.entity?.entity?.label?.toLowerCase() : s?.entity?.entity?.pluralLabel?.toLowerCase() }}{{ activeView() ? ' in ' + activeView()!.label.toLowerCase() : '' }}
+              {{ p.total }}{{ p.totalIsCapped ? '+' : '' }} {{ p.total === 1 ? s?.entity?.entity?.label?.toLowerCase() : s?.entity?.entity?.pluralLabel?.toLowerCase() }}{{ activeView() ? ' in ' + activeView()!.label.toLowerCase() : drill() ? ' · ' + drill()!.label : '' }}
             } @else {
               Loading…
             }
@@ -55,6 +67,13 @@ interface SavedView {
       }
 
       <div class="filters mb-3 flex flex-wrap items-center gap-2" role="search">
+        @if (drill(); as d) {
+          <span class="drill inline-flex h-8 items-center gap-1.5 rounded-md border pr-1 pl-2.5 text-body-sm" role="status">
+            <esm-icon name="chart-column" [size]="14" class="text-brand" />
+            <span class="max-w-[320px] truncate">{{ d.label }}</span>
+            <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Clear ' + d.label" title="Clear" (click)="clearDrill()"><esm-icon name="x" [size]="13" /></button>
+          </span>
+        }
         @if (filterBar()?.props?.['showSearch'] !== false) {
           <div class="relative w-full max-w-[280px]">
             <esm-icon name="search" [size]="15" class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
@@ -75,6 +94,27 @@ interface SavedView {
           </select>
         }
         @if (hasFilters()) { <button class="btn btn-ghost btn-sm" (click)="clearFilters()"><esm-icon name="x" [size]="14" /> Clear</button> }
+        <span class="flex-1"></span>
+        @if (groupOptions().length) {
+          <select class="input filter h-8 min-h-8 w-auto py-0 text-body-sm" [class.set]="!!groupBy()" aria-label="Group rows by" [ngModel]="groupBy() ?? ''" (ngModelChange)="setGroup($event)">
+            <option value="">Group: none</option>
+            @for (f of groupOptions(); track f.key) { <option [value]="f.key">Group: {{ f.label }}</option> }
+          </select>
+        }
+        @if (allColumns().length > 1) {
+          <details class="columns-menu relative" #columnsMenu>
+            <summary class="btn btn-sm"><esm-icon name="columns" [size]="14" /> Columns</summary>
+            <div class="menu absolute right-0 z-20 mt-1 grid min-w-[220px] gap-0.5 rounded-md border border-subtle bg-raised p-1.5 shadow-md" role="group" aria-label="Visible columns">
+              @for (c of allColumns(); track c.id; let first = $first) {
+                <label class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-body-sm hover:bg-hover" [class.muted]="first">
+                  <input type="checkbox" [checked]="first || !hiddenColumns().has(c.id)" [disabled]="first" (change)="toggleColumn(c.id)" />
+                  {{ columnLabel(c) }}
+                </label>
+              }
+              @if (hiddenColumns().size) { <button class="btn btn-ghost btn-sm mt-1 justify-start" (click)="resetColumns()">Show all columns</button> }
+            </div>
+          </details>
+        }
       </div>
 
       @if (error()) {
@@ -87,7 +127,7 @@ interface SavedView {
             <tr>
               @for (c of columns(); track c.id) {
                 <th scope="col" [class]="'w-' + (c.props['width'] ?? 'md')" [attr.aria-sort]="sort().field === c.props['field'] ? (sort().direction === 'asc' ? 'ascending' : 'descending') : null">
-                  <button class="sort" (click)="toggleSort(c.props['field'])">{{ c.props['label'] ?? fieldSpec(c.props['field'])?.label ?? c.props['field'] }}
+                  <button class="sort" (click)="toggleSort(c.props['field'])">{{ columnLabel(c) }}
                     @if (sort().field === c.props['field']) { <esm-icon [name]="sort().direction === 'asc' ? 'arrow-up' : 'arrow-down'" [size]="12" class="text-brand" /> }
                   </button>
                 </th>
@@ -99,12 +139,20 @@ interface SavedView {
               @for (i of [1, 2, 3, 4, 5, 6]; track i) { <tr>@for (c of columns(); track c.id) { <td><span class="skeleton"></span></td> }</tr> }
             }
             @for (r of page()?.items ?? []; track r.id; let i = $index) {
+              @if (groupBy() && groupStarts(i)) {
+                <tr class="group-row">
+                  <th scope="colgroup" [attr.colspan]="columns().length">
+                    <span>{{ groupLabel(r) }}</span>
+                    @if (groupCount(r); as n) { <span class="group-count" [attr.aria-label]="n + ' records'">{{ n }}</span> }
+                  </th>
+                </tr>
+              }
               <tr #row [class.cursor]="cursor() === i" [attr.data-record]="r.id" (click)="open(r, $event)" tabindex="-1">
                 @for (c of columns(); track c.id; let first = $first) {
                   @let key = c.props['field'];
                   <td>
                     @if (first) {
-                      <a class="record-link" [routerLink]="['/records', r.entity, r.id]" (click)="$event.stopPropagation()">{{ cell(r, key) }}</a>
+                      <a class="record-link" [routerLink]="['/records', r.entity, r.id]" (click)="$event.stopPropagation(); rememberPosition(i)">{{ cell(r, key) }}</a>
                     } @else if (isChoice(key) && canEdit(r, key)) {
                       <select class="inline" [attr.aria-label]="(fieldSpec(key)?.label ?? key) + ' for ' + (r.number ?? r.id)" [ngModel]="r.data[key] ?? ''" (ngModelChange)="inlineSave(r, key, $event)" (click)="$event.stopPropagation()">
                         @for (o of options(fieldSpec(key)!); track o.id) { <option [value]="o.id">{{ o.label }}</option> }
@@ -124,7 +172,7 @@ interface SavedView {
                 <tr><td [attr.colspan]="columns().length" class="empty">
                   <span class="mx-auto mb-3 grid size-11 place-items-center rounded-lg bg-sunken text-muted"><esm-icon name="inbox" [size]="20" /></span>
                   <strong class="text-title-sm">Nothing here</strong>
-                  <p class="muted">{{ hasFilters() ? 'No records match these filters.' : 'No records yet.' }}</p>
+                  <p class="muted">{{ drill() ? 'No records match ' + drill()!.label.toLowerCase() + ' right now.' : hasFilters() ? 'No records match these filters.' : 'No records yet.' }}</p>
                   @if (hasFilters()) { <button class="btn btn-sm" (click)="clearFilters()">Clear filters</button> }
                 </td></tr>
               }
@@ -166,41 +214,90 @@ interface SavedView {
     .empty { text-align: center; padding: var(--esm-space-12) var(--esm-space-4); white-space: normal; }
     .empty p { margin: var(--esm-space-1) 0 var(--esm-space-4); }
     .skeleton { display: block; height: 12px; width: 70%; }
+    .drill { border-color: var(--esm-accent-brand); background: var(--esm-state-selected); }
+    .columns-menu > summary { list-style: none; }
+    .columns-menu > summary::-webkit-details-marker { display: none; }
+    .group-row th { position: static; padding: 8px var(--esm-space-4); text-align: left; text-transform: none; letter-spacing: 0; font: var(--esm-text-body-sm); font-weight: 600;
+      color: var(--esm-text-default); background: var(--esm-surface-sunken); }
+    .group-count { margin-left: var(--esm-space-2); padding: 0 6px; border-radius: var(--esm-radius-full); background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle);
+      font: var(--esm-text-caption); font-weight: 600; color: var(--esm-text-muted); }
   `,
 })
 export class ListPage {
   readonly entity = input.required<string>();
   private readonly api = inject(Api);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
   private readonly toasts = inject(Toasts);
   private readonly session = inject(Session);
   private readonly builder = inject(BuilderState);
+  private readonly explorer = inject(ExplorerState);
   protected readonly directory = inject(Directory);
   private readonly rows = viewChildren<ElementRef<HTMLElement>>('row');
+  private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
   protected readonly spec = signal<ViewClientSpec | null>(null);
   protected readonly page = signal<RecordPage | null>(null);
+  protected readonly groups = signal<GroupCount[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly cursor = signal(-1);
-  protected readonly search = signal('');
-  protected readonly filters = signal<Record<string, string>>({});
-  protected readonly activeView = signal<SavedView | null>(null);
-  protected readonly sortOverride = signal<{ field: string; direction: 'asc' | 'desc' } | null>(null);
-  protected readonly offset = signal(0);
+  protected readonly hiddenColumns = signal<ReadonlySet<string>>(new Set());
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private loadSeq = 0;
+  private restored = false;
 
   protected readonly nav = computed(() => this.session.nav(this.entity()));
   private readonly layout = computed(() => this.spec()?.view.layout ?? null);
   protected readonly table = computed(() => find(this.layout(), 'collection.data_table'));
   protected readonly filterBar = computed(() => find(this.layout(), 'collection.filter_bar'));
   protected readonly savedViews = computed<SavedView[]>(() => find(this.layout(), 'collection.saved_views')?.props['views'] ?? []);
-  protected readonly columns = computed(() => (this.table()?.children ?? []).filter((c) => c.type === 'collection.column' && !c.hidden && !this.isHiddenField(c.props['field'])));
+  protected readonly allColumns = computed(() => (this.table()?.children ?? []).filter((c) => c.type === 'collection.column' && !c.hidden && !this.isHiddenField(c.props['field'])));
+  protected readonly columns = computed(() => this.allColumns().filter((c, i) => i === 0 || !this.hiddenColumns().has(c.id)));
   protected readonly filterFields = computed(() => ((this.filterBar()?.props['fields'] as string[]) ?? []).map((k) => this.fieldSpec(k)).filter((f): f is FieldSpec => !!f && !this.isHiddenField(f.key)));
+  protected readonly groupOptions = computed(() => ((this.table()?.props['groupOptions'] as string[]) ?? []).map((k) => this.fieldSpec(k)).filter((f): f is FieldSpec => !!f && !this.isHiddenField(f.key)));
   protected readonly pageSize = computed(() => this.table()?.props['pageSize'] ?? 50);
+
+  // Explorer state from the URL.
+  /** Records a figure counts (REQ-WS-003): the exact filters and SLA conditions the server evaluated. */
+  protected readonly drill = computed<Drill | null>(() => {
+    const q = this.query();
+    const filters = q.getAll('filter').filter((f) => !!f);
+    const sla = q.getAll('sla').filter((f) => !!f);
+    return filters.length || sla.length ? { filters, sla, label: q.get('label') || 'Filtered records' } : null;
+  });
+  protected readonly activeView = computed<SavedView | null>(() => {
+    const id = this.query().get('view');
+    const views = this.savedViews();
+    if (id) return views.find((v) => v.id === id) ?? null;
+    return this.drill() ? null : (views[0] ?? null);
+  });
+  protected readonly search = computed(() => this.query().get('q') ?? '');
+  protected readonly filters = computed<Record<string, string>>(() => {
+    const q = this.query();
+    const out: Record<string, string> = {};
+    for (const key of q.keys) {
+      if (key.startsWith('f.') && q.get(key)) out[key.slice(2)] = q.get(key)!;
+    }
+    return out;
+  });
+  private readonly sortOverride = computed<{ field: string; direction: 'asc' | 'desc' } | null>(() => {
+    const field = this.query().get('sort');
+    return field ? { field, direction: this.query().get('dir') === 'asc' ? 'asc' : 'desc' } : null;
+  });
+  protected readonly offset = computed(() => Math.max(0, Math.floor(Number(this.query().get('offset')) || 0)));
+  protected readonly groupBy = computed<string | null>(() => {
+    const requested = this.query().get('group');
+    if (requested === 'none') return null;
+    const fallback: string | null = this.table()?.props['groupBy'] ?? null;
+    const key = requested ?? fallback;
+    if (!key) return null;
+    const allowed = this.groupOptions().some((f) => f.key === key) || (key === fallback && !!this.fieldSpec(key) && !this.isHiddenField(key));
+    return allowed ? key : null;
+  });
   protected readonly sort = computed(() => this.sortOverride() ?? this.activeView()?.sort ?? this.table()?.props['sort'] ?? { field: 'updated_at', direction: 'desc' });
-  protected readonly hasFilters = computed(() => Object.values(this.filters()).some((v) => !!v) || !!this.search());
+  protected readonly hasFilters = computed(() => Object.values(this.filters()).some((v) => !!v) || !!this.search() || !!this.drill());
 
   constructor() {
     effect(() => {
@@ -212,15 +309,29 @@ export class ListPage {
     effect(() => {
       this.spec();
       this.activeView();
+      this.drill();
       this.filters();
       this.sort();
       this.offset();
       this.search();
+      this.groupBy();
       untracked(() => void this.loadPage());
     });
     effect(() => {
       if (this.filterFields().some((f) => f.type === 'user' || f.type === 'group')) void this.directory.load();
     });
+    effect(() => {
+      const id = this.spec()?.view.id;
+      untracked(() => this.hiddenColumns.set(id ? readColumns(id) : new Set()));
+    });
+    // Keep the explorer's place (URL and scroll) current for the way back from a record.
+    effect(() => {
+      this.query();
+      untracked(() => this.rememberPosition());
+    });
+    const main = mainScroller();
+    const onScroll = () => this.rememberPosition();
+    main?.addEventListener('scroll', onScroll, { passive: true });
 
     const shortcuts = inject(Shortcuts);
     const off = [
@@ -230,7 +341,10 @@ export class ListPage {
       shortcuts.register({ keys: 'c', description: 'Create a record', group: 'Lists', run: () => this.nav()?.canCreate && (this.nav()?.requests ? this.router.navigate(['/catalog']) : this.router.navigate(['/records', this.entity(), 'new'])) }),
       shortcuts.register({ keys: '/', description: 'Focus search', group: 'Lists', run: () => document.querySelector<HTMLInputElement>('input[type=search]')?.focus() }),
     ];
-    inject(DestroyRef).onDestroy(() => off.forEach((f) => f()));
+    inject(DestroyRef).onDestroy(() => {
+      off.forEach((f) => f());
+      main?.removeEventListener('scroll', onScroll);
+    });
   }
 
   private async loadSpec(entity: string, draft: boolean): Promise<void> {
@@ -243,11 +357,37 @@ export class ListPage {
     try {
       const spec = draft ? (await this.api.get<DraftViewSpec>(`/api/drafts/current/views/${viewId}`)).spec : await this.session.view(viewId);
       this.spec.set(spec);
-      if (!this.activeView() && this.savedViews().length) this.activeView.set(this.savedViews()[0]);
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : 'Could not load this list.');
       this.loading.set(false);
     }
+  }
+
+  /** Filters and SLA conditions of the current explorer state, exactly as the server evaluates them. */
+  private criteria(spec: ViewClientSpec): { filter: string[]; sla: string[] } {
+    const filter: string[] = [];
+    const sla: string[] = [];
+    const view = this.activeView();
+    if (view?.filter) filter.push(view.filter);
+    if (view?.metric) {
+      const metric = spec.metrics?.[view.metric];
+      // A metric this person may not see is never widened into "everything": the view lists nothing.
+      if (!metric) filter.push('false');
+      else {
+        if (metric.filter) filter.push(metric.filter);
+        sla.push(...metric.sla);
+      }
+    }
+    const drill = this.drill();
+    if (drill) {
+      filter.push(...drill.filters);
+      sla.push(...drill.sla);
+    }
+    for (const [key, value] of Object.entries(this.filters())) {
+      if (!value || !this.filterFields().some((f) => f.key === key)) continue;
+      filter.push(value === '@me' ? `record.${key} == user.id` : `record.${key} == ${quote(value)}`);
+    }
+    return { filter, sla };
   }
 
   private async loadPage(): Promise<void> {
@@ -255,25 +395,29 @@ export class ListPage {
     if (!spec) return;
     const seq = ++this.loadSeq;
     this.loading.set(true);
-    const filter: string[] = [];
-    if (this.activeView()?.filter) filter.push(this.activeView()!.filter!);
-    for (const [key, value] of Object.entries(this.filters())) {
-      if (!value) continue;
-      filter.push(value === '@me' ? `record.${key} == user.id` : `record.${key} == ${quote(value)}`);
-    }
+    const { filter, sla } = this.criteria(spec);
+    const group = this.groupBy();
+    const search = this.search() || undefined;
     try {
-      const page = await this.api.get<RecordPage>(`/api/records/${this.entity()}`, {
-        filter,
-        search: this.search() || undefined,
-        sort: this.sort().field,
-        dir: this.sort().direction,
-        offset: this.offset(),
-        size: this.pageSize(),
-      });
+      const [page, groups] = await Promise.all([
+        this.api.get<RecordPage>(`/api/records/${this.entity()}`, {
+          filter,
+          sla,
+          search,
+          sort: this.sort().field,
+          dir: this.sort().direction,
+          offset: this.offset(),
+          size: this.pageSize(),
+          group: group ?? undefined,
+        }),
+        group ? this.api.get<GroupCount[]>(`/api/records/${this.entity()}/groups`, { field: group, filter, sla, search }).catch(() => [] as GroupCount[]) : Promise.resolve([] as GroupCount[]),
+      ]);
       if (seq !== this.loadSeq) return;
       this.page.set(page);
+      this.groups.set(groups);
       this.error.set(null);
       if (this.cursor() >= page.items.length) this.cursor.set(page.items.length - 1);
+      this.restorePosition();
     } catch (e) {
       if (seq === this.loadSeq) this.error.set(e instanceof ApiError ? e.message : 'Could not load records.');
     } finally {
@@ -281,39 +425,116 @@ export class ListPage {
     }
   }
 
+  /** Changes the explorer state in the URL (replacing the entry, so Back leaves the list rather than undoing a filter). */
+  private setQuery(changes: Params, keepOffset = false): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: keepOffset ? changes : { ...changes, offset: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  private currentUrl(): string {
+    return this.router.serializeUrl(this.router.createUrlTree(['/records', this.entity()], { queryParams: this.route.snapshot.queryParams }));
+  }
+
+  /** Remembers the list URL, scroll position and cursor so coming back from a record lands in the same place. */
+  protected rememberPosition(cursor = this.cursor()): void {
+    if (!this.page()) return;
+    this.explorer.remember(this.entity(), this.currentUrl(), mainScroller()?.scrollTop ?? 0, cursor);
+  }
+
+  private restorePosition(): void {
+    if (this.restored) return;
+    this.restored = true;
+    const saved = this.explorer.restore(this.entity(), this.currentUrl());
+    if (!saved) return;
+    this.cursor.set(Math.min(saved.cursor, (this.page()?.items.length ?? 0) - 1));
+    afterNextRender(
+      () => {
+        const main = mainScroller();
+        if (main) main.scrollTop = saved.scrollTop;
+      },
+      { injector: this.injector },
+    );
+  }
+
   protected selectView(v: SavedView): void {
-    this.activeView.set(v);
-    this.sortOverride.set(null);
-    this.offset.set(0);
+    this.setQuery({ view: v.id, sort: null, dir: null, filter: null, sla: null, label: null });
   }
 
   protected setFilter(key: string, value: string): void {
-    this.filters.update((f) => ({ ...f, [key]: value }));
-    this.offset.set(0);
+    this.setQuery({ ['f.' + key]: value || null });
   }
 
   protected clearFilters(): void {
-    this.filters.set({});
-    this.search.set('');
-    this.offset.set(0);
+    const changes: Params = { q: null, filter: null, sla: null, label: null };
+    for (const key of Object.keys(this.filters())) changes['f.' + key] = null;
+    this.setQuery(changes);
+  }
+
+  protected clearDrill(): void {
+    this.setQuery({ filter: null, sla: null, label: null });
   }
 
   protected onSearch(value: string): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => {
-      this.search.set(value.trim());
-      this.offset.set(0);
-    }, 250);
+    this.searchTimer = setTimeout(() => this.setQuery({ q: value.trim() || null }), 250);
   }
 
   protected toggleSort(field: string): void {
     const s = this.sort();
-    this.sortOverride.set({ field, direction: s.field === field && s.direction === 'asc' ? 'desc' : 'asc' });
+    this.setQuery({ sort: field, dir: s.field === field && s.direction === 'asc' ? 'desc' : 'asc' });
+  }
+
+  protected setGroup(key: string): void {
+    this.setQuery({ group: key || (this.table()?.props['groupBy'] ? 'none' : null) });
   }
 
   protected go(delta: number): void {
-    this.offset.update((o) => Math.max(0, o + delta * this.pageSize()));
+    this.setQuery({ offset: Math.max(0, this.offset() + delta * this.pageSize()) || null }, true);
     this.cursor.set(-1);
+  }
+
+  protected columnLabel(c: NodeSpec): string {
+    return c.props['label'] ?? this.fieldSpec(c.props['field'])?.label ?? c.props['field'];
+  }
+
+  protected toggleColumn(id: string): void {
+    const next = new Set(this.hiddenColumns());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.hiddenColumns.set(next);
+    const view = this.spec()?.view.id;
+    if (view) writeColumns(view, next);
+  }
+
+  protected resetColumns(): void {
+    this.hiddenColumns.set(new Set());
+    const view = this.spec()?.view.id;
+    if (view) writeColumns(view, new Set());
+  }
+
+  private groupKey(r: RecordView): string {
+    const v = r.data[this.groupBy() ?? ''];
+    return v === undefined || v === null || v === '' ? '' : String(v).toLowerCase();
+  }
+
+  protected groupStarts(i: number): boolean {
+    const items = this.page()?.items ?? [];
+    return i === 0 || this.groupKey(items[i]) !== this.groupKey(items[i - 1]);
+  }
+
+  private groupOf(r: RecordView): GroupCount | undefined {
+    const key = this.groupKey(r);
+    return this.groups().find((g) => (g.key ?? '').toLowerCase() === key);
+  }
+
+  protected groupLabel(r: RecordView): string {
+    const g = this.groupOf(r);
+    if (g) return g.label;
+    const field = this.fieldSpec(this.groupBy() ?? '');
+    return this.groupKey(r) === '' ? `No ${field?.label.toLowerCase() ?? 'value'}` : this.cell(r, field?.key ?? '');
+  }
+
+  protected groupCount(r: RecordView): number | null {
+    return this.groupOf(r)?.count ?? null;
   }
 
   protected fieldSpec(key: string): FieldSpec | undefined {
@@ -396,6 +617,7 @@ export class ListPage {
 
   protected open(r: RecordView, e: MouseEvent): void {
     if ((e.target as HTMLElement).closest('a,select,button')) return;
+    this.rememberPosition(this.page()?.items.indexOf(r) ?? -1);
     void this.router.navigate(['/records', r.entity, r.id]);
   }
 
@@ -409,7 +631,9 @@ export class ListPage {
 
   private openCursor(): void {
     const r = this.page()?.items[this.cursor()];
-    if (r) void this.router.navigate(['/records', r.entity, r.id]);
+    if (!r) return;
+    this.rememberPosition();
+    void this.router.navigate(['/records', r.entity, r.id]);
   }
 }
 
@@ -421,6 +645,28 @@ function find(node: NodeSpec | null, type: string): NodeSpec | null {
     if (f) return f;
   }
   return null;
+}
+
+const COLUMNS_KEY = 'esm.columns.';
+
+/** Columns a person hid in a list view (a per-browser convenience; storage may be unavailable). */
+function readColumns(view: string): ReadonlySet<string> {
+  try {
+    const raw = localStorage.getItem(COLUMNS_KEY + view);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeColumns(view: string, hidden: ReadonlySet<string>): void {
+  try {
+    if (hidden.size) localStorage.setItem(COLUMNS_KEY + view, JSON.stringify([...hidden]));
+    else localStorage.removeItem(COLUMNS_KEY + view);
+  } catch {
+    // Storage unavailable: the choice lasts until the page reloads.
+  }
 }
 
 function quote(value: string): string {

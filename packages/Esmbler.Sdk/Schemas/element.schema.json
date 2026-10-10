@@ -26,7 +26,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["none", "field", "record", "query", "relationship", "workflow"] },
+        "kind": { "enum": ["none", "field", "record", "query", "relationship", "workflow", "metric"] },
         "description": { "type": "string" }
       }
     },
