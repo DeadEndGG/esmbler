@@ -42,7 +42,22 @@ public class SpecCatalog
 
     public List<MetricSpec> Metrics { get; set; } = [];
 
+    /// <summary>Event subscriptions (ADR 0017, ADR 0021).</summary>
+    public List<SubscriptionSpec> Subscriptions { get; set; } = [];
+
+    public List<NotificationProfileSpec> NotificationProfiles { get; set; } = [];
+
+    public List<NotificationRouteSpec> NotificationRoutes { get; set; } = [];
+
     public EntitySpec? FindEntity(string id) => Entities.Find(e => e.Id == id);
+
+    public SubscriptionSpec? FindSubscription(string id) => Subscriptions.Find(s => s.Id == id);
+
+    public NotificationProfileSpec? FindNotificationProfile(string id) => NotificationProfiles.Find(p => p.Id == id);
+
+    public NotificationRouteSpec? FindNotificationRoute(string id) => NotificationRoutes.Find(r => r.Id == id);
+
+    public NotificationTemplateSpec? FindNotificationTemplate(string id) => NotificationTemplates.Find(t => t.Id == id);
 
     public ChoiceListSpec? FindChoiceList(string id) => ChoiceLists.Find(c => c.Id == id);
 

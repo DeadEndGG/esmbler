@@ -12,7 +12,7 @@ namespace Esmbler.Kernel.Configuration;
 /// expression types and cost, layout containment and props, workflow consistency, rule conflicts and cycles,
 /// permission references. Every diagnostic says what is wrong, where, and a valid alternative.
 /// </summary>
-public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator propsValidator)
+public sealed partial class ConfigValidator(IElementRegistry registry, IPropsValidator propsValidator)
 {
     public IReadOnlyList<Diagnostic> Validate(SpecCatalog config)
     {
@@ -117,24 +117,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             CheckExpression(entity, ar.When, ar.Id, "condition", d);
         }
 
-        foreach (var nt in config.NotificationTemplates)
-        {
-            var entity = config.FindEntity(nt.Entity);
-            if (entity is null)
-            {
-                d.Add(Diagnostic.Error("config.not_found", $"Notification template '{nt.Id}' references unknown entity '{nt.Entity}'.", nt.Id));
-                continue;
-            }
-
-            foreach (var r in nt.Recipients.Where(r => r != "watchers"))
-            {
-                if (entity.FindField(r) is not { Type: FieldTypes.User or FieldTypes.Email })
-                {
-                    d.Add(Diagnostic.Error("config.bad_recipient", $"Notification '{nt.Id}' recipient '{r}' must be a user or email field.", nt.Id));
-                }
-            }
-        }
-
+        ValidateNotifications(config, d);
         return d;
     }
 
@@ -152,6 +135,10 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Check(config.BusinessCalendars.Select(c => c.Id), "business calendar");
         Check(config.SlaPolicies.Select(p => p.Id), "SLA policy");
         Check(config.Metrics.Select(m => m.Id), "metric");
+        Check(config.NotificationTemplates.Select(t => t.Id), "notification template");
+        Check(config.Subscriptions.Select(s => s.Id), "subscription");
+        Check(config.NotificationProfiles.Select(p => p.Id), "notification profile");
+        Check(config.NotificationRoutes.Select(r => r.Id), "notification route");
         Check(config.ChoiceLists.Select(c => c.Id), "choice list");
         Check(config.Rules.Select(r => r.Id), "rule");
         Check(config.Views.Select(v => v.Id), "view");
@@ -1872,6 +1859,215 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             }
         }
     }
+
+    /// <summary>Notification templates, subscriptions, profiles and routes (ADR 0021).</summary>
+    private static void ValidateNotifications(SpecCatalog config, List<Diagnostic> d)
+    {
+        const int MaxBody = 4000;
+        const int MaxRecipients = 50;
+        foreach (var nt in config.NotificationTemplates)
+        {
+            var entity = nt.Entity is null ? null : config.FindEntity(nt.Entity);
+            if (nt.Entity is not null && entity is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Notification template '{nt.Id}' references unknown entity '{nt.Entity}'.", nt.Id, Expression.Suggest(nt.Entity, config.Entities.Select(e => e.Id))));
+                continue;
+            }
+
+            if (nt.Event is not null)
+            {
+                if (entity is null)
+                {
+                    d.Add(Diagnostic.Error("config.not_found", $"Notification template '{nt.Id}' has a trigger but no entity.", nt.Id, "Set entity, or use a subscription and route instead of a trigger."));
+                    continue;
+                }
+
+                foreach (var r in nt.Recipients.Where(r => r != "watchers"))
+                {
+                    if (entity.FindField(r) is not { Type: FieldTypes.User or FieldTypes.Email })
+                    {
+                        d.Add(Diagnostic.Error("config.bad_recipient", $"Notification '{nt.Id}' recipient '{r}' must be a user or email field.", nt.Id));
+                    }
+                }
+            }
+
+            var texts = new List<(string Where, string Text)> { ("subject", nt.Subject), ("body", nt.Body) };
+            foreach (var (channel, variant) in nt.Variants)
+            {
+                if (!NotificationChannels.All.Contains(channel))
+                {
+                    d.Add(Diagnostic.Error("config.bad_channel", $"Template '{nt.Id}' has a variant for unknown channel '{channel}'.", nt.Id, $"Use one of: {string.Join(", ", NotificationChannels.All)}."));
+                }
+
+                texts.Add(($"{channel} body", variant.Body));
+                if (variant.Subject is { } subject)
+                {
+                    texts.Add(($"{channel} subject", subject));
+                }
+            }
+
+            foreach (var (where, text) in texts)
+            {
+                if (text.Length > MaxBody)
+                {
+                    d.Add(Diagnostic.Error("config.too_large", $"The {where} of template '{nt.Id}' is longer than {MaxBody} characters.", nt.Id, "Shorten it; link to the record for details."));
+                }
+
+                if (RawHtml().IsMatch(text))
+                {
+                    d.Add(Diagnostic.Error("config.raw_html", $"The {where} of template '{nt.Id}' contains HTML.", nt.Id, "Templates are plain text; channels format them."));
+                }
+
+                foreach (Match m in AnyPlaceholder().Matches(text))
+                {
+                    var name = m.Groups[1].Value;
+                    var ok = name is "recipient.name" or "link" || name.StartsWith("event.", StringComparison.Ordinal)
+                        || (name.StartsWith("record.", StringComparison.Ordinal) && entity?.FindField(name["record.".Length..]) is not null)
+                        || name is "record.number" or "record.id";
+                    if (!ok)
+                    {
+                        d.Add(Diagnostic.Error("config.bad_placeholder", $"Template '{nt.Id}' uses unknown placeholder '{{{{{name}}}}}' in its {where}.", nt.Id,
+                            entity is null ? "Use {{event.<field>}}, {{recipient.name}} or {{link}}." : $"Use {{{{record.<field>}}}} with a field of {entity.Label}, {{{{event.<field>}}}}, {{{{recipient.name}}}} or {{{{link}}}}."));
+                    }
+                }
+            }
+
+            foreach (var field in nt.ExternalFields.Where(f => entity?.FindField(f) is null))
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Template '{nt.Id}' lets external recipients see unknown field '{field}'.", nt.Id));
+            }
+        }
+
+        foreach (var sub in config.Subscriptions)
+        {
+            var type = config.FindEventType(sub.Event);
+            if (type is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Subscription '{sub.Label}' listens to unknown event type '{sub.Event}'.", sub.Id, Expression.Suggest(sub.Event, config.EventTypes.Select(e => e.Id))));
+                continue;
+            }
+
+            if (!SubscriptionTargets.All.Contains(sub.Target))
+            {
+                d.Add(Diagnostic.Error("config.bad_target", $"Subscription '{sub.Label}' targets '{sub.Target}'.", sub.Id, $"Use one of: {string.Join(", ", SubscriptionTargets.All)}."));
+            }
+
+            var entityId = sub.Entity ?? type.SubjectEntity;
+            var entity = entityId is null ? null : config.FindEntity(entityId);
+            if (entityId is not null && entity is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Subscription '{sub.Label}' references unknown entity '{entityId}'.", sub.Id));
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(sub.When))
+            {
+                try
+                {
+                    Expression.Compile(sub.When, EntitySchema.ForSubscription(entity, type));
+                }
+                catch (ExpressionException ex)
+                {
+                    d.Add(Diagnostic.Error(ex.Code, $"The condition of subscription '{sub.Label}' is invalid: {ex.Message}", sub.Id, ex.Suggestion));
+                }
+            }
+        }
+
+        foreach (var profile in config.NotificationProfiles)
+        {
+            if (profile.Channels.Count == 0 || profile.Channels.Any(c => !NotificationChannels.All.Contains(c)) || profile.Channels.Distinct().Count() != profile.Channels.Count)
+            {
+                d.Add(Diagnostic.Error("config.bad_channel", $"Profile '{profile.Label}' needs one or more different channels.", profile.Id, $"Use: {string.Join(", ", NotificationChannels.All)}."));
+            }
+
+            if (!NotificationDelivery.Kinds.Contains(profile.Delivery))
+            {
+                d.Add(Diagnostic.Error("config.bad_delivery", $"Profile '{profile.Label}' delivery '{profile.Delivery}' is unknown.", profile.Id, "Use all or fallback."));
+            }
+
+            if (profile.MinSeverity is { } min && !EventSeverities.All.Contains(min))
+            {
+                d.Add(Diagnostic.Error("config.bad_severity", $"Profile '{profile.Label}' minimum severity '{min}' is unknown.", profile.Id, $"Use one of: {string.Join(", ", EventSeverities.All)}."));
+            }
+        }
+
+        foreach (var route in config.NotificationRoutes)
+        {
+            var sub = config.FindSubscription(route.Subscription);
+            var profile = config.FindNotificationProfile(route.Profile);
+            var template = config.FindNotificationTemplate(route.Template);
+            if (sub is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Route '{route.Label}' uses unknown subscription '{route.Subscription}'.", route.Id, Expression.Suggest(route.Subscription, config.Subscriptions.Select(s => s.Id))));
+            }
+
+            if (profile is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Route '{route.Label}' uses unknown profile '{route.Profile}'.", route.Id, Expression.Suggest(route.Profile, config.NotificationProfiles.Select(p => p.Id))));
+            }
+
+            if (template is null)
+            {
+                d.Add(Diagnostic.Error("config.not_found", $"Route '{route.Label}' uses unknown template '{route.Template}'.", route.Id, Expression.Suggest(route.Template, config.NotificationTemplates.Select(t => t.Id))));
+            }
+            else if (template.Event is not null)
+            {
+                d.Add(Diagnostic.Error("config.bad_template", $"Route '{route.Label}' uses template '{template.Id}', which has its own trigger.", route.Id, "Use a template without an event trigger."));
+            }
+
+            if (route.Recipients.Count is 0 or > MaxRecipients)
+            {
+                d.Add(Diagnostic.Error(route.Recipients.Count == 0 ? "config.bad_recipient" : "config.too_large", $"Route '{route.Label}' needs 1 to {MaxRecipients} recipient rules.", route.Id));
+            }
+
+            var type = sub is null ? null : config.FindEventType(sub.Event);
+            var entityId = sub?.Entity ?? type?.SubjectEntity;
+            var entity = entityId is null ? null : config.FindEntity(entityId);
+            if (template?.Entity is { } templateEntity && entityId is not null && templateEntity != entityId)
+            {
+                d.Add(Diagnostic.Error("config.bad_template", $"Route '{route.Label}' renders a template for {templateEntity} on {entityId} events.", route.Id, "Use a template for the subscription's entity."));
+            }
+
+            foreach (var r in route.Recipients)
+            {
+                var problem = r.Kind switch
+                {
+                    RecipientKinds.Field => entity?.FindField(r.Ref) is { Type: FieldTypes.User or FieldTypes.Group or FieldTypes.Email or FieldTypes.Principals } ? null : $"'{r.Ref}' is not a user, group or email field of {entity?.Label ?? "the event's record"}",
+                    RecipientKinds.Role => config.Roles.Any(x => x.Id == r.Ref) || r.Ref == PlatformModule.TenantAdminRole ? null : $"role '{r.Ref}' does not exist",
+                    RecipientKinds.Group => GroupKey().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not a group key",
+                    RecipientKinds.User => Guid.TryParse(r.Ref, out _) ? null : $"'{r.Ref}' is not a person's ID",
+                    RecipientKinds.Approvers => type?.Fields.ContainsKey("approval") == true || sub?.Event.StartsWith("platform.approval.", StringComparison.Ordinal) == true ? null : "approvers only exist for approval events",
+                    RecipientKinds.Address => EmailAddress().IsMatch(r.Ref) || PhoneNumber().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not an email address or phone number (+ and digits)",
+                    _ => $"kind '{r.Kind}' is unknown",
+                };
+                if (problem is not null)
+                {
+                    d.Add(Diagnostic.Error("config.bad_recipient", $"Route '{route.Label}': {problem}.", route.Id, $"Recipient kinds: {string.Join(", ", RecipientKinds.All)}."));
+                }
+            }
+
+            // External recipients only get public events, and only the template's external fields.
+            if (route.Recipients.Any(RecipientKinds.IsExternal) && type is not null && type.Sensitivity != EventSensitivities.Public)
+            {
+                d.Add(Diagnostic.Error("config.external_redaction", $"Route '{route.Label}' sends {type.Sensitivity} event '{type.Id}' to external addresses.", route.Id, "Only public events go to external recipients; notify people in the workspace instead."));
+            }
+        }
+    }
+
+    [GeneratedRegex(@"\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}")]
+    private static partial Regex AnyPlaceholder();
+
+    [GeneratedRegex(@"<\s*/?\s*[a-zA-Z][^>]*>")]
+    private static partial Regex RawHtml();
+
+    [GeneratedRegex(@"^[a-z][a-z0-9_]{1,40}$")]
+    private static partial Regex GroupKey();
+
+    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    private static partial Regex EmailAddress();
+
+    [GeneratedRegex(@"^\+[0-9]{7,15}$")]
+    private static partial Regex PhoneNumber();
 
     private static CompiledExpression? CheckExpression(EntitySpec entity, string? expression, string target, string what, List<Diagnostic> d)
     {

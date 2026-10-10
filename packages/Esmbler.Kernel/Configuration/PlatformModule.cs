@@ -65,6 +65,21 @@ public sealed class PlatformModule : IModuleDefinition
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalCancelled, Label = "Approval cancelled", Description = "A pending approval ended because its request was cancelled.", Fields = new() { ["policy"] = Text("Approval policy ID.", required: true) } },
         ];
 
+    public const string InAppProfile = "core.platform.profile.in_app";
+    public const string InAppEmailProfile = "core.platform.profile.in_app_email";
+    public const string UrgentProfile = "core.platform.profile.urgent";
+
+    /// <summary>
+    /// Built-in notification profiles (ADR 0021), added like <see cref="EventTypes"/> so routes in any module can use
+    /// them. Tenants add their own; these can be disabled, not removed.
+    /// </summary>
+    public static IReadOnlyList<NotificationProfileSpec> NotificationProfiles { get; } =
+        [
+            new NotificationProfileSpec { Id = InAppProfile, Label = "In the app", Description = "The bell in the app only.", Channels = [NotificationChannels.InApp] },
+            new NotificationProfileSpec { Id = InAppEmailProfile, Label = "In the app and by email", Description = "The bell and an email to people who have an address.", Channels = [NotificationChannels.InApp, NotificationChannels.Email] },
+            new NotificationProfileSpec { Id = UrgentProfile, Label = "Urgent", Description = "High and critical events: the bell, email and text message where a number is known.", Channels = [NotificationChannels.InApp, NotificationChannels.Email, NotificationChannels.Sms], MinSeverity = EventSeverities.High },
+        ];
+
     public string Id => ModuleId;
 
     public string Name => "Platform";

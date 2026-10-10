@@ -119,6 +119,23 @@ public sealed class ConfigCompiler(ConfigValidator validator)
         changes.AddRange(ApprovalChanges(before, after));
         changes.AddRange(TransitionAccessChanges(before, after));
 
+        // Who is always told, and what leaves the workspace (ADR 0021): mandatory routes, external recipients and fields.
+        foreach (var route in after.NotificationRoutes)
+        {
+            var old = before.FindNotificationRoute(route.Id);
+            var external = route.Recipients.Where(RecipientKinds.IsExternal).Select(r => r.Ref).Order(StringComparer.Ordinal);
+            var oldExternal = (old?.Recipients ?? []).Where(RecipientKinds.IsExternal).Select(r => r.Ref).Order(StringComparer.Ordinal);
+            if ((old?.Mandatory ?? false) != route.Mandatory || !external.SequenceEqual(oldExternal, StringComparer.Ordinal))
+            {
+                changes.Add($"Changed who must be told or external recipients of route {route.Id}");
+            }
+        }
+
+        changes.AddRange(before.NotificationRoutes.Where(r => r.Mandatory && after.FindNotificationRoute(r.Id) is null).Select(r => $"Removed mandatory route {r.Id}"));
+        changes.AddRange(after.NotificationTemplates
+            .Where(t => !(before.FindNotificationTemplate(t.Id)?.ExternalFields ?? []).Order(StringComparer.Ordinal).SequenceEqual(t.ExternalFields.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+            .Select(t => $"Changed what external recipients see in template {t.Id}"));
+
         // Who sees a figure (ADR 0019): metric roles gate it, though they never widen record access.
         changes.AddRange(after.Metrics
             .Where(m => before.FindMetric(m.Id) is { } old && !old.Roles.Order(StringComparer.Ordinal).SequenceEqual(m.Roles.Order(StringComparer.Ordinal), StringComparer.Ordinal))

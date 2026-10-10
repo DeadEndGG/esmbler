@@ -90,6 +90,7 @@ public static class Composer
             if (module.Id == PlatformModule.ModuleId)
             {
                 copy.EventTypes = PlatformModule.EventTypes.Select(SpecJson.Clone).ToList();
+                copy.NotificationProfiles = PlatformModule.NotificationProfiles.Select(SpecJson.Clone).ToList();
             }
             config.Modules.Add(new LockedModule(module.Id, module.Version, Hash(SpecJson.Canonical(SpecJson.ToNode(module)))));
             config.Entities.AddRange(copy.Entities);
@@ -109,6 +110,9 @@ public static class Composer
             config.BusinessCalendars.AddRange(copy.BusinessCalendars);
             config.SlaPolicies.AddRange(copy.SlaPolicies);
             config.Metrics.AddRange(copy.Metrics);
+            config.Subscriptions.AddRange(copy.Subscriptions);
+            config.NotificationProfiles.AddRange(copy.NotificationProfiles);
+            config.NotificationRoutes.AddRange(copy.NotificationRoutes);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -194,6 +198,26 @@ public static class Composer
         foreach (var m in catalog.Metrics)
         {
             yield return m.Id;
+        }
+
+        foreach (var t in catalog.NotificationTemplates)
+        {
+            yield return t.Id;
+        }
+
+        foreach (var s in catalog.Subscriptions)
+        {
+            yield return s.Id;
+        }
+
+        foreach (var p in catalog.NotificationProfiles)
+        {
+            yield return p.Id;
+        }
+
+        foreach (var r in catalog.NotificationRoutes)
+        {
+            yield return r.Id;
         }
 
         foreach (var p in catalog.PermissionSets)
@@ -470,6 +494,128 @@ public static class Composer
 
                 ctx.Config.Metrics.Remove(removedMetric);
                 ctx.Config.Provenance.Remove(removedMetric.Id);
+                break;
+            case AddSubscription asub:
+                RequireTenantId(asub.Subscription.Id, "subscription");
+                Unique(ctx, asub.Subscription.Id, "Subscription");
+                ctx.Config.Subscriptions.Add(SpecJson.Clone(asub.Subscription));
+                ctx.Mark(asub.Subscription.Id);
+                break;
+            case UpdateSubscription usub:
+                var subscription = ctx.Config.FindSubscription(usub.Subscription) ?? throw Missing("subscription", usub.Subscription, Expression.Suggest(usub.Subscription, ctx.Config.Subscriptions.Select(x => x.Id)));
+                var subscriptionTenant = IsTenant(ctx, subscription.Id);
+                CheckExpected(ctx, usub.Subscription, SpecJson.ToNode(subscription)!.AsObject(), usub.Expected, SpecJson.ToNode(usub.Set)!.AsObject());
+                if (!subscriptionTenant && usub.Set.When is not null)
+                {
+                    throw new OverlayException("overlay.base_immutable", $"The condition of subscription '{subscription.Label}' comes from {ctx.Layer(subscription.Id)}.", usub.Subscription, "Disable it and add your own subscription instead.");
+                }
+
+                subscription.Label = usub.Set.Label ?? subscription.Label;
+                subscription.Description = usub.Set.Description ?? subscription.Description;
+                subscription.When = usub.Set.When ?? subscription.When;
+                subscription.Enabled = usub.Set.Enabled ?? subscription.Enabled;
+                ctx.Mark(subscription.Id, keepLayer: !subscriptionTenant);
+                break;
+            case RemoveSubscription rsub:
+                var removedSubscription = ctx.Config.FindSubscription(rsub.Subscription) ?? throw Missing("subscription", rsub.Subscription, Expression.Suggest(rsub.Subscription, ctx.Config.Subscriptions.Select(x => x.Id)));
+                RequireRemovable(ctx, removedSubscription.Id, removedSubscription.Label, "subscription", ctx.Config.NotificationRoutes.Where(r => r.Subscription == removedSubscription.Id).Select(r => r.Id));
+                ctx.Config.Subscriptions.Remove(removedSubscription);
+                ctx.Config.Provenance.Remove(removedSubscription.Id);
+                break;
+            case AddNotificationTemplate ant:
+                RequireTenantId(ant.Template.Id, "notification template");
+                Unique(ctx, ant.Template.Id, "Notification template");
+                ctx.Config.NotificationTemplates.Add(SpecJson.Clone(ant.Template));
+                ctx.Mark(ant.Template.Id);
+                break;
+            case UpdateNotificationTemplate unt:
+                var template = ctx.Config.FindNotificationTemplate(unt.Template) ?? throw Missing("notification template", unt.Template, Expression.Suggest(unt.Template, ctx.Config.NotificationTemplates.Select(x => x.Id)));
+                var templateTenant = IsTenant(ctx, template.Id);
+                CheckExpected(ctx, unt.Template, SpecJson.ToNode(template)!.AsObject(), unt.Expected, SpecJson.ToNode(unt.Set)!.AsObject());
+                template.Label = unt.Set.Label ?? template.Label;
+                template.Subject = unt.Set.Subject ?? template.Subject;
+                template.Body = unt.Set.Body ?? template.Body;
+                template.Enabled = unt.Set.Enabled ?? template.Enabled;
+                if (unt.Set.Variants is { } variants)
+                {
+                    template.Variants = variants.ToDictionary(v => v.Key, v => SpecJson.Clone(v.Value));
+                }
+
+                if (unt.Set.ExternalFields is { } external)
+                {
+                    template.ExternalFields = [.. external];
+                }
+
+                ctx.Mark(template.Id, keepLayer: !templateTenant);
+                break;
+            case RemoveNotificationTemplate rnt:
+                var removedTemplate = ctx.Config.FindNotificationTemplate(rnt.Template) ?? throw Missing("notification template", rnt.Template, Expression.Suggest(rnt.Template, ctx.Config.NotificationTemplates.Select(x => x.Id)));
+                RequireRemovable(ctx, removedTemplate.Id, removedTemplate.Label ?? removedTemplate.Subject, "notification template", ctx.Config.NotificationRoutes.Where(r => r.Template == removedTemplate.Id).Select(r => r.Id));
+                ctx.Config.NotificationTemplates.Remove(removedTemplate);
+                ctx.Config.Provenance.Remove(removedTemplate.Id);
+                break;
+            case AddNotificationProfile anp:
+                RequireTenantId(anp.Profile.Id, "notification profile");
+                Unique(ctx, anp.Profile.Id, "Notification profile");
+                ctx.Config.NotificationProfiles.Add(SpecJson.Clone(anp.Profile));
+                ctx.Mark(anp.Profile.Id);
+                break;
+            case UpdateNotificationProfile unp:
+                var profile = ctx.Config.FindNotificationProfile(unp.Profile) ?? throw Missing("notification profile", unp.Profile, Expression.Suggest(unp.Profile, ctx.Config.NotificationProfiles.Select(x => x.Id)));
+                var profileTenant = IsTenant(ctx, profile.Id);
+                CheckExpected(ctx, unp.Profile, SpecJson.ToNode(profile)!.AsObject(), unp.Expected, SpecJson.ToNode(unp.Set)!.AsObject());
+                profile.Label = unp.Set.Label ?? profile.Label;
+                profile.Description = unp.Set.Description ?? profile.Description;
+                profile.Channels = unp.Set.Channels is { } channels ? [.. channels] : profile.Channels;
+                profile.Delivery = unp.Set.Delivery ?? profile.Delivery;
+                profile.MinSeverity = unp.Set.MinSeverity ?? profile.MinSeverity;
+                profile.Enabled = unp.Set.Enabled ?? profile.Enabled;
+                ctx.Mark(profile.Id, keepLayer: !profileTenant);
+                break;
+            case RemoveNotificationProfile rnp:
+                var removedProfile = ctx.Config.FindNotificationProfile(rnp.Profile) ?? throw Missing("notification profile", rnp.Profile, Expression.Suggest(rnp.Profile, ctx.Config.NotificationProfiles.Select(x => x.Id)));
+                RequireRemovable(ctx, removedProfile.Id, removedProfile.Label, "notification profile", ctx.Config.NotificationRoutes.Where(r => r.Profile == removedProfile.Id).Select(r => r.Id));
+                ctx.Config.NotificationProfiles.Remove(removedProfile);
+                ctx.Config.Provenance.Remove(removedProfile.Id);
+                break;
+            case AddNotificationRoute anr:
+                RequireTenantId(anr.Route.Id, "notification route");
+                Unique(ctx, anr.Route.Id, "Notification route");
+                ctx.Config.NotificationRoutes.Add(SpecJson.Clone(anr.Route));
+                ctx.Mark(anr.Route.Id);
+                break;
+            case UpdateNotificationRoute unr:
+                var route = ctx.Config.FindNotificationRoute(unr.Route) ?? throw Missing("notification route", unr.Route, Expression.Suggest(unr.Route, ctx.Config.NotificationRoutes.Select(x => x.Id)));
+                var routeTenant = IsTenant(ctx, route.Id);
+                CheckExpected(ctx, unr.Route, SpecJson.ToNode(route)!.AsObject(), unr.Expected, SpecJson.ToNode(unr.Set)!.AsObject());
+                if (!routeTenant && (unr.Set.Recipients is not null || unr.Set.Mandatory is not null || (route.Mandatory && unr.Set.Enabled == false)))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"Route '{route.Label}' comes from {ctx.Layer(route.Id)}: its recipients and whether it is mandatory cannot change{(route.Mandatory ? ", and it cannot be turned off" : string.Empty)}.", unr.Route, "Add your own route for other recipients.");
+                }
+
+                if (route.Mandatory && unr.Set.Enabled == false && unr.Set.Mandatory != false)
+                {
+                    throw new OverlayException("overlay.mandatory", $"Route '{route.Label}' is mandatory and cannot be turned off.", unr.Route, "Make it optional first (a permission change), then turn it off.");
+                }
+
+                route.Label = unr.Set.Label ?? route.Label;
+                route.Profile = unr.Set.Profile ?? route.Profile;
+                route.Template = unr.Set.Template ?? route.Template;
+                route.Recipients = unr.Set.Recipients is { } recipients ? recipients.Select(SpecJson.Clone).ToList() : route.Recipients;
+                route.Mandatory = unr.Set.Mandatory ?? route.Mandatory;
+                route.Enabled = unr.Set.Enabled ?? route.Enabled;
+                ctx.Mark(route.Id, keepLayer: !routeTenant);
+                break;
+            case RemoveNotificationRoute rnr:
+                var removedRoute = ctx.Config.FindNotificationRoute(rnr.Route) ?? throw Missing("notification route", rnr.Route, Expression.Suggest(rnr.Route, ctx.Config.NotificationRoutes.Select(x => x.Id)));
+                if (removedRoute.Mandatory)
+                {
+                    throw new OverlayException("overlay.mandatory", $"Route '{removedRoute.Label}' is mandatory.", rnr.Route, "Make it optional first (a permission change), then remove it.");
+                }
+
+                RequireRemovable(ctx, removedRoute.Id, removedRoute.Label, "notification route", []);
+                ctx.Config.NotificationRoutes.Remove(removedRoute);
+                ctx.Config.Provenance.Remove(removedRoute.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
@@ -890,6 +1036,28 @@ public static class Composer
     }
 
     /// <summary>Layout nodes and saved views that reference a metric.</summary>
+    private static void Unique(OpContext ctx, string id, string kind)
+    {
+        if (ctx.Config.Provenance.ContainsKey(id))
+        {
+            throw new OverlayException("overlay.duplicate", $"{kind} '{id}' already exists.", id, "Choose a new ID.");
+        }
+    }
+
+    /// <summary>Only tenant objects that nothing uses may be removed; module objects are disabled instead.</summary>
+    private static void RequireRemovable(OpContext ctx, string id, string label, string kind, IEnumerable<string> users)
+    {
+        if (!IsTenant(ctx, id))
+        {
+            throw new OverlayException("overlay.base_immutable", $"The {kind} '{label}' comes from {ctx.Layer(id)} and cannot be removed.", id, "Disable it instead (enabled: false).");
+        }
+
+        if (users.FirstOrDefault() is { } user)
+        {
+            throw new OverlayException("overlay.in_use", $"'{user}' still uses the {kind} '{label}'.", id, $"Remove or change '{user}' first.");
+        }
+    }
+
     public static IEnumerable<string> MetricUsers(SpecCatalog config, string metricId) =>
         config.Views.SelectMany(v => v.Layout.Descendants()).Where(n =>
             (n.Props.TryGetPropertyValue("metric", out var m) && m?.GetValueKind() == System.Text.Json.JsonValueKind.String && m.GetValue<string>() == metricId)

@@ -47,6 +47,18 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddMetric), "metric.add")]
 [JsonDerivedType(typeof(UpdateMetric), "metric.update")]
 [JsonDerivedType(typeof(RemoveMetric), "metric.remove")]
+[JsonDerivedType(typeof(AddSubscription), "subscription.add")]
+[JsonDerivedType(typeof(UpdateSubscription), "subscription.update")]
+[JsonDerivedType(typeof(RemoveSubscription), "subscription.remove")]
+[JsonDerivedType(typeof(AddNotificationTemplate), "notification_template.add")]
+[JsonDerivedType(typeof(UpdateNotificationTemplate), "notification_template.update")]
+[JsonDerivedType(typeof(RemoveNotificationTemplate), "notification_template.remove")]
+[JsonDerivedType(typeof(AddNotificationProfile), "notification_profile.add")]
+[JsonDerivedType(typeof(UpdateNotificationProfile), "notification_profile.update")]
+[JsonDerivedType(typeof(RemoveNotificationProfile), "notification_profile.remove")]
+[JsonDerivedType(typeof(AddNotificationRoute), "notification_route.add")]
+[JsonDerivedType(typeof(UpdateNotificationRoute), "notification_route.update")]
+[JsonDerivedType(typeof(RemoveNotificationRoute), "notification_route.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -742,4 +754,212 @@ public sealed class RemoveMetric : OverlayOp
     public override string Describe() => $"Remove metric {Metric}";
 
     public override IEnumerable<string> Targets() => [Metric];
+}
+
+/// <summary>Adds a tenant subscription: which events the notification service hears about (ADR 0021).</summary>
+public sealed class AddSubscription : OverlayOp
+{
+    public required SubscriptionSpec Subscription { get; set; }
+
+    public override string Describe() => $"Add subscription \"{Subscription.Label}\" to {Subscription.Event}";
+
+    public override IEnumerable<string> Targets() => [Subscription.Id];
+}
+
+/// <summary>Changes a subscription's label, condition or enabled state, the module's or the tenant's.</summary>
+public sealed class UpdateSubscription : OverlayOp
+{
+    public required string Subscription { get; set; }
+
+    public required SubscriptionPatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change subscription {Subscription}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Subscription];
+}
+
+public sealed class SubscriptionPatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? When { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Removes a tenant subscription that no route uses.</summary>
+public sealed class RemoveSubscription : OverlayOp
+{
+    public required string Subscription { get; set; }
+
+    public override string Describe() => $"Remove subscription {Subscription}";
+
+    public override IEnumerable<string> Targets() => [Subscription];
+}
+
+/// <summary>Adds a tenant notification template.</summary>
+public sealed class AddNotificationTemplate : OverlayOp
+{
+    public required NotificationTemplateSpec Template { get; set; }
+
+    public override string Describe() => $"Add notification template \"{Template.Label ?? Template.Subject}\"";
+
+    public override IEnumerable<string> Targets() => [Template.Id];
+
+    /// <summary>What external recipients may see is an access decision.</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Template.ExternalFields.Count > 0;
+}
+
+/// <summary>Changes a template's text, per-channel variants, external fields or enabled state.</summary>
+public sealed class UpdateNotificationTemplate : OverlayOp
+{
+    public required string Template { get; set; }
+
+    public required NotificationTemplatePatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change notification template {Template}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Template];
+
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.ExternalFields is not null;
+}
+
+public sealed class NotificationTemplatePatch
+{
+    public string? Label { get; set; }
+
+    public string? Subject { get; set; }
+
+    public string? Body { get; set; }
+
+    public Dictionary<string, TemplateVariantSpec>? Variants { get; set; }
+
+    public List<string>? ExternalFields { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Removes a tenant template that no route uses.</summary>
+public sealed class RemoveNotificationTemplate : OverlayOp
+{
+    public required string Template { get; set; }
+
+    public override string Describe() => $"Remove notification template {Template}";
+
+    public override IEnumerable<string> Targets() => [Template];
+}
+
+/// <summary>Adds a tenant notification profile (channels and severity filter).</summary>
+public sealed class AddNotificationProfile : OverlayOp
+{
+    public required NotificationProfileSpec Profile { get; set; }
+
+    public override string Describe() => $"Add notification profile \"{Profile.Label}\" ({string.Join(", ", Profile.Channels)})";
+
+    public override IEnumerable<string> Targets() => [Profile.Id];
+}
+
+public sealed class UpdateNotificationProfile : OverlayOp
+{
+    public required string Profile { get; set; }
+
+    public required NotificationProfilePatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change notification profile {Profile}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Profile];
+}
+
+public sealed class NotificationProfilePatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public List<string>? Channels { get; set; }
+
+    public string? Delivery { get; set; }
+
+    public string? MinSeverity { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Removes a tenant profile that no route uses.</summary>
+public sealed class RemoveNotificationProfile : OverlayOp
+{
+    public required string Profile { get; set; }
+
+    public override string Describe() => $"Remove notification profile {Profile}";
+
+    public override IEnumerable<string> Targets() => [Profile];
+}
+
+/// <summary>Adds a tenant route: who hears about a subscription's events, how, and with which template.</summary>
+public sealed class AddNotificationRoute : OverlayOp
+{
+    public required NotificationRouteSpec Route { get; set; }
+
+    public override string Describe() => $"Add notification route \"{Route.Label}\" for {Route.Subscription}";
+
+    public override IEnumerable<string> Targets() => [Route.Id];
+
+    /// <summary>Mandatory routes and external recipients are access decisions (REQ-AUTHZ-008).</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Route.Mandatory || Route.Recipients.Any(RecipientKinds.IsExternal);
+}
+
+/// <summary>
+/// Changes a route. Module routes accept enabled (not for mandatory ones), profile and template; tenant routes accept
+/// everything. Making a route mandatory or not, or adding external recipients, is a permission change.
+/// </summary>
+public sealed class UpdateNotificationRoute : OverlayOp
+{
+    public required string Route { get; set; }
+
+    public required NotificationRoutePatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change notification route {Route}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Route];
+
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.Mandatory is not null || Set.Recipients?.Any(RecipientKinds.IsExternal) == true;
+}
+
+public sealed class NotificationRoutePatch
+{
+    public string? Label { get; set; }
+
+    public string? Profile { get; set; }
+
+    public string? Template { get; set; }
+
+    public List<RecipientSpec>? Recipients { get; set; }
+
+    public bool? Mandatory { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Removes a tenant route. A mandatory route is made optional first (a permission change).</summary>
+public sealed class RemoveNotificationRoute : OverlayOp
+{
+    public required string Route { get; set; }
+
+    public override string Describe() => $"Remove notification route {Route}";
+
+    public override IEnumerable<string> Targets() => [Route];
 }

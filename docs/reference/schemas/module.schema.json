@@ -1017,11 +1017,23 @@
           "id": {
             "type": "string"
           },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "event": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "entity": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "recipients": {
             "type": "array",
@@ -1035,14 +1047,38 @@
           "body": {
             "type": "string"
           },
+          "variants": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "subject": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "body"
+              ]
+            }
+          },
+          "externalFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "enabled": {
             "type": "boolean"
           }
         },
         "required": [
           "id",
-          "event",
-          "entity",
           "subject",
           "body"
         ]
@@ -1724,6 +1760,148 @@
           "id",
           "label",
           "entity"
+        ]
+      }
+    },
+    "subscriptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event": {
+            "type": "string"
+          },
+          "entity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "when": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "event"
+        ]
+      }
+    },
+    "notificationProfiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "minSeverity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      }
+    },
+    "notificationRoutes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "subscription": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "ref"
+              ]
+            }
+          },
+          "mandatory": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "subscription",
+          "profile",
+          "template"
         ]
       }
     }

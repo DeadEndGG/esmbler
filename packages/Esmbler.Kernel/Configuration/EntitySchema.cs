@@ -28,6 +28,27 @@ public static class EntitySchema
             .WithVariable("variables", VariableSchema.Record(variables));
     }
 
+    /// <summary>Schema for a subscription condition (ADR 0021): the event's payload as <c>event</c> and, for record events, <c>record</c>.</summary>
+    public static ExpressionSchema ForSubscription(EntitySpec? entity, EventTypeSpec type)
+    {
+        var schema = new ExpressionSchema()
+            .WithVariable("event", VariableSchema.Record(type.Fields.ToDictionary(f => f.Key, f => f.Value.Type switch
+            {
+                EventFieldTypes.Number => ExprType.Number,
+                EventFieldTypes.Boolean => ExprType.Bool,
+                EventFieldTypes.List => ExprType.List,
+                _ => ExprType.String,
+            }, StringComparer.Ordinal)));
+        if (entity is not null)
+        {
+            var fields = entity.Fields.ToDictionary(f => f.Key, f => ExpressionType(f.Type), StringComparer.Ordinal);
+            fields["id"] = ExprType.String;
+            schema.WithVariable("record", VariableSchema.Record(fields));
+        }
+
+        return schema;
+    }
+
     public static ExpressionSchema For(EntitySpec entity)
     {
         var fields = entity.Fields.ToDictionary(f => f.Key, f => ExpressionType(f.Type), StringComparer.Ordinal);

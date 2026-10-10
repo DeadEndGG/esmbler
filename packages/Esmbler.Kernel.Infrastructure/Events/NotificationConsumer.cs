@@ -39,7 +39,8 @@ public sealed partial class NotificationConsumer(ConfigStore configs, AccessServ
             }
         }
 
-        var templates = artifact.Config.NotificationTemplates.Where(t => t.Enabled && t.Entity == envelope.Entity && triggers.Contains(t.Event)).ToList();
+        // Legacy templates carry their own trigger (Gate 1 releases); templates used by routes have none (ADR 0021).
+        var templates = artifact.Config.NotificationTemplates.Where(t => t.Enabled && t.Event is not null && t.Entity == envelope.Entity && triggers.Contains(t.Event)).ToList();
         if (templates.Count == 0)
         {
             return;

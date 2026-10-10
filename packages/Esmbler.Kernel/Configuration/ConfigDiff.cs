@@ -32,6 +32,9 @@ public static class ConfigDiff
         Diff(changes, "business_calendar", before.BusinessCalendars, after.BusinessCalendars, c => c.Id, c => c.Label, c => SpecJson.ToNode(c)!.AsObject());
         Diff(changes, "sla_policy", before.SlaPolicies, after.SlaPolicies, p => p.Id, p => p.Label, p => SpecJson.ToNode(p)!.AsObject());
         Diff(changes, "metric", before.Metrics, after.Metrics, m => m.Id, m => m.Label, m => SpecJson.ToNode(m)!.AsObject());
+        Diff(changes, "subscription", before.Subscriptions, after.Subscriptions, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
+        Diff(changes, "notification_profile", before.NotificationProfiles, after.NotificationProfiles, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
+        Diff(changes, "notification_route", before.NotificationRoutes, after.NotificationRoutes, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
         foreach (var view in after.Views)
         {
             var oldView = before.FindView(view.Id);

@@ -208,21 +208,38 @@ public sealed class AssignmentRuleSpec
     public bool Enabled { get; set; } = true;
 }
 
+/// <summary>
+/// A notification message. Legacy templates (Gate 1) carry their own <see cref="Event"/> trigger and recipients; templates
+/// used by notification routes (ADR 0021) leave them empty and may add per-channel <see cref="Variants"/>.
+/// </summary>
 public sealed class NotificationTemplateSpec
 {
     public required string Id { get; set; }
 
-    public required string Event { get; set; }
+    public string? Label { get; set; }
 
-    public required string Entity { get; set; }
+    /// <summary>Legacy trigger, "record.transitioned:&lt;state&gt;" or "record.updated:&lt;field&gt;". Null for route templates.</summary>
+    public string? Event { get; set; }
 
-    /// <summary>Field keys (user fields) or the literal "watchers".</summary>
+    /// <summary>Entity whose fields the placeholders read; null for templates over event fields only.</summary>
+    public string? Entity { get; set; }
+
+    /// <summary>Legacy recipients: field keys (user fields) or the literal "watchers".</summary>
     public List<string> Recipients { get; set; } = [];
 
     public required string Subject { get; set; }
 
-    /// <summary>Plain text with {{record.field}} placeholders. Never raw HTML.</summary>
+    /// <summary>
+    /// Plain text with placeholders: {{record.field}}, {{event.field}}, {{recipient.name}} and {{link}}. Never raw HTML.
+    /// Each recipient sees only fields they may read.
+    /// </summary>
     public required string Body { get; set; }
+
+    /// <summary>Per-channel text (in_app, email, sms); channels without a variant use Subject and Body.</summary>
+    public Dictionary<string, TemplateVariantSpec> Variants { get; set; } = [];
+
+    /// <summary>Record fields external recipients may see; everything else renders empty for them.</summary>
+    public List<string> ExternalFields { get; set; } = [];
 
     public bool Enabled { get; set; } = true;
 }

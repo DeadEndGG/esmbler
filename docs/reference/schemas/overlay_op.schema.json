@@ -2395,6 +2395,547 @@
       "required": [
         "metric"
       ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "subscription.add"
+        },
+        "subscription": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "event": {
+              "type": "string"
+            },
+            "entity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "event"
+          ]
+        }
+      },
+      "required": [
+        "subscription"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "subscription.update"
+        },
+        "subscription": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "when": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "subscription",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "subscription.remove"
+        },
+        "subscription": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscription"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_template.add"
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "event": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "entity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recipients": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "subject": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "variants": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            },
+            "externalFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "subject",
+            "body"
+          ]
+        }
+      },
+      "required": [
+        "template"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_template.update"
+        },
+        "template": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "body": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "variants": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/anyOf/40/properties/template/properties/variants/additionalProperties"
+              }
+            },
+            "externalFields": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "template",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_template.remove"
+        },
+        "template": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "template"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_profile.add"
+        },
+        "profile": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "channels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "delivery": {
+              "type": "string"
+            },
+            "minSeverity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "profile"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_profile.update"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "channels": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "delivery": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "minSeverity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "profile",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_profile.remove"
+        },
+        "profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_route.add"
+        },
+        "route": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "subscription": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            },
+            "template": {
+              "type": "string"
+            },
+            "recipients": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "ref"
+                ]
+              }
+            },
+            "mandatory": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "subscription",
+            "profile",
+            "template"
+          ]
+        }
+      },
+      "required": [
+        "route"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_route.update"
+        },
+        "route": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "profile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "template": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recipients": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/46/properties/route/properties/recipients/items"
+              }
+            },
+            "mandatory": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "notification_route.remove"
+        },
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "route"
+      ]
     }
   ]
 }

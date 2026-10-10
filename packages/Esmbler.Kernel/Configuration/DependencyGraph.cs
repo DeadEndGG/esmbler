@@ -323,14 +323,51 @@ public sealed partial class DependencyGraph
 
         foreach (var nt in config.NotificationTemplates)
         {
-            foreach (Match m in PlaceholderRegex().Matches(nt.Subject + " " + nt.Body))
+            var text = string.Join(" ", nt.Variants.Values.Select(v => v.Subject + " " + v.Body).Prepend(nt.Subject + " " + nt.Body));
+            foreach (Match m in PlaceholderRegex().Matches(text))
             {
                 g.Add(nt.Id, $"{nt.Entity}/{m.Groups[1].Value}", "template_placeholder");
+            }
+
+            foreach (var f in nt.ExternalFields)
+            {
+                g.Add(nt.Id, $"{nt.Entity}/{f}", "template_external_field");
             }
 
             foreach (var r in nt.Recipients.Where(r => r != "watchers"))
             {
                 g.Add(nt.Id, $"{nt.Entity}/{r}", "template_recipient");
+            }
+        }
+
+        foreach (var sub in config.Subscriptions)
+        {
+            g.Add(sub.Id, sub.Event, "subscription_event");
+            var entity = sub.Entity ?? config.FindEventType(sub.Event)?.SubjectEntity;
+            if (entity is not null)
+            {
+                g.Add(sub.Id, entity, "subscription_entity");
+                g.AddExpression(sub.Id, entity, sub.When, "subscription_condition");
+            }
+        }
+
+        foreach (var route in config.NotificationRoutes)
+        {
+            g.Add(route.Id, route.Subscription, "route_subscription");
+            g.Add(route.Id, route.Profile, "route_profile");
+            g.Add(route.Id, route.Template, "route_template");
+            var entity = config.FindSubscription(route.Subscription) is { } s ? s.Entity ?? config.FindEventType(s.Event)?.SubjectEntity : null;
+            foreach (var r in route.Recipients)
+            {
+                switch (r.Kind)
+                {
+                    case RecipientKinds.Field when entity is not null:
+                        g.Add(route.Id, $"{entity}/{r.Ref}", "route_recipient_field");
+                        break;
+                    case RecipientKinds.Role:
+                        g.Add(route.Id, r.Ref, "route_recipient_role");
+                        break;
+                }
             }
         }
 

@@ -7,11 +7,23 @@
     "id": {
       "type": "string"
     },
+    "label": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "event": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "entity": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "recipients": {
       "type": "array",
@@ -25,14 +37,38 @@
     "body": {
       "type": "string"
     },
+    "variants": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    "externalFields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "enabled": {
       "type": "boolean"
     }
   },
   "required": [
     "id",
-    "event",
-    "entity",
     "subject",
     "body"
   ]
