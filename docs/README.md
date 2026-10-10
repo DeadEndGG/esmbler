@@ -108,6 +108,14 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [Known issues](known-issues.md): failures with reproduction steps and isolation notes.
 - [Changelog](../CHANGELOG.md): Keep a Changelog, per gate.
 
+## Research
+
+Product and technology research that informs the backlog; each document ends with recommendations mapped to milestones.
+
+- [Zendesk ticketing](research/zendesk-ticketing.md): data model, channels, triggers and automations, SLAs, routing, agent workspace, reporting, AI features, pricing and pain points; what Esmbler should match and where it differs.
+- [Jira work hierarchy](research/jira-work-hierarchy.md): epics, stories, tasks and subtasks, workflows, boards and sprints, Service Management, automation, reports and AI; how a projects module fits Esmbler's primitives and which platform capabilities it needs.
+- [AI providers and subscriptions](research/ai-providers-and-subscriptions.md): adding OpenAI and other providers to the server-side assistant, and what is officially possible for using a ChatGPT or Claude subscription (G2-M20).
+
 ## Spikes (throwaway code with results)
 
 - [Authorization: OpenFGA](../spikes/authz-openfga/README.md) and [SpiceDB comparison](../spikes/authz-spicedb/README.md).
