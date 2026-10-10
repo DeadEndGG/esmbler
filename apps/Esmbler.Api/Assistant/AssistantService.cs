@@ -29,9 +29,9 @@ public sealed class AssistantOptions
 
     public int MaxToolCalls { get; set; } = 30;
 
-    public int MaxModelTurns { get; set; } = 16;
+    public int MaxModelTurns { get; set; } = 15;
 
-    public int MaxSeconds { get; set; } = 240;
+    public int MaxSeconds { get; set; } = 120;
 
     public int MaxMessagesPerMinute { get; set; } = 12;
 

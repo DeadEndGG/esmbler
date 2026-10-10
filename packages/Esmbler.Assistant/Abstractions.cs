@@ -81,7 +81,7 @@ public sealed record AssistantRequest(
     string DefaultRecordView = "core.tickets.record");
 
 /// <summary>Per-turn limits (REQ-AI-008): the planner stops cleanly when one is reached.</summary>
-public sealed record AssistantBudget(int MaxToolCalls = 30, int MaxModelTurns = 16, int MaxSeconds = 240);
+public sealed record AssistantBudget(int MaxToolCalls = 30, int MaxModelTurns = 15, int MaxSeconds = 120);
 
 /// <summary>Turns a request into tool calls. Implementations report progress and finish with done/question/error.</summary>
 public interface IPlanner

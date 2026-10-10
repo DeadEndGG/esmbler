@@ -126,7 +126,8 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var sink = new CollectingSink();
         var budget = new AssistantBudget();
         await using var gateway = new McpToolGateway(await Mcp.ConnectAsync(token), budget);
-        var outcome = await planner.RunAsync(new AssistantRequest("eval", c["prompt"]!.GetValue<string>(), [], []), gateway, sink, budget, CancellationToken.None);
+        var selection = (c["selection"]?.AsArray() ?? []).Select(x => new SelectedElement(x!["view"]!.GetValue<string>(), x["node"]!.GetValue<string>(), x["type"]?.GetValue<string>(), x["label"]?.GetValue<string>())).ToList();
+        var outcome = await planner.RunAsync(new AssistantRequest("eval", c["prompt"]!.GetValue<string>(), selection, []), gateway, sink, budget, CancellationToken.None);
 
         var failures = new List<string>();
         await using var reader = new McpToolGateway(await Mcp.ConnectAsync(token), new AssistantBudget(MaxToolCalls: 100));
@@ -195,6 +196,15 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
                         && (n["props"]?["visibleWhen"]?.GetValue<string>() ?? string.Empty).Contains(check["visibleWhenContains"]!.GetValue<string>(), StringComparison.Ordinal)))
                     {
                         failures.Add($"no {check["tone"]} callout (events: {sink.Summary})");
+                    }
+
+                    break;
+                case "listColumn":
+                    var listView = (await reader.CallAsync("get_view", new JsonObject { ["view"] = "core.tickets.list" }, default)).Json!;
+                    var columnKey = Field(label!)?["key"]?.GetValue<string>();
+                    if (!Flatten(listView["layout"]!).Any(n => n["type"]!.GetValue<string>() == "collection.column" && n["props"]?["field"]?.GetValue<string>() == columnKey && n["id"]!.GetValue<string>().StartsWith("tenant__", StringComparison.Ordinal)))
+                    {
+                        failures.Add($"no new {label} column in the list (events: {sink.Summary})");
                     }
 
                     break;

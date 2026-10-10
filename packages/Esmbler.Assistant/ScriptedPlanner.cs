@@ -85,6 +85,11 @@ public sealed partial class ScriptedPlanner : IPlanner
             return await ConditionalAsync(s, m.Groups["verb"].Value, m.Groups["target"].Value, m.Groups["cond"].Value, m.Groups["neg"].Success);
         }
 
+        if ((m = AddColumnPattern().Match(clause)).Success)
+        {
+            return await AddColumnAsync(s, m.Groups["field"].Value);
+        }
+
         if ((m = AddCardPattern().Match(clause)).Success)
         {
             return await AddCardAsync(s, m);
@@ -332,6 +337,41 @@ public sealed partial class ScriptedPlanner : IPlanner
         }
 
         return await s.BuildAsync("add_card", args, $"Added a \"{title}\" card with {string.Join(", ", fieldTexts.Select(Capitalize))}.", invalidates: true);
+    }
+
+    private static async Task<string> AddColumnAsync(Session s, string fieldText)
+    {
+        var field = await s.ResolveFieldAsync(fieldText);
+        if (field is null)
+        {
+            return await s.UnknownFieldAsync(fieldText);
+        }
+
+        var list = await s.ViewAsync(s.ListView);
+        var table = list?.FindFirst(n => n.Type == "collection.data_table");
+        if (table is null)
+        {
+            return "!I couldn't find the list's table.";
+        }
+
+        if (table.Children.Any(c => c.Field == field.Key))
+        {
+            return $"The list already shows {field.Label}.";
+        }
+
+        var args = new JsonObject
+        {
+            ["view"] = s.ListView,
+            ["parent"] = table.Id,
+            ["type"] = "collection.column",
+            ["props"] = new JsonObject { ["field"] = field.Key },
+        };
+        if (table.LastChild is { } last)
+        {
+            args["after"] = last.Id;
+        }
+
+        return await s.BuildAsync("insert_node", args, $"Added a {field.Label} column to the list.", invalidates: true);
     }
 
     private static async Task<string> UpdateFieldAsync(Session s, string fieldText, JsonObject changes, Func<string, string> summary)
@@ -796,6 +836,19 @@ public sealed partial class ScriptedPlanner : IPlanner
             return $"!I couldn't find a field called \"{StripArticles(phrase)}\".{(close.Count > 0 ? $" Did you mean {string.Join(" or ", close)}?" : string.Empty)}";
         }
 
+        public string ListView => request.DefaultEntity.Split('.') is [var ns, var module, _] ? $"{ns}.{module}.list" : "core.tickets.list";
+
+        public async Task<Node?> ViewAsync(string viewId)
+        {
+            if (viewId == RecordView)
+            {
+                return await ViewAsync();
+            }
+
+            var other = await CallAsync("get_view", new JsonObject { ["view"] = viewId });
+            return other.IsError || other.Json?["layout"] is not { } l ? null : Node.From(l);
+        }
+
         public async Task<Node?> ViewAsync()
         {
             if (view is not null)
@@ -866,7 +919,7 @@ public sealed partial class ScriptedPlanner : IPlanner
     [GeneratedRegex(@"\b(?:here|this|selected|it)\b", RegexOptions.IgnoreCase)]
     private static partial Regex HerePattern();
 
-    [GeneratedRegex("""^(?:please\s+)?(?:can you\s+)?(?:add|create)\s+(?:(?:a|an|new|another)\s+)*(?<req>(?:required|mandatory|optional)\s+)?(?<type>(?:[\w/-]+\s+){0,2}?)field\s+(?:called\s+|named\s+|for\s+)?(?<label>"[^"]+"|“[^”]+”|'[^']+'|[\w][\w\s-]*?)(?:\s+(?:to|on|for)\s+(?:the\s+)?(?:tickets?|ticket\s+(?:form|page)))?(?:\s+with\s+(?:the\s+)?(?:options|choices|values)\s+(?<opts>.+?))?(?:,?\s*(?:and\s+)?(?:put|place|show|add|display)\s+it\s+(?:in|into|on|to|under)\s+(?:the\s+)?(?<card>.+?)(?:\s+card)?)?$""", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("""^(?:please\s+)?(?:can you\s+)?(?:add|create)\s+(?:(?:a|an|new|another)\s+)*(?<req>(?:required|mandatory|optional)\s+)?(?<type>(?:[\w/-]+\s+){0,2}?)field\s+(?:called\s+|named\s+|for\s+)?(?<label>"[^"]+"|“[^”]+”|'[^']+'|[\w][\w\s-]*?)(?:\s+(?:to|on|for)\s+(?:the\s+)?(?:tickets?|ticket\s+(?:form|page)))?(?:\s+with\s+(?:the\s+)?(?:options|choices|values)\s+(?<opts>.+?))?(?:,?\s*(?:and\s+)?(?:put|place|show|add|display)\s+it\s+(?:in|into|on|to|under)\s+(?:the\s+)?(?<card>.+?)(?:\s+card)?|\s+(?<card>here|(?:in|to|into)\s+(?:this|the selected)\s+card))?$""", RegexOptions.IgnoreCase)]
     private static partial Regex AddFieldPattern();
 
     [GeneratedRegex(@"^(?:when|if|whenever)\s+(?<cond>.+?),?\s+(?:then\s+)?(?:(?<verb>require|hide|show|lock)|make)\s+(?:the\s+)?(?<target>.+?)(?:\s+(?:required|mandatory|read[- ]only))?(?:\s+field)?$", RegexOptions.IgnoreCase)]
@@ -880,6 +933,9 @@ public sealed partial class ScriptedPlanner : IPlanner
 
     [GeneratedRegex("""^(?:add|create)\s+(?:a|an|new)?\s*(?<title>"[^"]+"|“[^”]+”|[\w][\w\s]*?)\s+card\s+(?:with|showing|containing)\s+(?<fields>.+)$""", RegexOptions.IgnoreCase)]
     private static partial Regex AddCardPattern();
+
+    [GeneratedRegex(@"^(?:add|show)\s+(?:an?\s+|the\s+)?(?:column\s+for\s+(?:the\s+)?(?<field>.+?)|(?<field>.+?)\s+column)\s+(?:to|in|on)\s+(?:the\s+)?(?:tickets?\s+)?(?:list|table)(?:\s+view)?$", RegexOptions.IgnoreCase)]
+    private static partial Regex AddColumnPattern();
 
     [GeneratedRegex(@"^(?:make|set)\s+(?:the\s+)?(?<field>.+?)(?:\s+field)?\s+(?:required|mandatory)(?:\s+always)?$", RegexOptions.IgnoreCase)]
     private static partial Regex MakeRequiredPattern();

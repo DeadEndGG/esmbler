@@ -51,7 +51,10 @@ public sealed class ClaudePlanner(ClaudePlannerOptions options) : IPlanner
 
     public async Task<string> RunAsync(AssistantRequest request, IToolGateway tools, IAssistantSink sink, AssistantBudget budget, CancellationToken ct)
     {
-        var client = string.IsNullOrEmpty(options.ApiKey) ? new AnthropicClient() : new AnthropicClient { ApiKey = options.ApiKey };
+        // ADR 0013: one model request may take at most 60 s; the SDK retries transient failures twice.
+        var client = string.IsNullOrEmpty(options.ApiKey)
+            ? new AnthropicClient { Timeout = TimeSpan.FromSeconds(60) }
+            : new AnthropicClient { ApiKey = options.ApiKey, Timeout = TimeSpan.FromSeconds(60) };
         var definitions = await tools.ListToolsAsync(ct);
         var toolParams = definitions.Select(ToTool).ToList();
         var messages = new List<BetaMessageParam>();
@@ -80,7 +83,8 @@ public sealed class ClaudePlanner(ClaudePlannerOptions options) : IPlanner
                     {
                         Model = options.Model,
                         MaxTokens = options.MaxTokens,
-                        System = SystemPrompt,
+                        // Tools then system form a stable prefix: cache it across the turns of a conversation.
+                        System = new List<BetaTextBlockParam> { new() { Text = SystemPrompt, CacheControl = new BetaCacheControlEphemeral() } },
                         Messages = messages,
                         Tools = toolParams,
                         OutputConfig = new BetaOutputConfig { Effort = options.Effort },
