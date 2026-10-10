@@ -63,6 +63,9 @@ public static class ServiceRegistration
         services.AddSingleton<ProvisioningService>();
         services.AddSingleton<ExperienceService>();
         services.AddSingleton<AccessExplainer>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.RecordStateProjection>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Events.NotificationConsumer>();
+        services.AddSingleton<Kernel.Infrastructure.Events.OutboxDispatcher>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));
