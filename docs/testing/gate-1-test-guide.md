@@ -17,7 +17,7 @@ Gate 1 is the architecture proof: a tenant gets the default Tickets module, cust
 3. Start the system: `docker compose -f deploy/docker-compose.yml up --build -d --wait`. Behind a TLS-intercepting proxy, set `EXTRA_CA_FILE=/path/to/ca-bundle.crt` first.
 4. Open <http://localhost:8080>.
 
-The first start applies migrations `0001_kernel`, `0002_refresh_tokens`, `0003_authz_revision` and provisions two demo workspaces. Every demo user's password is `Esmbler!2026`.
+The first start applies migrations `0001_kernel` to `0004_refresh_session_cap` and provisions two demo workspaces. Every demo user's password is `Esmbler!2026`.
 
 | Person | Email | Workspace | Can |
 |---|---|---|---|
@@ -85,7 +85,22 @@ Expected: no Customer impact, Justification, callout, or Category column. The Gl
 
 Expected: status moves to `activated`; your fields, rule, callout and column are still there; the new Impact field appears; existing tickets keep their data. Old revisions show **Roll back** only when that is safe for the data now present.
 
-### 7. Migration failure and recovery
+### 7. Reset a customization to default
+
+1. As Alex open **Configuration → Customizations**. Each customized element is listed as *added* or *changed*.
+2. Click **Reset to default** on a changed element (for example the relabeled Category), or ask the assistant `Reset the category field to default`.
+3. Open the AI builder: the reset is a step in the draft; review and publish.
+
+Expected: the element returns to the default module's definition after publishing. Removing an added field that a rule still uses shows that rule as an error in the draft until you handle it.
+
+### 8. Delete and restore a ticket
+
+1. On a ticket, click **Delete** and confirm.
+2. Click **Undo** in the toast.
+
+Expected: the ticket disappears from the list and comes back with its history; restore is possible for 30 days by anyone allowed to delete tickets.
+
+### 9. Migration failure and recovery
 
 1. Stop the worker and start it with a fault: `docker compose -f deploy/docker-compose.yml run -d --name worker-fault -e Esmbler__FaultInjection__Migration=convert_effort:1 worker` (after `docker compose stop worker`).
 2. As Morgan (Globex, still on 1.0.0) start the upgrade from **Configuration**.
@@ -94,19 +109,19 @@ Expected: status moves to `activated`; your fields, rule, callout and column are
 
 Expected: the migration resumes from its checkpoint without converting any ticket twice; values that can't be converted (for example "about 3h") stay in Estimated effort and are listed; the new version activates only after all migrations finish.
 
-### 8. Revocation
+### 10. Revocation
 
 1. As Alex open **People and roles** and remove Sam from both groups.
 2. In Sam's window, reload the Tickets list.
 
 Expected: Sam no longer sees tickets on the next request. Revoking a builder's role stops their publish immediately and cuts off their AI agent at its next tool call; a queued job whose creator lost the right fails closed.
 
-### 9. Use the MCP server from your own agent
+### 11. Use the MCP server from your own agent
 
 1. Get an agent token: sign in through the API and call `POST /api/auth/agent-token` (see `tests/Esmbler.IntegrationTests/Infrastructure/McpFactory.cs` for the exact calls).
 2. Point an MCP client (for example MCP Inspector) at `http://localhost:5090/mcp` with `Authorization: Bearer <token>`.
 
-Expected: discovery, build, review and lifecycle tools are listed; there is no publish tool; API tokens are refused; errors come back as `{code, message, target, suggestion}`.
+Expected: discovery, build, review and lifecycle tools are listed; there is no publish tool; API tokens are refused; errors come back as `{code, message, target, suggestion}`. The default delegation has no record access; request `records:read` explicitly to let an agent read tickets.
 
 ## Automated evidence
 
@@ -114,11 +129,11 @@ Run from the repository root.
 
 | Suite | Command | Result at `gate-1-complete` |
 |---|---|---|
-| Unit | `dotnet test tests/Esmbler.UnitTests` | 117 passed |
+| Unit | `dotnet test tests/Esmbler.UnitTests` | 121 passed |
 | Architecture | `dotnet test tests/Esmbler.ArchitectureTests` | 6 passed (includes "assistant changes workspaces only through MCP") |
-| Integration (Testcontainers, needs Docker) | `dotnet test tests/Esmbler.IntegrationTests` | all passed; see the table below |
+| Integration (Testcontainers, needs Docker) | `dotnet test tests/Esmbler.IntegrationTests` | 111 passed (includes the 43 evaluation cases and the 100k-ticket benchmark) |
 | Frontend | `cd apps/web && npx ng test --watch=false` | 84 passed (expression evaluator conformance) |
-| Browser acceptance (stack running) | `cd tests/e2e && npm ci && npx playwright test` | 6 passed on a clean stack |
+| Browser acceptance (stack running) | `cd tests/e2e && npm ci && npx playwright test` | 9 passed on a clean stack |
 
 | Requirement | Automated test |
 |---|---|
@@ -130,20 +145,38 @@ Run from the repository root.
 | REQ-ACC-07 revocation | `Identity.RevocationTests.*` |
 | REQ-ACC-09 preview has no side effects | `Acceptance.PreviewSafetyTests.Simulation_and_preview_have_no_side_effects`; Playwright `@REQ-ACC-09` |
 | REQ-ACC-10 embedded instructions | `McpServerTests.Embedded_instructions_in_records_cannot_widen_authority`; AI eval case `injection-in-record-text-is-ignored` |
-| AI builder evaluation | `Assistant.AssistantTests.Scripted_planner_passes_the_evaluation_case` (10 cases in `tests/ai-evals/builder-cases.json`); Claude runs the same cases when `ANTHROPIC_API_KEY` is set |
+| AI builder evaluation | `Assistant.AssistantTests.Scripted_planner_passes_the_evaluation_case` (43 cases in `tests/ai-evals/builder-cases.json`, including malicious, policy and unsupported requests; every case also checks for unintended permission changes or publishes); Claude runs the same cases when `ANTHROPIC_API_KEY` is set |
 | Tenant isolation in the database | `Isolation.DatabaseIsolationTests.*` |
+| Live editing: point-and-prompt, per-step undo | Playwright `@REQ-LIVE-003 @REQ-LAY-003` |
+| Keyboard-first UX | Playwright `@REQ-DS-002` |
+| Accessibility (WCAG 2.2 AA, axe) | Playwright `@REQ-DS-003` (login, list, record, draft mode, configuration) |
+| Security review regressions | `Api.SecurityHardeningTests.*`, `Mcp.McpServerTests.Tool_calls_are_rate_limited_per_agent_session`, `Disabling_the_agent_stops_its_next_call` |
+| Activation health check and reset to default | `Configuration.ActivationHealthTests.*`, `Configuration.ResetToDefaultTests.*` |
 
 ### Experience targets (proposed, measured)
 
-Measured by `tests/e2e/specs/experience.spec.ts` on the Docker Compose stack with the built-in planner (6 simple changes); results are written to `tests/e2e/test-results/experience.json` on every run.
+Measured by `tests/e2e/specs/experience.spec.ts` on the Docker Compose stack with the built-in planner (20 samples of adding a field to a card, method in [ASM-036](../decisions/assumptions.md)); results are written to `tests/e2e/test-results/experience.json` on every run.
 
 | Target | Proposed | Measured (2026-10-10) |
 |---|---|---|
-| Simple change, prompt to previewed draft (p50) | under 10 s | 755 ms (p95 5.7 s, first request warms the connection) |
-| AI change visible on the page after its tool call (p95) | under 1 s | 760 ms (p50 348 ms) |
+| Simple change, prompt to previewed draft (p50) | under 10 s | 650 ms (p95 916 ms; the first sample warms the connection at 4.8 s) |
+| AI change visible on the page after its tool call (p95) | under 1 s | 388 ms (p50 269 ms) |
 | Every AI change undoable in one step | yes | yes (per-step Undo; `ConfigLifecycleTests.Invalid_operations_are_refused_with_actionable_errors_and_undo_respects_dependencies`) |
-| Evaluation tasks completed without unintended changes | at least 80% | 10 of 10 with the built-in planner; Claude not yet measured (needs an API key) |
+| Evaluation tasks completed without unintended changes | at least 80% | 43 of 43 with the built-in planner; Claude not yet measured (needs an API key, KI-007) |
+
+### Query latency at 100,000 tickets
+
+`Records.QueryBenchmarkTests` seeds 100,000 tickets in one tenant environment (Testcontainers Postgres 18) and runs each list shape 20 times through the record service, permission predicate included.
+
+| Query | p50 | p95 |
+|---|---|---|
+| Default list, sorted by updated, page of 50 | 62 ms | 74 ms |
+| Saved view "open", sorted by priority | 165 ms | 231 ms |
+| Filter bar: status and category | 66 ms | 98 ms |
+| Full-text search | 85 ms | 104 ms |
+| Requester: only related tickets | 76 ms | 222 ms |
+| Deep page (offset 5,000) | 40 ms | 54 ms |
 
 ## Known limits at this gate
 
-See [known issues](../known-issues.md). In short: the built-in planner understands a fixed set of phrasings; Claude-driven runs need an API key; per-tenant AI spend budgets, the "reset to default" button for customizations, and design-lint/axe checks in CI are scheduled for Gate 2.
+See [known issues](../known-issues.md). In short: the built-in planner understands a fixed set of phrasings; Claude-driven runs need an API key; the per-tenant AI spend budget, expand/contract labels in upgrade reports, element-to-step highlighting and stylelint design lint are scheduled for Gate 2.

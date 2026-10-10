@@ -6,12 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Gate 1: architecture proof (in progress).
+Gate 2: private pilot (not started).
+
+## [0.2.0] - 2026-10-10 (`gate-1-complete`)
+
+Gate 1: architecture proof. A tenant customizes the default Tickets module by chatting with the AI builder, watches the page change live, publishes, works tickets under the new rules, takes the 1.1.0 upgrade without losing changes, and a second tenant is unaffected.
 
 ### Added
 
-- Record engine with pinned configuration revisions, optimistic concurrency, idempotency keys, auto-numbers, reference validation, full-text search over non-restricted fields, audit, and outbox in one transaction. REQ-REC-003, REQ-REC-004, REQ-REC-007, REQ-EVT-001
-- Identity service (login, tenant switching, AI agent principals, groups and roles with graph-sync ordering) and provisioning with two demo tenants. REQ-IAM-001, REQ-IAM-002, REQ-TEN-003
+- Record engine with pinned configuration revisions, optimistic concurrency, idempotency keys, auto-numbers, reference validation, full-text search over non-restricted fields, soft delete with 30-day restore, audit, and outbox in one transaction. REQ-REC-003, REQ-REC-004, REQ-REC-006, REQ-REC-007, REQ-EVT-001
+- Identity service (login, tenant switching, AI agent principals with a kill switch, groups and roles with graph-sync ordering) and provisioning with two demo tenants. REQ-IAM-001, REQ-IAM-002, REQ-TEN-003
+- REST API with problem details, OpenAPI, JWT access tokens, rotating refresh tokens (reuse detection, 24 h session cap), sign-in rate limits and account lockout. REQ-AI-004, REQ-AISAFE-004
+- Query compiler with the permission predicate in SQL; benchmark at 100,000 tickets (all list shapes p95 at or below 231 ms on the CI database container). REQ-REC-002, REQ-AUTHZ-005
+- Outbox dispatcher with inbox deduplication, revision-guarded projection, in-app notification consumer, and a fair, leased job runner that re-authorizes each job as its creator. REQ-EVT-002, REQ-EVT-004, REQ-AUTHZ-006
+- Drafts with versioned commands, undo/redo with dependency checks, publish bound to the reviewed artifact hash, post-activation health check with automatic revert, compatibility-checked rollback, customizations list and reset to default. REQ-CFG-006, REQ-CFG-007, REQ-CFG-010, REQ-CFG-011
+- Module upgrades with an upgrade report, checkpointed data migrations, fault injection and resume (Tickets 1.0.0 to 1.1.0). REQ-CFG-009, REQ-MIG-002
+- Revocation across requests, permission caches (`authz_revision`), queued jobs and AI agent sessions. REQ-AUTHZ-006, REQ-ACC-07
+- MCP server with discovery, build, review, lifecycle and explain tools, resources, audience validation, scopes, budgets, audit, and untrusted-content wrapping. REQ-AI-003, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-003
+- AI builder (`packages/Esmbler.Assistant`): Claude planner (`claude-opus-5-5`, configurable) and a built-in scripted planner, both acting only through MCP with the person's agent token; progress streamed live; plan announcements; 43-case evaluation suite. REQ-AI-005, REQ-AI-007, REQ-AISAFE-005
+- SignalR live channel fed by Postgres `LISTEN/NOTIFY`; AI changes visible on the page p95 under 400 ms after the server applies them. REQ-LIVE-002
+- Angular app: registry-driven renderer (one component per element), record, list and create pages, inline editing, saved views and filters, command palette and shortcuts, dark mode, draft mode with point-and-prompt, drag handles, slash insert, per-step undo, publish review, people and configuration administration. REQ-LAY-001, REQ-LAY-003, REQ-LIVE-001, REQ-LIVE-003, REQ-DS-002
+- Acceptance evidence: `Gate1PathTests` through the API, preview-safety and revocation tests, Playwright scenarios (customization, isolation, concurrency, upgrade, preview, point-and-prompt, keyboard), axe accessibility scans and experience measurements. REQ-ACC-01, REQ-ACC-02, REQ-ACC-03, REQ-ACC-04, REQ-ACC-09, REQ-ACC-10, REQ-DS-003
+
+### Security
+
+- Gate 1 security review applied: builder-only reads for draft and administration data, name-only directory pickers, refusal of the public development signing key outside local use, no record access in the default AI delegation, forwarded-header handling behind the web proxy.
 
 ## [0.1.0] - 2026-10-10 (`gate-0-complete`)
 
