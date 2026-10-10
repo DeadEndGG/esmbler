@@ -15,8 +15,16 @@ Gate 2: private pilot (in progress).
 - Visual refresh of the web UI on Tailwind CSS v4 mapped onto the design tokens (ADR 0014): new sidebar and workspace switcher, sign-in with a product preview, segmented saved views, status badges with tone dots, card-based record page, AI builder panel with message bubbles and a step timeline, command palette, admin pages with page headers and table cards; Lucide icons; self-hosted Inter; refined light and dark tokens. axe passes in both themes. REQ-DS-001, REQ-DS-002, REQ-DS-003
 - Durable jobs and timers: job handler registry with per-attempt re-authorization, checkpoints and lease renewal; idempotent, cancellable timers; jittered backoff; dead letters with audited operator replay (Operations page); tenant-interleaved event dispatch; automation depth, fan-out and queue quotas. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11
 
+### Security
+
+- Request answers are frozen once a request leaves intake, and fulfillment task links can be written only by fulfillment, so conditional tasks such as a security review cannot be skipped or faked.
+- Restricting or disabling a workflow transition applies to running records too; adding a transition anyone may fire, or changing roles, guards or set values, is a permission change (agents cannot make it).
+- Migrate and cancel policies apply only to the publish that sets them and never on rollback; the migration job re-checks the publisher's rights.
+- Workflow definition caching is per tenant and environment; platform writes are marked `source: system` in the audit trail.
+
 ### Fixed
 
+- The request form sends its configuration revision, so a catalog change while it is open asks the requester to review the updated questions instead of failing on stale ones.
 - Module upgrades that skip a release now run that release's data migrations too.
 - The sign-in page shows the demo account only where demo data is seeded (`GET /api/auth/sign-in-options`, KI-011).
 - The production web build no longer depends on an inline `onload` script to load its stylesheet; the CSP blocked it, so deployed pages rendered without most styles. The CSP no longer allows Google Fonts hosts; Inter is served from the app's own origin.

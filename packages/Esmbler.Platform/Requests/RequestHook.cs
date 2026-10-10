@@ -10,7 +10,10 @@ namespace Esmbler.Platform.Requests;
 /// Catalog requests (ADR 0015, REQ-BIZ-004): on every write path, a request's catalog item must exist, be active
 /// (on create) and target this entity, and never changes afterwards; its variables are normalized like fields of
 /// their types, defaults applied, unknown keys and missing required answers rejected. Errors target
-/// <c>variables.&lt;key&gt;</c> so forms can show them next to the question.
+/// <c>variables.&lt;key&gt;</c> so forms can show them next to the question. Answers can change only while the
+/// request is still in its workflow's initial state: once it moves on (triage, approval, fulfillment), task conditions
+/// and reviews depend on them. Fulfillment task links (request and task key) are written only by fulfillment, so
+/// nobody can fake or move a finished prerequisite.
 /// </summary>
 public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
 {
@@ -20,6 +23,11 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
     {
         if (ctx.Entity.Request is not { } binding)
         {
+            if (!ctx.SystemActor && ctx.Config.RequestEntityForTask(ctx.Entity.Id)?.Request is { } owner)
+            {
+                ProtectTaskLinks(ctx, owner);
+            }
+
             return ValueTask.CompletedTask;
         }
 
@@ -55,12 +63,32 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
             ctx.SystemSet(titleField, JsonValue.Create(item.Label));
         }
 
+        if (ctx.Prior is not null && ctx.Changed.Contains(binding.VariablesField) && !ctx.SystemActor && ctx.EffectiveWorkflow is { } wf
+            && (ctx.Prior[wf.StateField]?.GetValue<string>() ?? wf.InitialState) != wf.InitialState)
+        {
+            ctx.Errors.Add(new FieldError(binding.VariablesField, "read_only", "Answers cannot change once the request is being worked on.", "Add a comment with the change, or cancel this request and raise a new one."));
+            return ValueTask.CompletedTask;
+        }
+
         if (ctx.Prior is null || ctx.Changed.Contains(binding.VariablesField))
         {
             NormalizeVariables(ctx, binding, item);
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private static void ProtectTaskLinks(RecordWriteContext ctx, RequestBindingSpec owner)
+    {
+        if (ctx.Prior is null ? ctx.Data[owner.TaskKeyField] is not null : ctx.Changed.Contains(owner.TaskKeyField))
+        {
+            ctx.Errors.Add(new FieldError(owner.TaskKeyField, "read_only", "The task template is set by fulfillment.", "Leave it empty; fulfillment fills it for the tasks it creates."));
+        }
+
+        if (ctx.Prior is not null && ctx.Changed.Contains(owner.TaskRequestField))
+        {
+            ctx.Errors.Add(new FieldError(owner.TaskRequestField, "read_only", "A task cannot move to another request.", "Create a new task on the other request instead."));
+        }
     }
 
     private void NormalizeVariables(RecordWriteContext ctx, RequestBindingSpec binding, CatalogItemSpec item)

@@ -22,10 +22,11 @@ namespace Esmbler.Kernel.Infrastructure.Events;
 /// <item>request in a cancelled-category state (rejected, cancelled): cancel its unfinished tasks;</item>
 /// <item>task event: reconcile its request.</item>
 /// </list>
-/// The request row is locked first, so concurrent reconciliations of one request serialize. Writes run through the
-/// record engine as system writes in the dispatcher's tenant transaction, together with their audit and events.
+/// The request row is locked first, so concurrent reconciliations of one request serialize. State categories come from
+/// each record's pinned workflow version, so a later workflow change never strands a running request. Writes run through
+/// the record engine as system writes in the dispatcher's tenant transaction, together with their audit and events.
 /// </summary>
-public sealed class FulfillmentConsumer(ConfigStore configs, RecordService records, IClock clock, ILogger<FulfillmentConsumer> logger) : IEventConsumer
+public sealed class FulfillmentConsumer(ConfigStore configs, RecordService records, WorkflowVersions workflows, IClock clock, ILogger<FulfillmentConsumer> logger) : IEventConsumer
 {
     public string Name => "fulfillment";
 
@@ -93,9 +94,10 @@ public sealed class FulfillmentConsumer(ConfigStore configs, RecordService recor
         }
 
         var data = JsonNode.Parse(request.Data)!.AsObject();
+        var (pinnedFlow, _) = await workflows.ForRecordAsync(db, artifact, requestEntity, request.WorkflowVersion, ct);
         var state = data[requestFlow.StateField]?.GetValue<string>() ?? requestFlow.InitialState;
-        var category = requestFlow.FindState(state)?.Category;
-        var tasks = await LoadTasksAsync(db, binding, taskEntity, taskFlow, requestId, ct);
+        var category = (pinnedFlow ?? requestFlow).FindState(state)?.Category ?? requestFlow.FindState(state)?.Category;
+        var tasks = await LoadTasksAsync(db, artifact, binding, taskEntity, taskFlow, requestId, ct);
 
         if (category == StateCategories.Cancelled)
         {
@@ -118,7 +120,7 @@ public sealed class FulfillmentConsumer(ConfigStore configs, RecordService recor
             return;
         }
 
-        var applicable = Applicable(item, requestEntity, data, ctx);
+        var applicable = Applicable(item, requestEntity, data);
         foreach (var template in applicable.Where(a => tasks.All(t => t.Key != a.Id)))
         {
             var groupId = template.AssignmentGroup is { } key ? await db.Groups.Where(g => g.Key == key).Select(g => (Guid?)g.Id).FirstOrDefaultAsync(ct) : null;
@@ -141,7 +143,7 @@ public sealed class FulfillmentConsumer(ConfigStore configs, RecordService recor
             await records.SystemCreateAsync(db, ctx, artifact, taskEntity, taskData, ct);
         }
 
-        tasks = await LoadTasksAsync(db, binding, taskEntity, taskFlow, requestId, ct);
+        tasks = await LoadTasksAsync(db, artifact, binding, taskEntity, taskFlow, requestId, ct);
         var applicableIds = applicable.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
         var finished = tasks.Where(t => t.Finished).Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
         var blockedCategory = taskFlow.FindState(taskFlow.InitialState)?.Category;
@@ -167,15 +169,13 @@ public sealed class FulfillmentConsumer(ConfigStore configs, RecordService recor
         }
     }
 
-    private List<FulfillmentTaskSpec> Applicable(CatalogItemSpec item, EntitySpec requestEntity, JsonObject data, RequestContext ctx)
+    private List<FulfillmentTaskSpec> Applicable(CatalogItemSpec item, EntitySpec requestEntity, JsonObject data)
     {
         var binding = requestEntity.Request!;
         var schema = EntitySchema.ForRequest(requestEntity, item);
         var vars = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["record"] = Values.MapFromJson(data),
-            ["prior"] = Values.MapFromJson(data),
-            ["user"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = ctx.PrincipalId.ToString(), ["roles"] = new List<object?>(), ["groups"] = new List<object?>() },
             ["now"] = Kernel.Records.FieldNormalizer.FormatInstant(clock.UtcNow),
             ["variables"] = Values.MapFromJson(data[binding.VariablesField] as JsonObject),
         };
@@ -205,20 +205,36 @@ public sealed class FulfillmentConsumer(ConfigStore configs, RecordService recor
         return result;
     }
 
-    private static async Task<List<TaskState>> LoadTasksAsync(KernelDbContext db, RequestBindingSpec binding, EntitySpec taskEntity, WorkflowSpec taskFlow, Guid requestId, CancellationToken ct)
+    private async Task<List<TaskState>> LoadTasksAsync(KernelDbContext db, ActiveArtifact artifact, RequestBindingSpec binding, EntitySpec taskEntity, WorkflowSpec taskFlow, Guid requestId, CancellationToken ct)
     {
         var probe = new JsonObject { [binding.TaskRequestField] = requestId.ToString() }.ToJsonString();
         var rows = await db.Records.AsNoTracking()
             .Where(r => r.EntityId == taskEntity.Id && r.DeletedAt == null && EF.Functions.JsonContains(r.Data, probe))
-            .Select(r => new { r.Id, r.Data })
+            .Select(r => new { r.Id, r.Data, r.WorkflowVersion })
             .ToListAsync(ct);
-        return rows.Select(r =>
+        var flows = new Dictionary<int, WorkflowSpec>();
+        var result = new List<TaskState>(rows.Count);
+        foreach (var r in rows)
         {
+            var flow = taskFlow;
+            if (r.WorkflowVersion is { } version)
+            {
+                if (!flows.TryGetValue(version, out var pinned))
+                {
+                    pinned = (await workflows.ForRecordAsync(db, artifact, taskEntity, version, ct)).Pinned ?? taskFlow;
+                    flows[version] = pinned;
+                }
+
+                flow = pinned;
+            }
+
             var d = JsonNode.Parse(r.Data)!.AsObject();
             var state = d[taskFlow.StateField]?.GetValue<string>() ?? taskFlow.InitialState;
-            var category = taskFlow.FindState(state)?.Category ?? StateCategories.Active;
-            return new TaskState(r.Id, d[binding.TaskKeyField]?.GetValue<string>() ?? string.Empty, state, category);
-        }).ToList();
+            var category = flow.FindState(state)?.Category ?? taskFlow.FindState(state)?.Category ?? StateCategories.Active;
+            result.Add(new TaskState(r.Id, d[binding.TaskKeyField]?.GetValue<string>() ?? string.Empty, state, category));
+        }
+
+        return result;
     }
 
     private static Guid Principal(EventEnvelope envelope) =>

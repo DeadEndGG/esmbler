@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { signIn } from './helpers';
 
-/** REQ-BIZ-004, REQ-ACC-05: service catalog, typed request form, and fulfillment tasks with dependencies (ADR 0015). */
+/** REQ-BIZ-004: service catalog, typed request form, and fulfillment tasks with dependencies (ADR 0015). */
 async function audit(page: Page, name: string): Promise<void> {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');

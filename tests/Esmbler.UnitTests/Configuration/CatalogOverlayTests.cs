@@ -182,4 +182,49 @@ public class CatalogOverlayTests
         var back = Assert.IsType<AddCatalogItem>(SpecJson.Deserialize<OverlayOp>(json));
         Assert.Equal(2, back.Item.Tasks.Count);
     }
+
+    [Fact]
+    public void Task_conditions_see_the_request_and_its_answers_but_not_a_user()
+    {
+        // Conditions run in the fulfillment worker, where nobody is acting.
+        var item = TenantItem();
+        item.Tasks[1].When = "'core.tickets.agent' in user.roles";
+        var result = Compile("1.2.0", new AddCatalogItem { Item = item });
+        Assert.Contains(result.Errors, e => e.Target == "tenant__parking/charger");
+    }
+
+    [Fact]
+    public void Catalog_items_are_capped_so_fulfillment_fan_out_stays_bounded()
+    {
+        var item = TenantItem();
+        item.Tasks.AddRange(Enumerable.Range(0, 60).Select(i => new FulfillmentTaskSpec { Id = $"t{i}", Title = $"Task {i}" }));
+        var result = Compile("1.2.0", new AddCatalogItem { Item = item });
+        Assert.Contains(result.Errors, e => e.Code == "config.too_large");
+    }
+
+    [Fact]
+    public void Request_field_types_belong_only_to_entities_that_receive_requests()
+    {
+        var result = Compile("1.2.0", new AddField { Entity = "core.tickets.ticket", Field = new FieldSpec { Key = "tenant__answers", Type = FieldTypes.Variables, Label = "Answers" } });
+        Assert.Contains(result.Errors, e => e.Code == "config.bad_field_type");
+    }
+
+    [Fact]
+    public void A_migration_that_moves_requests_out_of_fulfillment_is_rejected()
+    {
+        var result = Compile(
+            "1.2.0",
+            new AddWorkflowState { Workflow = RequestFlow, State = new WorkflowState { Id = "tenant__on_hold", Category = StateCategories.Pending }, Label = "On hold", Tone = "accent.amber" },
+            new SetActiveInstancePolicy { Workflow = RequestFlow, Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate, StateMap = new() { ["fulfilling"] = "tenant__on_hold" } } });
+        Assert.Contains(result.Errors, e => e.Code == "config.strands_fulfillment");
+    }
+
+    [Fact]
+    public void Role_free_transitions_set_values_and_role_changes_are_permission_changes()
+    {
+        Assert.True(new AddTransition { Workflow = RequestFlow, Transition = new WorkflowTransition { Id = "tenant__x", Label = "X", From = ["submitted"], To = "fulfilling" } }.AffectsPermissions);
+        Assert.False(new AddTransition { Workflow = RequestFlow, Transition = new WorkflowTransition { Id = "tenant__x", Label = "X", From = ["submitted"], To = "fulfilling", Roles = ["core.tickets.agent"] } }.AffectsPermissions);
+        Assert.True(new UpdateTransition { Workflow = RequestFlow, Transition = "tenant__x", Set = new TransitionPatch { Roles = [] } }.AffectsPermissions);
+        Assert.False(new UpdateTransition { Workflow = RequestFlow, Transition = "reject", Set = new TransitionPatch { Label = "Decline", Enabled = false } }.AffectsPermissions);
+    }
 }

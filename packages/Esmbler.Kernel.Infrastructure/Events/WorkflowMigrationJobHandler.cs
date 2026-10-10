@@ -24,8 +24,11 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
 
     public string Kind => JobKind;
 
-    /// <summary>The publish that created the version already carried the approval; the job re-checks nothing more.</summary>
-    public string? RequiredAction => null;
+    /// <summary>
+    /// The publish that set the policy is the approval (the review showed the instance counts); the runner re-checks that
+    /// the publisher still may publish before each run, so revoked rights stop the move (REQ-ACC-07).
+    /// </summary>
+    public string? RequiredAction => PlatformActions.ConfigPublish;
 
     public async Task RunAsync(JobContext job, CancellationToken ct)
     {
@@ -61,7 +64,7 @@ public sealed class WorkflowMigrationJobHandler(ConfigStore configs, WorkflowVer
                 {
                     var data = JsonNode.Parse(row.Data)!.AsObject();
                     var state = data[current.StateField]?.GetValue<string>() ?? current.InitialState;
-                    var old = row.WorkflowVersion is { } v ? await workflows.DefinitionAsync(db, workflowId, v, ct) : null;
+                    var old = row.WorkflowVersion is { } v ? await workflows.DefinitionAsync(db, job.TenantId, job.EnvironmentId, workflowId, v, ct) : null;
                     var category = (old ?? current).FindState(state)?.Category;
                     if (category is StateCategories.Resolved or StateCategories.Closed or StateCategories.Cancelled)
                     {

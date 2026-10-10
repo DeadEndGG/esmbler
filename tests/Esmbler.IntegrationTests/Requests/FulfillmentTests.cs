@@ -10,9 +10,9 @@ using Esmbler.Sdk.Events;
 namespace Esmbler.IntegrationTests.Requests;
 
 /// <summary>
-/// REQ-BIZ-004, REQ-EVT-004, REQ-ACC-05 (fulfillment part), REQ-ACC-06: catalog requests with typed variables,
-/// fulfillment tasks with dependencies and conditions, partial completion, rejection and cancellation, idempotent
-/// reconciliation, and authorization of requesters versus agents (ADR 0015).
+/// REQ-BIZ-004, REQ-EVT-004, REQ-ACC-06 (fulfillment part): catalog requests with typed variables, fulfillment tasks
+/// with dependencies and conditions, partial completion, rejection and cancellation, idempotent and concurrent
+/// reconciliation, answers frozen once work starts, and authorization of requesters versus agents (ADR 0015).
 /// </summary>
 [Collection(PlatformCollection.Name)]
 public class FulfillmentTests(PlatformFixture f)
@@ -224,5 +224,125 @@ public class FulfillmentTests(PlatformFixture f)
         var hidden = await Assert.ThrowsAsync<KernelException>(() => records.GetAsync(f.As(other, "agent"), Request, request.Id, default));
         Assert.Equal(404, hidden.Status);
         Assert.Empty((await records.QueryAsync(f.As(other, "agent"), new RecordQuery { Entity = Task, PageSize = 50 }, default)).Items);
+    }
+
+    [Fact]
+    public async Task Answers_cannot_change_once_the_request_is_being_worked_on()
+    {
+        // Changing access_level to admin after fulfillment started would skip the security review.
+        var t = await f.NewTenantAsync("frozen", "1.2.0");
+        var records = f.Get<RecordService>();
+        var request = await SubmitAsync(t, Access, new JsonObject { ["application"] = "crm", ["access_level"] = "read", ["reason"] = "Sales" });
+        var edited = await records.UpdateAsync(f.As(t, "dana"), Request, request.Id, request.Revision, new JsonObject { ["variables"] = new JsonObject { ["application"] = "crm", ["access_level"] = "write", ["reason"] = "Sales" } }, null, null, default);
+        Assert.Equal("write", edited.Data["variables"]!["access_level"]!.GetValue<string>());
+
+        var started = await StartAsync(t, edited);
+        var refused = await Assert.ThrowsAsync<ValidationFailedException>(() => records.UpdateAsync(f.As(t, "dana"), Request, request.Id, started.Revision, new JsonObject { ["variables"] = new JsonObject { ["application"] = "crm", ["access_level"] = "admin", ["reason"] = "Sales" } }, null, null, default));
+        Assert.Contains(refused.Errors, e => e.Field == "variables" && e.Code == "read_only");
+        var agent = await Assert.ThrowsAsync<ValidationFailedException>(() => records.UpdateAsync(f.As(t, "agent"), Request, request.Id, started.Revision, new JsonObject { ["variables"] = new JsonObject { ["application"] = "erp", ["access_level"] = "write", ["reason"] = "Sales" } }, null, null, default));
+        Assert.Contains(agent.Errors, e => e.Field == "variables");
+    }
+
+    [Fact]
+    public async Task Task_links_are_set_only_by_fulfillment_so_prerequisites_cannot_be_faked_or_moved()
+    {
+        var t = await f.NewTenantAsync("links", "1.2.0");
+        var records = f.Get<RecordService>();
+        var a = await StartAsync(t, await SubmitAsync(t, Access, new JsonObject { ["application"] = "erp", ["access_level"] = "admin", ["reason"] = "A" }));
+        var b = await StartAsync(t, await SubmitAsync(t, Access, new JsonObject { ["application"] = "erp", ["access_level"] = "admin", ["reason"] = "B" }));
+        var review = (await TasksAsync(t, a.Id)).Single(x => Key(x) == "security_review");
+        await CompleteAsync(t, review);
+        review = await records.GetAsync(f.As(t, "agent"), Task, review.Id, default);
+
+        var moved = await Assert.ThrowsAsync<ValidationFailedException>(() => records.UpdateAsync(f.As(t, "agent"), Task, review.Id, review.Revision, new JsonObject { ["request"] = b.Id.ToString() }, null, null, default));
+        Assert.Contains(moved.Errors, e => e.Field == "request" && e.Code == "read_only");
+        var faked = await Assert.ThrowsAsync<ValidationFailedException>(() => records.CreateAsync(f.As(t, "admin"), Task, new JsonObject { ["title"] = "Review", ["request"] = b.Id.ToString(), ["task_key"] = "security_review" }, null, null, default));
+        Assert.Contains(faked.Errors, e => e.Field == "task_key");
+
+        await DrainAsync();
+        Assert.Equal("blocked", Status((await TasksAsync(t, b.Id)).Single(x => Key(x) == "grant")));
+    }
+
+    [Fact]
+    public async Task Concurrent_task_completions_release_dependents_and_complete_the_request_once()
+    {
+        var t = await f.NewTenantAsync("conc", "1.2.0");
+        var records = f.Get<RecordService>();
+        var request = await StartAsync(t, await SubmitAsync(t, Onboarding, new JsonObject { ["new_hire_name"] = "Kai", ["start_date"] = "2026-12-01", ["department"] = "sales", ["needs_laptop"] = false }));
+        var tasks = await TasksAsync(t, request.Id);
+        await System.Threading.Tasks.Task.WhenAll(tasks.Where(x => Key(x) is "accounts" or "badge").Select(x => records.TransitionAsync(f.As(t, "agent"), Task, x.Id, x.Revision, "complete", [], null, null, default)));
+
+        // Two workers reconcile the same request at the same time; the row lock serializes them.
+        var consumer = f.Get<IEnumerable<IEventConsumer>>().OfType<FulfillmentConsumer>().Single();
+        var db = f.Get<Database>();
+        EventEnvelope Poke() => new()
+        {
+            EventId = Guid.NewGuid(),
+            Type = EventTypes.RecordTransitioned,
+            TenantId = t.TenantId,
+            EnvironmentId = t.Environments["prod"],
+            Entity = Request,
+            RecordId = request.Id,
+            OccurredAt = DateTimeOffset.UtcNow,
+            CorrelationId = Guid.NewGuid(),
+            Actor = $"user:{t.Users["agent"]}",
+            Payload = [],
+        };
+        await System.Threading.Tasks.Task.WhenAll(Enumerable.Range(0, 3).Select(_ => db.InTenantAsync(t.TenantId, t.Environments["prod"], null, ctx => consumer.HandleAsync(Poke(), ctx, default), default)));
+        await DrainAsync();
+        var welcome = (await TasksAsync(t, request.Id)).Single(x => Key(x) == "welcome");
+        Assert.Equal("open", Status(welcome));
+
+        await records.TransitionAsync(f.As(t, "agent"), Task, welcome.Id, welcome.Revision, "complete", [], null, null, default);
+        await System.Threading.Tasks.Task.WhenAll(Enumerable.Range(0, 3).Select(_ => db.InTenantAsync(t.TenantId, t.Environments["prod"], null, ctx => consumer.HandleAsync(Poke(), ctx, default), default)));
+        await DrainAsync();
+
+        Assert.Equal("fulfilled", Status(await records.GetAsync(f.As(t, "agent"), Request, request.Id, default)));
+        var history = await records.HistoryAsync(f.As(t, "admin"), Request, request.Id, default);
+        Assert.Single(history, h => h.Changes.Any(c => c.Field == "status" && c.To?.GetValue<string>() == "fulfilled"));
+        Assert.Single(await TasksAsync(t, request.Id), x => Key(x) == "welcome");
+    }
+
+    [Fact]
+    public async Task Rejecting_a_submitted_request_creates_no_tasks()
+    {
+        var t = await f.NewTenantAsync("reject", "1.2.0");
+        var request = await SubmitAsync(t, Laptop, new JsonObject { ["model"] = "standard", ["justification"] = "Spare" });
+        await f.Get<RecordService>().TransitionAsync(f.As(t, "agent"), Request, request.Id, request.Revision, "reject", [], null, null, default);
+        await DrainAsync();
+
+        Assert.Equal("rejected", Status(await f.Get<RecordService>().GetAsync(f.As(t, "dana"), Request, request.Id, default)));
+        Assert.Empty(await TasksAsync(t, request.Id));
+    }
+
+    [Fact]
+    public async Task Answers_cannot_name_people_or_groups_of_another_workspace()
+    {
+        var t = await f.NewTenantAsync("ref", "1.2.0");
+        var other = await f.NewTenantAsync("ref2", "1.2.0");
+        var item = new Esmbler.Sdk.Specs.CatalogItemSpec
+        {
+            Id = "tenant__desk_move",
+            Label = "Desk move",
+            RequestEntity = Request,
+            Variables =
+            [
+                new Esmbler.Sdk.Specs.VariableSpec { Key = "manager", Label = "Manager", Type = "user", Required = true },
+                new Esmbler.Sdk.Specs.VariableSpec { Key = "team", Label = "Team", Type = "group" },
+            ],
+            Tasks = [new Esmbler.Sdk.Specs.FulfillmentTaskSpec { Id = "move", Title = "Move the desk" }],
+        };
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<Esmbler.Kernel.Infrastructure.Configuration.DraftService>();
+        var v = (await drafts.OpenAsync(admin, default)).Version;
+        await drafts.ApplyAsync(admin, new Esmbler.Sdk.Overlay.AddCatalogItem { Item = item }, v, "ui", default);
+        var state = await drafts.CurrentAsync(admin, default);
+        await f.Get<Esmbler.Kernel.Infrastructure.Configuration.PublishService>().PublishAsync(admin, state!.ArtifactHash!, state.PublishedRevision, default);
+
+        var foreign = await Assert.ThrowsAsync<ValidationFailedException>(() => SubmitAsync(t, item.Id, new JsonObject { ["manager"] = other.Users["agent"].ToString(), ["team"] = other.Groups["service_desk"].ToString() }));
+        Assert.Contains(foreign.Errors, e => e.Field == "variables.manager");
+        Assert.Contains(foreign.Errors, e => e.Field == "variables.team");
+        var own = await SubmitAsync(t, item.Id, new JsonObject { ["manager"] = t.Users["agent"].ToString(), ["team"] = t.Groups["service_desk"].ToString() });
+        Assert.Equal(t.Users["agent"].ToString(), own.Data["variables"]!["manager"]!.GetValue<string>());
     }
 }

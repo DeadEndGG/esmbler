@@ -76,7 +76,7 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
             active.ActivatedBy = approvedBy ?? createdBy;
         }
 
-        await RegisterWorkflowsAsync(db, tenantId, environmentId, active?.PreviousRevision, result.Config, revision, approvedBy ?? createdBy, ct);
+        await RegisterWorkflowsAsync(db, tenantId, environmentId, active?.PreviousRevision, result.Config, revision, source, approvedBy ?? createdBy, ct);
 
         db.Outbox.Add(new OutboxRow
         {
@@ -104,10 +104,12 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
     /// <summary>
     /// REQ-MIG-003: registers the new revision's workflow versions inside the activation transaction. Records that were
     /// never pinned are first pinned to the definition of the revision they ran on, so a change never silently applies
-    /// to them. When a workflow gets a new version and its policy is migrate or cancel, a durable job moves running
-    /// instances after commit.
+    /// to them. When a workflow gets a new version and this activation sets a migrate or cancel policy (the policy
+    /// differs from the previous revision's), a durable job moves running instances after commit. A policy applies to
+    /// the publish that sets it, never to later edits of the workflow, and a rollback never moves instances
+    /// (ADR 0015).
     /// </summary>
-    private async Task RegisterWorkflowsAsync(KernelDbContext db, Guid tenantId, Guid environmentId, int? previousRevision, EffectiveConfig config, int revision, Guid? actor, CancellationToken ct)
+    private async Task RegisterWorkflowsAsync(KernelDbContext db, Guid tenantId, Guid environmentId, int? previousRevision, EffectiveConfig config, int revision, string source, Guid? actor, CancellationToken ct)
     {
         if (workflows is null)
         {
@@ -115,6 +117,7 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
         }
 
         IReadOnlyDictionary<string, int> before = new Dictionary<string, int>();
+        var policiesBefore = new Dictionary<string, string>(StringComparer.Ordinal);
         if (previousRevision is { } prev)
         {
             var previous = await db.ConfigArtifacts.AsNoTracking().Where(a => a.Revision == prev).Select(a => a.Config).FirstOrDefaultAsync(ct);
@@ -124,6 +127,7 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
                 before = await workflows.RegisterAsync(db, tenantId, environmentId, previousConfig, prev, ct);
                 foreach (var wf in previousConfig.Workflows)
                 {
+                    policiesBefore[wf.Id] = SpecJson.Serialize(wf.ActiveInstances);
                     var version = before[wf.Id];
                     await db.Records.Where(r => r.EntityId == wf.Entity && r.WorkflowVersion == null && r.DeletedAt == null)
                         .ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkflowVersion, version), ct);
@@ -135,7 +139,8 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
         foreach (var wf in config.Workflows)
         {
             var changed = before.TryGetValue(wf.Id, out var old) && old != after[wf.Id];
-            if (changed && wf.ActiveInstances.Policy is ActiveInstancePolicies.Migrate or ActiveInstancePolicies.Cancel)
+            var policySetNow = policiesBefore.GetValueOrDefault(wf.Id) != SpecJson.Serialize(wf.ActiveInstances);
+            if (changed && policySetNow && source != "rollback" && wf.ActiveInstances.Policy is ActiveInstancePolicies.Migrate or ActiveInstancePolicies.Cancel)
             {
                 await JobScheduler.ScheduleAsync(db, tenantId, environmentId, new JobRequest(WorkflowMigrationJobHandler.JobKind, new JsonObject
                 {

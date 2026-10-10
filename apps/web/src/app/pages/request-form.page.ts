@@ -155,6 +155,7 @@ export class RequestFormPage {
   protected readonly error = signal<string | null>(null);
   protected readonly saving = signal(false);
   private readonly idempotencyKey = crypto.randomUUID();
+  private configRevision?: number;
 
   /** Steps in an order that respects dependencies. */
   protected readonly ordered = computed<CatalogStep[]>(() => {
@@ -223,6 +224,7 @@ export class RequestFormPage {
         return;
       }
       this.lists.set(view.choiceLists);
+      this.configRevision = view.configRevision;
       this.answers.set(Object.fromEntries(item.variables.filter((v) => v.default !== undefined && v.default !== null).map((v) => [v.key, v.default])));
       this.item.set(item);
     } catch (e) {
@@ -248,11 +250,18 @@ export class RequestFormPage {
       );
       const data: Record<string, unknown> = { catalog_item: item.id, variables };
       if (this.notes().trim()) data['description'] = this.notes().trim();
-      const created = await this.api.post<RecordView>(`/api/records/${item.requestEntity}`, { data }, { 'Idempotency-Key': this.idempotencyKey });
+      const created = await this.api.post<RecordView>(`/api/records/${item.requestEntity}`, { data, configRevision: this.configRevision }, { 'Idempotency-Key': this.idempotencyKey });
       this.toasts.show(`${created.number ?? 'Request'} submitted. We'll keep you posted.`, 'success');
       await this.router.navigate(['/records', created.entity, created.id]);
     } catch (e) {
-      if (e instanceof ApiError && e.problem.errors?.length) {
+      if (e instanceof ApiError && e.code === 'config_conflict') {
+        // The catalog changed while the form was open: reload the questions, keep the answers that still apply.
+        const kept = this.answers();
+        await this.load();
+        const keys = new Set(this.item()?.variables.map((v) => v.key));
+        this.answers.update((now) => ({ ...now, ...Object.fromEntries(Object.entries(kept).filter(([k]) => keys.has(k))) }));
+        this.toasts.show('This form changed while you were filling it in. Check your answers and submit again.', 'warning');
+      } else if (e instanceof ApiError && e.problem.errors?.length) {
         const fieldErrors = Object.fromEntries(e.problem.errors.filter((x) => x.field.startsWith('variables.')).map((x) => [x.field.slice('variables.'.length), x.message]));
         this.errors.set(fieldErrors);
         const other = e.problem.errors.find((x) => !x.field.startsWith('variables.'));

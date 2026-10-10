@@ -340,7 +340,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         [Description("State IDs it starts from.")] string[] from,
         [Description("State ID it goes to.")] string to,
         int expected_version,
-        [Description("Role IDs allowed to fire it; empty means anyone who can edit the record.")] string[]? roles = null,
+        [Description("Role IDs allowed to fire it, e.g. the module's agent role. Required for AI agents: a transition anyone may fire is a permission change only an administrator can make.")] string[]? roles = null,
         [Description("Field keys that must be filled when it fires.")] string[]? required_fields = null,
         [Description("Condition that must hold, e.g. record.assignee != null.")] string? guard = null,
         string? guard_message = null,

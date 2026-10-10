@@ -56,6 +56,14 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             ValidateRequestBinding(config, entity, entity.Request!, d);
         }
 
+        foreach (var entity in config.Entities.Where(e => e.Request is null))
+        {
+            foreach (var f in entity.Fields.Where(f => f.Type is FieldTypes.CatalogItem or FieldTypes.Variables))
+            {
+                d.Add(Diagnostic.Error("config.bad_field_type", $"Field '{f.Key}' of {entity.Label} has type {f.Type}, which only entities that receive requests can use.", $"{entity.Id}/{f.Key}", "Use another type, or add the field to a request entity."));
+            }
+        }
+
         foreach (var item in config.CatalogItems)
         {
             ValidateCatalogItem(config, item, d);
@@ -596,11 +604,30 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
         NeedTransition(requestFlow, binding.CompleteTransition, "completion");
         NeedTransition(taskFlow, binding.TaskReleaseTransition, "task release");
+        if (taskFlow.FindTransition(binding.TaskReleaseTransition) is { } release && release.To == taskFlow.InitialState)
+        {
+            d.Add(Diagnostic.Error("config.bad_request_binding", $"The task release transition '{release.Id}' must leave the initial state '{taskFlow.InitialState}'.", entity.Id));
+        }
+
+        // A migration that moves running requests out of fulfillment would strand their tasks (ADR 0015).
+        var policy = requestFlow.ActiveInstances;
+        if (policy.Policy == ActiveInstancePolicies.Migrate)
+        {
+            foreach (var (from, to) in policy.StateMap.Where(m => binding.StartStates.Contains(m.Key) && !binding.StartStates.Contains(m.Value) && requestFlow.FindState(m.Value)?.Category is not StateCategories.Cancelled))
+            {
+                d.Add(Diagnostic.Error("config.strands_fulfillment", $"Migrating {entity.PluralLabel.ToLowerInvariant()} from '{from}' to '{to}' would leave their fulfillment tasks without a request in fulfillment.", requestFlow.Id, $"Map '{from}' to one of: {string.Join(", ", binding.StartStates)}, or to a cancelled state."));
+            }
+        }
         if (taskFlow.FindTransition(binding.TaskCancelTransition) is null)
         {
             d.Add(Diagnostic.Error("config.not_found", $"The task cancel transition '{binding.TaskCancelTransition}' is not in {taskFlow.Id}.", entity.Id));
         }
     }
+
+    /// <summary>Per catalog item: keeps forms usable and bounds fulfillment fan-out (each reconcile reads every task).</summary>
+    private const int MaxVariables = 50;
+
+    private const int MaxTasks = 50;
 
     private static void ValidateCatalogItem(SpecCatalog config, CatalogItemSpec item, List<Diagnostic> d)
     {
@@ -619,6 +646,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         {
             d.Add(Diagnostic.Error("config.bad_request_entity", $"Catalog item '{item.Label}' targets '{item.RequestEntity}', which does not receive requests.", item.Id, string.Join(", ", config.Entities.Where(e => e.Request is not null).Select(e => e.Id))));
             return;
+        }
+
+        if (item.Variables.Count > MaxVariables || item.Tasks.Count > MaxTasks)
+        {
+            d.Add(Diagnostic.Error("config.too_large", $"Catalog item '{item.Label}' has {item.Variables.Count} questions and {item.Tasks.Count} tasks; the limits are {MaxVariables} and {MaxTasks}.", item.Id, "Split it into several catalog items."));
         }
 
         foreach (var dup in item.Variables.GroupBy(v => v.Key).Where(g => g.Count() > 1))

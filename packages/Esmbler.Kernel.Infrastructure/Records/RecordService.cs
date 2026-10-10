@@ -333,7 +333,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
     {
         var perms = SystemPermissions(artifact, ctx);
         var now = clock.UtcNow;
-        var write = await engine.PrepareAsync(artifact.Config, entity, perms, WriteOperations.System, null, data, FieldNormalizer.FormatInstant(now), null, new Lookups(db), ct);
+        var write = await engine.PrepareAsync(artifact.Config, entity, perms, WriteOperations.System, null, data, FieldNormalizer.FormatInstant(now), null, new Lookups(db), ct, systemActor: true);
         var id = Guid.NewGuid();
         long? number = null;
         if (entity.Fields.Find(f => f.Type == FieldTypes.AutoNumber) is { } numberField)
@@ -467,7 +467,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             type = EventTypes.RecordUpdated;
         }
 
-        AuditWriter.Add(db, ctx, operation == WriteOperations.Transition ? "record.transition" : "record.update", entity.Id, id.ToString(), artifact.Revision, AuditChanges(diff, transitionId));
+        AuditWriter.Add(db, ctx, operation == WriteOperations.Transition ? "record.transition" : "record.update", entity.Id, id.ToString(), artifact.Revision, AuditChanges(diff, transitionId, systemActor));
         AddEvent(db, ctx, type, entity.Id, id, revision, artifact.Revision, payload);
         await db.SaveChangesAsync(ct);
         return (write, true);
@@ -481,7 +481,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         {
             var old = await configs.GetAsync(db, ctx.TenantId, ctx.EnvironmentId, clientRevision, ct);
             var oldEntity = old.Config.FindEntity(entityId);
-            if (oldEntity is null || EntityHash(oldEntity) != EntityHash(entity))
+            if (oldEntity is null || EntityHash(oldEntity, old.Config) != EntityHash(entity, artifact.Config))
             {
                 // REQ-CFG-008: a form submitted under an incompatible older revision gets an actionable conflict.
                 throw KernelException.Conflict(
@@ -809,7 +809,8 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         return result;
     }
 
-    private static object AuditChanges(Dictionary<string, (JsonNode? From, JsonNode? To)> changes, string? transition = null)
+    /// <summary>Audit details; platform writes are marked <c>source: system</c> so they are not read as the person's own act.</summary>
+    private static object AuditChanges(Dictionary<string, (JsonNode? From, JsonNode? To)> changes, string? transition = null, bool system = false)
     {
         var obj = new JsonObject();
         foreach (var (key, (from, to)) in changes)
@@ -821,6 +822,11 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         if (transition is not null)
         {
             details["transition"] = transition;
+        }
+
+        if (system)
+        {
+            details["source"] = "system";
         }
 
         return details;
@@ -907,7 +913,17 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         }, ct);
     }
 
-    private static string EntityHash(EntitySpec entity) => Composer.Hash(SpecJson.Canonical(SpecJson.ToNode(entity)));
+    /// <summary>The form contract of an entity: its spec, plus for request entities the catalog items (questions) it receives.</summary>
+    private static string EntityHash(EntitySpec entity, EffectiveConfig config)
+    {
+        var node = new JsonObject { ["entity"] = SpecJson.ToNode(entity) };
+        if (entity.Request is not null)
+        {
+            node["catalogItems"] = SpecJson.ToNode(config.CatalogItems.Where(i => i.RequestEntity == entity.Id).OrderBy(i => i.Id, StringComparer.Ordinal).ToList());
+        }
+
+        return Composer.Hash(SpecJson.Canonical(node));
+    }
 
     private static DbCommand Command(DbConnection conn, DbTransaction tx, string sql, IEnumerable<NpgsqlParameter> parameters)
     {

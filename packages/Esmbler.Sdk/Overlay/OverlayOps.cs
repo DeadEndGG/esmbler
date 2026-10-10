@@ -414,6 +414,13 @@ public sealed class AddTransition : OverlayOp
         $"Add transition \"{Transition.Label}\" from {string.Join(", ", Transition.From)} to {Transition.To} in {Workflow}";
 
     public override IEnumerable<string> Targets() => [$"{Workflow}/{Transition.Id}"];
+
+    /// <summary>
+    /// A transition without roles can be fired by anyone who may edit the record (requesters included), and set values
+    /// write fields regardless of field permissions, so both are permission changes (permission administration).
+    /// </summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Transition.Roles.Count == 0 || Transition.Set.Count > 0;
 }
 
 /// <summary>Patch of transition properties. Null members are left unchanged.</summary>
@@ -458,6 +465,10 @@ public sealed class UpdateTransition : OverlayOp
     }
 
     public override IEnumerable<string> Targets() => [$"{Workflow}/{Transition}"];
+
+    /// <summary>Changing who may fire a transition, its guard, or the values it sets is a permission change.</summary>
+    [JsonIgnore]
+    public override bool AffectsPermissions => Set.Roles is not null || Set.Set is not null || Set.Guard is not null;
 }
 
 /// <summary>Sets what happens to running instances when this change publishes a new workflow version (REQ-MIG-003).</summary>

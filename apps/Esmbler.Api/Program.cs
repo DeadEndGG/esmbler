@@ -51,6 +51,7 @@ if (args.Contains("seed") || options.SeedDemoData)
 {
     var created = await app.Services.GetRequiredService<DemoTenants>().EnsureAsync(CancellationToken.None);
     app.Logger.LogInformation("Demo tenants: {Outcome}", created ? "provisioned acme and globex" : "already present");
+    app.Logger.LogWarning("Demo data is on: the sign-in page offers a demo account. Never set Esmbler__SeedDemoData outside local development.");
     if (args.Contains("seed"))
     {
         return 0;

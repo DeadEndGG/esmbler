@@ -27,7 +27,7 @@ public sealed record CatalogItemView(
 
 public sealed record CatalogStepView(string Id, string Title, IReadOnlyList<string> DependsOn, bool Conditional);
 
-public sealed record CatalogView(IReadOnlyList<CatalogItemView> Items, IReadOnlyList<ChoiceListSpec> ChoiceLists);
+public sealed record CatalogView(IReadOnlyList<CatalogItemView> Items, IReadOnlyList<ChoiceListSpec> ChoiceLists, int ConfigRevision);
 
 public sealed record AppBootstrap(
     object Tenant,
@@ -105,7 +105,7 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 .Where(i => i.Active && artifact.Config.FindEntity(i.RequestEntity) is { } e && perms.CanCreate(e))
                 .OrderBy(i => i.Order).ThenBy(i => i.Label, StringComparer.Ordinal)
                 .ToList();
-            return new CatalogView(items.Select(ToView).ToList(), VariableLists(artifact.Config, items));
+            return new CatalogView(items.Select(ToView).ToList(), VariableLists(artifact.Config, items), artifact.Revision);
         }, ct);
 
     public static CatalogItemView ToView(CatalogItemSpec item) => new(

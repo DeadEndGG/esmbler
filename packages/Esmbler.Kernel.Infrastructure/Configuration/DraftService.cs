@@ -255,7 +255,8 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
                 $"SELECT data->>{wf.StateField} AS \"State\", count(*)::int AS \"Count\" FROM kernel.records WHERE entity_id = {wf.Entity} AND deleted_at IS NULL GROUP BY 1").ToListAsync(ct);
             var running = counts.Where(c => old.FindState(c.State ?? old.InitialState)?.Category is not (StateCategories.Resolved or StateCategories.Closed or StateCategories.Cancelled)).ToList();
             var total = running.Sum(c => c.Count);
-            var policy = wf.ActiveInstances;
+            // A policy applies only to the publish that sets it (ConfigActivator); otherwise instances stay pinned.
+            var policy = SpecJson.Serialize(wf.ActiveInstances) == SpecJson.Serialize(old.ActiveInstances) ? new ActiveInstancePolicy() : wf.ActiveInstances;
             var moving = 0;
             var unmapped = new List<string>();
             foreach (var c in running)

@@ -132,7 +132,10 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var entity = await Call(client, "describe_entity", new { entity = "core.tickets.request" });
         var workflow = entity["workflow"]!["id"]!.GetValue<string>();
         version = (await Call(client, "add_workflow_state", new { workflow, label = "Awaiting information", category = "pending", expected_version = version }))["version"]!.GetValue<int>();
-        version = (await Call(client, "add_transition", new { workflow, label = "Ask for information", from = new[] { "submitted" }, to = "tenant__awaiting_information", expected_version = version }))["version"]!.GetValue<int>();
+        // A transition anyone may fire widens who can change records: that is permission administration, not building.
+        var open = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_transition", new { workflow, label = "Ask for information", from = new[] { "submitted" }, to = "tenant__awaiting_information", expected_version = version }));
+        Assert.Contains("forbidden", open.Body);
+        version = (await Call(client, "add_transition", new { workflow, label = "Ask for information", from = new[] { "submitted" }, to = "tenant__awaiting_information", roles = new[] { "core.tickets.agent" }, expected_version = version }))["version"]!.GetValue<int>();
         version = (await Call(client, "set_workflow_policy", new { workflow, policy = "pin", expected_version = version }))["version"]!.GetValue<int>();
 
         var system = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_transition", new { workflow, transition = "complete", enabled = false, expected_version = version }));

@@ -79,26 +79,99 @@ public class WorkflowVersioningTests(PlatformFixture f)
         await PublishAsync(
             t,
             AddState("tenant__triage", StateCategories.New, "Triage"),
-            AddTransition("tenant__triage", "Send to triage", ["submitted"], "tenant__triage"),
-            new UpdateTransition { Workflow = Flow, Transition = "reject", Set = new TransitionPatch { Enabled = false } });
+            AddTransition("tenant__triage", "Send to triage", ["submitted"], "tenant__triage"));
 
         var after = await SubmitAsync(t);
         Assert.Equal(v1 + 1, await PinnedVersionAsync(t, after.Id));
         Assert.Equal(v1, await PinnedVersionAsync(t, before.Id));
 
-        // The old instance keeps the old buttons and rules of motion; the new one gets the new definition.
+        // The old instance keeps the old shape; the new one gets the new definition.
         var old = await GetAsync(t, before.Id);
         Assert.Contains(old.Transitions!, x => x.Id == "reject");
         Assert.DoesNotContain(old.Transitions!, x => x.Id == "tenant__triage");
         var fresh = await GetAsync(t, after.Id);
-        Assert.DoesNotContain(fresh.Transitions!, x => x.Id == "reject");
         Assert.Contains(fresh.Transitions!, x => x.Id == "tenant__triage");
+        var refused = await Assert.ThrowsAsync<ValidationFailedException>(() => f.Get<RecordService>().TransitionAsync(f.As(t, "agent"), Request, before.Id, old.Revision, "tenant__triage", [], null, null, default));
+        Assert.Contains(refused.Errors, e => e.Code == "unknown_transition");
+    }
 
+    [Fact]
+    public async Task Disabling_or_restricting_a_transition_applies_to_running_instances_too()
+    {
+        // Authorization uses current rules: who may fire a transition is policy, not part of a pinned version.
+        var t = await f.NewTenantAsync("restrict", "1.2.0");
+        await PublishAsync(t, new AddTransition { Workflow = Flow, Transition = new WorkflowTransition { Id = "tenant__nudge", Label = "Nudge", From = ["submitted"], To = "submitted" } });
+        var running = await SubmitAsync(t);
+        var pinned = await PinnedVersionAsync(t, running.Id);
         var records = f.Get<RecordService>();
-        var rejected = await records.TransitionAsync(f.As(t, "agent"), Request, before.Id, old.Revision, "reject", [], null, null, default);
-        Assert.Equal("rejected", rejected.Data["status"]!.GetValue<string>());
-        var refused = await Assert.ThrowsAsync<ValidationFailedException>(() => records.TransitionAsync(f.As(t, "agent"), Request, after.Id, fresh.Revision, "reject", [], null, null, default));
-        Assert.Contains(refused.Errors, e => e.Code == "transition_disabled");
+        running = await records.TransitionAsync(f.As(t, "dana"), Request, running.Id, running.Revision, "tenant__nudge", [], null, null, default);
+
+        await PublishAsync(
+            t,
+            AddState("tenant__parked", StateCategories.Pending, "Parked"),
+            new UpdateTransition { Workflow = Flow, Transition = "tenant__nudge", Set = new TransitionPatch { Roles = ["core.tickets.agent"] } },
+            new UpdateTransition { Workflow = Flow, Transition = "reject", Set = new TransitionPatch { Enabled = false } });
+        Assert.Equal(pinned, await PinnedVersionAsync(t, running.Id));
+
+        var forbidden = await Assert.ThrowsAsync<KernelException>(() => records.TransitionAsync(f.As(t, "dana"), Request, running.Id, running.Revision, "tenant__nudge", [], null, null, default));
+        Assert.Equal(403, forbidden.Status);
+        var view = await GetAsync(t, running.Id);
+        Assert.DoesNotContain(view.Transitions!, x => x.Id == "reject");
+        var disabled = await Assert.ThrowsAsync<ValidationFailedException>(() => records.TransitionAsync(f.As(t, "agent"), Request, running.Id, view.Revision, "reject", [], null, null, default));
+        Assert.Contains(disabled.Errors, e => e.Code == "transition_disabled");
+    }
+
+    [Fact]
+    public async Task A_migrate_policy_applies_only_to_the_publish_that_sets_it()
+    {
+        var t = await f.NewTenantAsync("once", "1.2.0");
+        var first = await SubmitAsync(t);
+        await PublishAsync(
+            t,
+            AddState("tenant__triage", StateCategories.New, "Triage"),
+            AddTransition("tenant__accept", "Accept", ["tenant__triage"], "submitted"),
+            new SetActiveInstancePolicy { Workflow = Flow, Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate, StateMap = new() { ["submitted"] = "tenant__triage" } } });
+        await RunJobsAsync();
+        Assert.Equal("tenant__triage", (await GetAsync(t, first.Id)).Data["status"]!.GetValue<string>());
+
+        var second = await SubmitAsync(t);
+        var pinned = await PinnedVersionAsync(t, second.Id);
+        await PublishAsync(t, AddState("tenant__parked", StateCategories.Pending, "Parked"));
+        await RunJobsAsync();
+
+        Assert.Equal("submitted", (await GetAsync(t, second.Id)).Data["status"]!.GetValue<string>());
+        Assert.Equal(pinned, await PinnedVersionAsync(t, second.Id));
+    }
+
+    [Fact]
+    public async Task Migrating_requests_in_fulfillment_keeps_their_tasks_and_they_still_complete()
+    {
+        // Master spec "Migration and recovery": preserve fulfillment tasks across a workflow migration.
+        var t = await f.NewTenantAsync("keep", "1.2.0");
+        var records = f.Get<RecordService>();
+        var request = await SubmitAsync(t);
+        await records.TransitionAsync(f.As(t, "agent"), Request, request.Id, request.Revision, "start_fulfillment", [], null, null, default);
+        await RunJobsAsync();
+        var before = await PinnedVersionAsync(t, request.Id);
+
+        await PublishAsync(
+            t,
+            AddState("tenant__triage", StateCategories.New, "Triage"),
+            new SetActiveInstancePolicy { Workflow = Flow, Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate, StateMap = new() { ["submitted"] = "tenant__triage" } } });
+        await RunJobsAsync();
+        Assert.NotEqual(before, await PinnedVersionAsync(t, request.Id));
+        Assert.Equal("fulfilling", (await GetAsync(t, request.Id)).Data["status"]!.GetValue<string>());
+
+        foreach (var key in new[] { "order", "image", "deliver" })
+        {
+            var page = await records.QueryAsync(f.As(t, "agent"), new RecordQuery { Entity = "core.tickets.request_task", Filters = [$"record.request == '{request.Id}'", $"record.task_key == '{key}'"] }, default);
+            var task = Assert.Single(page.Items);
+            Assert.Equal("open", task.Data["status"]!.GetValue<string>());
+            await records.TransitionAsync(f.As(t, "agent"), "core.tickets.request_task", task.Id, task.Revision, "complete", [], null, null, default);
+            await RunJobsAsync();
+        }
+
+        Assert.Equal("fulfilled", (await GetAsync(t, request.Id)).Data["status"]!.GetValue<string>());
     }
 
     [Fact]
@@ -175,10 +248,10 @@ public class WorkflowVersioningTests(PlatformFixture f)
         var legacy = await SubmitAsync(t);
         await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.Records.Where(r => r.Id == legacy.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkflowVersion, (int?)null)), default);
 
-        await PublishAsync(t, new UpdateTransition { Workflow = Flow, Transition = "reject", Set = new TransitionPatch { Enabled = false } });
+        await PublishAsync(t, AddState("tenant__triage", StateCategories.New, "Triage"), AddTransition("tenant__triage", "Send to triage", ["submitted"], "tenant__triage"));
 
         Assert.NotNull(await PinnedVersionAsync(t, legacy.Id));
-        Assert.Contains((await GetAsync(t, legacy.Id)).Transitions!, x => x.Id == "reject");
+        Assert.DoesNotContain((await GetAsync(t, legacy.Id)).Transitions!, x => x.Id == "tenant__triage");
     }
 
     [Fact]

@@ -70,6 +70,8 @@ export interface CatalogItem {
 export interface CatalogView {
   items: CatalogItem[];
   choiceLists: ChoiceList[];
+  /** Sent back on submit so a form opened before a catalog change gets a reload conflict, not stale-question errors. */
+  configRevision: number;
 }
 
 export interface ChoiceOption {
