@@ -8,7 +8,7 @@ import { BuilderState } from '../builder/builder-state';
 import { ChatPanel } from '../builder/chat-panel';
 import { CommandPalette } from './command-palette';
 import { KeyboardHelp } from './keyboard-help';
-import { Icon } from '../ui/icon';
+import { Icon, IconName } from '../ui/icon';
 
 @Component({
   selector: 'esm-shell',
@@ -36,9 +36,12 @@ import { Icon } from '../ui/icon';
         </button>
 
         <div class="nav-group">Workspace</div>
+        @if (session.app()?.catalog) {
+          <a class="nav-item" routerLink="/catalog" routerLinkActive="active"><esm-icon name="store" /><span class="flex-1">Service catalog</span></a>
+        }
         @for (n of session.app()?.navigation ?? []; track n.entity) {
           <a class="nav-item" [routerLink]="['/records', n.entity]" routerLinkActive="active">
-            <esm-icon name="inbox" />
+            <esm-icon [name]="navIcon(n.entity, n.requests)" />
             <span class="flex-1">{{ n.pluralLabel }}</span>
           </a>
         }
@@ -111,6 +114,12 @@ export class Shell {
       shortcuts.register({ keys: 'g h', description: 'Go home', group: 'Global', run: () => this.router.navigate(['/']) }),
     ];
     inject(DestroyRef).onDestroy(() => off.forEach((f) => f()));
+  }
+
+  protected navIcon(entity: string, requests?: boolean): IconName {
+    if (requests) return 'package';
+    if (this.session.app()?.navigation.some((n) => n.requests && entity.startsWith(n.entity))) return 'list-checks';
+    return 'inbox';
   }
 
   protected initials(): string {

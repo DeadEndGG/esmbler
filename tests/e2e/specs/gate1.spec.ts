@@ -114,7 +114,7 @@ test('@REQ-ACC-03 the module upgrade keeps the customization', async ({ page }) 
     await preview.click();
     await expect(page.getByText('Your customizations carry over.')).toBeVisible();
     await page.getByRole('button', { name: 'Upgrade', exact: true }).click();
-    await expect(page.getByText(/upgraded to 1\.1\.0/)).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(/upgraded to 1\.\d+\.0/)).toBeVisible({ timeout: 60_000 });
   }
   await expect(row.getByText('Up to date')).toBeVisible();
   await openFirstTicket(page);

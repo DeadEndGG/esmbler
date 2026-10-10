@@ -72,6 +72,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0012 Repository layout and module boundaries](adr/0012-repository-layout-and-module-boundaries.md): projects and NetArchTest rules.
 - [0013 AI assistant model adapter](adr/0013-ai-assistant-model-adapter.md): Claude as an MCP client; scripted planner without a key; bounds and evaluation suite.
 - [0014 Tailwind CSS for the web UI](adr/0014-tailwind-css-for-the-web-ui.md): Tailwind v4 mapped onto the design tokens, Lucide icons, CSP-safe stylesheet loading.
+- [0015 Requests, catalog items, fulfillment tasks and workflow versions](adr/0015-requests-catalog-fulfillment-and-workflow-versions.md): catalog items as spec objects, request bindings, fulfillment consumer, pinned workflow versions.
 
 ## Decisions
 

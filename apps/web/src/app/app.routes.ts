@@ -39,6 +39,8 @@ export const routes: Routes = [
       { path: 'records/:entity/new', loadComponent: () => import('./pages/create.page').then((m) => m.CreatePage) },
       { path: 'records/:entity/preview', loadComponent: () => import('./pages/record.page').then((m) => m.RecordPage), data: { preview: true } },
       { path: 'records/:entity/:id', loadComponent: () => import('./pages/record.page').then((m) => m.RecordPage) },
+      { path: 'catalog', loadComponent: () => import('./pages/catalog.page').then((m) => m.CatalogPage) },
+      { path: 'catalog/:item', loadComponent: () => import('./pages/request-form.page').then((m) => m.RequestFormPage) },
       { path: 'admin/people', loadComponent: () => import('./admin/people.page').then((m) => m.PeoplePage) },
       { path: 'admin/operations', loadComponent: () => import('./admin/operations.page').then((m) => m.OperationsPage) },
       { path: 'admin/configuration', loadComponent: () => import('./admin/configuration.page').then((m) => m.ConfigurationPage) },

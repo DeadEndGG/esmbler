@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-ACC-03, REQ-ACC-04]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05]
 ---
 
 # Tickets module architecture
@@ -224,6 +224,63 @@ Evidence:
 - `TicketsReleaseTests.cs`: both releases compile; the content hash is deterministic.
 - `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs`: `Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure`, `Conflicting_customization_blocks_the_upgrade_with_an_impact_report`, `Requesters_and_agents_cannot_manage_module_versions`.
 - `Acceptance.Gate1PathTests.Customize_with_ai_publish_operate_upgrade_and_isolate` and Playwright `gate1.spec.ts` (`@REQ-ACC-03`).
+
+## Release 1.2.0: service requests
+
+1.2.0 turns Tickets into Tickets and Service Requests ([ADR 0015](../../adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)). The release is additive: upgrading from 1.0.0 or 1.1.0 adds the new entities and catalog without touching tickets, and an upgrade from 1.0.0 runs the 1.1.0 migrations on the way. Its ticket sample data also fixes the P1 sample that 1.1.0 could not provision ([KI-012](../../known-issues.md)).
+
+| Element | IDs |
+| --- | --- |
+| Entities | `core.tickets.request` (prefix `REQ`, request binding), `core.tickets.request_task` (prefix `TSK`) |
+| Workflows | `core.tickets.request_lifecycle`, `core.tickets.task_lifecycle` |
+| Views | `core.tickets.request_record`, `core.tickets.request_list`, `core.tickets.task_record`, `core.tickets.task_list` |
+| Relationship | `core.tickets.request_tasks` (task `request` → request, restrict delete) |
+| Catalog items | `core.tickets.catalog.new_laptop`, `core.tickets.catalog.software_access`, `core.tickets.catalog.onboarding` |
+| Assignment | `core.tickets.assign.requests` (requests go to the Service Desk) |
+| Notifications | `core.tickets.notify.request_fulfilled` (requester), `core.tickets.notify.task_assigned` (assignee) |
+
+### Request and task workflows
+
+| Workflow | States (category) | Transitions |
+| --- | --- | --- |
+| Request | `submitted` (new), `fulfilling` (active), `fulfilled` (resolved), `closed` (closed), `rejected` (cancelled), `cancelled` (cancelled) | `start_fulfillment` (agents), `complete` (system, sets `fulfilled_at`), `close`, `reject` (agents), `cancel` |
+| Task | `blocked` (pending), `open` (new), `in_progress` (active), `done` (resolved), `skipped` (cancelled) | `release` (system), `start`, `complete` (sets `completed_at`), `skip` (agents), `cancel` (system) |
+
+System transitions are never shown as buttons and are refused from people; only the fulfillment engine fires them.
+
+### Fulfillment
+
+```mermaid
+sequenceDiagram
+    participant R as Requester
+    participant A as Agent
+    participant E as Record engine
+    participant F as Fulfillment consumer
+    R->>E: create request (catalog item + typed answers)
+    E->>E: RequestHook validates answers
+    A->>E: start_fulfillment
+    E-->>F: record.transitioned (outbox)
+    F->>E: create applicable tasks once, release ready ones
+    A->>E: complete a task
+    E-->>F: record.transitioned
+    F->>E: release dependents; when all finish, complete the request (complete or partial)
+```
+
+- Answers are typed like fields of the same type, and errors point at `variables.<key>`.
+- A task whose `when` condition is false is not created; dependencies on it count as met.
+- A skipped task counts as finished (ASM-041), and the outcome becomes `partial`.
+- Rejecting or cancelling a request cancels its unfinished tasks.
+- Requesters can create and follow their own requests; they cannot see tasks.
+
+### Catalog items
+
+| Item | Questions | Tasks (dependencies) |
+| --- | --- | --- |
+| New laptop | model (required), accessories, needed by, justification (required) | order → image → deliver |
+| Software access | application, access level, business reason (all required) | security review (only for administrator access) → grant → notify |
+| New hire onboarding | name, start date, department (required), needs a laptop (default yes) | accounts and badge in parallel; laptop after accounts (only if needed); welcome pack after all three |
+
+Tenants and the AI builder add their own items with `catalog_item.add`, and deactivate default ones instead of removing them.
 
 ## Related documents
 

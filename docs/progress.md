@@ -15,9 +15,9 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 | Field | Value |
 | --- | --- |
 | Current gate | Gate 2: Private pilot |
-| Current milestone | G2-M2 full request workflow |
+| Current milestone | G2-M3 approvals |
 | Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md) |
-| Next | G2-M2 requests, catalog items and fulfillment tasks; then approvals (G2-M3) and SLA (G2-M4) |
+| Next | G2-M3 approvals: approval policy and panel, sequential and parallel stages, delegation, expiry, separation of duties, inserted between request submission and fulfillment; then SLA (G2-M4) |
 | Interjected | Web UI visual refresh on Tailwind CSS v4 ([ADR 0014](adr/0014-tailwind-css-for-the-web-ui.md)), including a fix for the production stylesheet that the CSP blocked; axe clean in light and dark |
 | Blockers | None. Open human actions: Anthropic API key to score the Claude planner; product-target confirmation ([human actions](human-actions.md)) |
 
@@ -64,7 +64,7 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 ## Gate 2: private pilot
 
 - [x] **G2-M1 Durable jobs and timers.** Leases, backoff, dead letters, operator replay, tenant fairness and quotas, cycle detection and budgets. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11 Done: handler registry, idempotent timers, jittered backoff, dead letters with audited replay (Operations page), tenant-interleaved outbox claims, depth/fan-out/quota governors (`Events/DurableJobsTests`); load test with queue-wait budgets in G2-M16.
-- [ ] **G2-M2 Full request workflow.** Requests and catalog items, typed variables, fulfillment tasks and dependencies, workflow versioning with pinned instances. REQ-BIZ-004, REQ-MIG-003, REQ-ACC-05
+- [x] **G2-M2 Full request workflow.** Requests and catalog items, typed variables, fulfillment tasks and dependencies, workflow versioning with pinned instances. REQ-BIZ-004, REQ-MIG-003, REQ-ACC-05 Done ([ADR 0015](adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)): Tickets 1.2.0 with requests, fulfillment tasks and three catalog items; typed variables validated on every write path; idempotent fulfillment consumer (dependencies, conditions, partial outcome, cancellation cascade); catalog and workflow overlay ops and MCP tools; versioned workflow definitions with pin, migrate and cancel policies and their impact in the publish review; catalog page and request form; upgrades that skip a release run its migrations. Approvals between submit and fulfillment arrive in G2-M3.
 - [ ] **G2-M3 Approvals.** Approval policy and panel, sequential and parallel stages, delegation, expiry, separation of duties. REQ-BIZ-004, REQ-AUTHZ-011
 - [ ] **G2-M4 SLA and business hours.** SLA policy and timer, calendars, pause and resume, time zones, DST, holidays, versioning. REQ-BIZ-005, REQ-MIG-004, REQ-ACC-13
 - [ ] **G2-M5 Email intake.** Email adapter (fake plus one real provider), threading, sender policy, dedup, loop prevention, no internal-note disclosure. REQ-BIZ-003, REQ-EVT-007, REQ-ACC-13

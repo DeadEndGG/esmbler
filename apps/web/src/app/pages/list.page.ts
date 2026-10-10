@@ -39,7 +39,9 @@ interface SavedView {
           </p>
         </div>
         <span class="flex-1"></span>
-        @if (nav()?.canCreate) {
+        @if (nav()?.canCreate && nav()?.requests) {
+          <a class="btn btn-primary" routerLink="/catalog"><esm-icon name="store" [size]="15" /> New {{ s?.entity?.entity?.label?.toLowerCase() ?? 'request' }} <kbd>C</kbd></a>
+        } @else if (nav()?.canCreate) {
           <a class="btn btn-primary" [routerLink]="['/records', entity(), 'new']"><esm-icon name="plus" [size]="15" /> New {{ s?.entity?.entity?.label?.toLowerCase() ?? 'record' }} <kbd>C</kbd></a>
         }
       </header>
@@ -225,7 +227,7 @@ export class ListPage {
       shortcuts.register({ keys: 'j', description: 'Next row', group: 'Lists', run: () => this.move(1) }),
       shortcuts.register({ keys: 'k', description: 'Previous row', group: 'Lists', run: () => this.move(-1) }),
       shortcuts.register({ keys: 'enter', description: 'Open the selected row', group: 'Lists', run: () => this.openCursor() }),
-      shortcuts.register({ keys: 'c', description: 'Create a record', group: 'Lists', run: () => this.nav()?.canCreate && this.router.navigate(['/records', this.entity(), 'new']) }),
+      shortcuts.register({ keys: 'c', description: 'Create a record', group: 'Lists', run: () => this.nav()?.canCreate && (this.nav()?.requests ? this.router.navigate(['/catalog']) : this.router.navigate(['/records', this.entity(), 'new'])) }),
       shortcuts.register({ keys: '/', description: 'Focus search', group: 'Lists', run: () => document.querySelector<HTMLInputElement>('input[type=search]')?.focus() }),
     ];
     inject(DestroyRef).onDestroy(() => off.forEach((f) => f()));

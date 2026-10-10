@@ -157,6 +157,25 @@ const EXAMPLES = [
           } @else {
             <p class="ok"><esm-icon name="circle-check" [size]="16" /> The draft compiles and passes validation.</p>
           }
+          @if (d.workflowImpact?.length) {
+            <h3>Records already in a changed workflow</h3>
+            <ul class="impact">
+              @for (w of d.workflowImpact; track w.workflow) {
+                <li>
+                  <strong>{{ w.entityLabel }}</strong>
+                  <span class="muted">{{ w.running }} running</span>
+                  @if (w.policy === 'pin') {
+                    <span class="badge tone-blue">keep their current version</span>
+                  } @else if (w.policy === 'migrate') {
+                    <span class="badge tone-purple">{{ w.moving }} move to the new version</span>
+                  } @else {
+                    <span class="badge tone-red">{{ w.moving }} will be cancelled</span>
+                  }
+                  @if (w.policy !== 'pin' && w.stayingPinned > 0) { <span class="muted">{{ w.stayingPinned }} stay on their version ({{ w.unmappedStates.join(', ') }})</span> }
+                </li>
+              }
+            </ul>
+          }
           @if (d.permissionImpact) { <p class="callout tone-amber mt-2 text-body-sm"><esm-icon name="shield" [size]="14" /> This draft changes who can see or edit data. Publishing requires permission administration.</p> }
           <h3>What changes</h3>
           <ul class="changes">
@@ -241,6 +260,8 @@ const EXAMPLES = [
     .dialog h2 { margin: 0; font: var(--esm-text-title-md); }
     .dialog h3 { margin: var(--esm-space-5) 0 var(--esm-space-2); font: var(--esm-text-caption); letter-spacing: 0.04em; text-transform: uppercase; color: var(--esm-text-muted); }
     .changes, .readiness { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--esm-space-2); font: var(--esm-text-body-sm); }
+    .impact { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--esm-space-2); font: var(--esm-text-body-sm); }
+    .impact li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: var(--esm-space-2) var(--esm-space-3); border-radius: var(--esm-radius-md); background: var(--esm-surface-sunken); }
     .readiness li, .changes li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .hash { margin-top: var(--esm-space-4); }
     .actions { display: flex; justify-content: flex-end; gap: var(--esm-space-2); margin-top: var(--esm-space-6); padding-top: var(--esm-space-4); border-top: 1px solid var(--esm-border-subtle); }

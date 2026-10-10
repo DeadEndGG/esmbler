@@ -87,8 +87,9 @@ export class CommandPalette {
     const list: Command[] = [];
     for (const n of app?.navigation ?? []) {
       list.push({ id: 'go:' + n.entity, label: `Go to ${n.pluralLabel}`, hint: n.entity === 'core.tickets.ticket' ? 'G T' : undefined, section: 'Navigate', run: () => this.router.navigate(['/records', n.entity]) });
-      if (n.canCreate) list.push({ id: 'new:' + n.entity, label: `New ${n.label.toLowerCase()}`, hint: 'C', section: 'Create', run: () => this.router.navigate(['/records', n.entity, 'new']) });
+      if (n.canCreate) list.push({ id: 'new:' + n.entity, label: `New ${n.label.toLowerCase()}`, hint: 'C', section: 'Create', run: () => (n.requests ? this.router.navigate(['/catalog']) : this.router.navigate(['/records', n.entity, 'new'])) });
     }
+    if (app?.catalog) list.push({ id: 'catalog', label: 'Request something from the service catalog', section: 'Create', run: () => this.router.navigate(['/catalog']) });
     if (this.session.canCustomize()) {
       list.push({ id: 'builder', label: this.builder.open() ? 'Close AI builder' : 'Customize this page with AI', hint: '⌘ I', section: 'Build', run: () => void this.builder.toggle() });
       list.push({ id: 'config', label: 'Configuration history and upgrades', section: 'Build', run: () => this.router.navigate(['/admin/configuration']) });
@@ -114,7 +115,7 @@ export class CommandPalette {
   protected iconFor(c: Command): IconName {
     if (c.id.startsWith('go:')) return 'inbox';
     if (c.id.startsWith('new:')) return 'plus';
-    return ({ builder: 'sparkles', config: 'sliders', people: 'users', operations: 'activity', theme: 'moon', switch: 'building', logout: 'log-out' } as Record<string, IconName>)[c.id] ?? 'command';
+    return ({ catalog: 'store', builder: 'sparkles', config: 'sliders', people: 'users', operations: 'activity', theme: 'moon', switch: 'building', logout: 'log-out' } as Record<string, IconName>)[c.id] ?? 'command';
   }
 
   toggle(): void {

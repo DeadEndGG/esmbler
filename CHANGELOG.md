@@ -10,10 +10,14 @@ Gate 2: private pilot (in progress).
 
 ### Added
 
+- Service requests (ADR 0015): Tickets 1.2.0 adds requests and fulfillment tasks, a service catalog with typed questions (New laptop, Software access, New hire onboarding), fulfillment tasks with dependencies and conditions, partial completion, rejection and cancellation; catalog page and request form; catalog and workflow overlay operations and MCP tools. REQ-BIZ-004, REQ-AI-003
+- Versioned workflows: published workflow changes create definition versions; running records stay pinned, migrate through a state map, or are cancelled, as the change's policy says, and the publish review shows the effect. REQ-MIG-003, REQ-ACC-05
 - Visual refresh of the web UI on Tailwind CSS v4 mapped onto the design tokens (ADR 0014): new sidebar and workspace switcher, sign-in with a product preview, segmented saved views, status badges with tone dots, card-based record page, AI builder panel with message bubbles and a step timeline, command palette, admin pages with page headers and table cards; Lucide icons; self-hosted Inter; refined light and dark tokens. axe passes in both themes. REQ-DS-001, REQ-DS-002, REQ-DS-003
 - Durable jobs and timers: job handler registry with per-attempt re-authorization, checkpoints and lease renewal; idempotent, cancellable timers; jittered backoff; dead letters with audited operator replay (Operations page); tenant-interleaved event dispatch; automation depth, fan-out and queue quotas. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11
 
 ### Fixed
+
+- Module upgrades that skip a release now run that release's data migrations too.
 
 - The production web build no longer depends on an inline `onload` script to load its stylesheet; the CSP blocked it, so deployed pages rendered without most styles. The CSP no longer allows Google Fonts hosts; Inter is served from the app's own origin.
 

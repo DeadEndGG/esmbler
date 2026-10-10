@@ -3066,6 +3066,14 @@
       "when": "true",
       "group": "service_desk",
       "order": 100
+    },
+    {
+      "id": "core.tickets.assign.requests",
+      "entity": "core.tickets.request",
+      "description": "Requests go to the Service Desk",
+      "when": "true",
+      "group": "service_desk",
+      "order": 100
     }
   ],
   "notificationTemplates": [

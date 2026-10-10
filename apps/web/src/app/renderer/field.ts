@@ -27,18 +27,22 @@ export class FieldPlacement {
   protected readonly label = computed(() => this.node().props['label'] ?? this.spec()?.label ?? this.key());
   protected readonly editing = signal(false);
   protected readonly alwaysEditable = computed(() => this.ctx.mode() !== 'view');
-  protected readonly editable = computed(() => this.ctx.canEdit(this.key()) && !this.node().props['readOnly']);
+  /** Request answers and the catalog item are set when the request is submitted, not edited inline. */
+  protected readonly editable = computed(() => this.ctx.canEdit(this.key()) && !this.node().props['readOnly'] && !['variables', 'catalog_item'].includes(this.spec()?.type ?? ''));
   protected readonly value = computed(() => this.ctx.values()[this.key()]);
   protected readonly error = computed(() => this.ctx.errors()[this.key()]);
   protected readonly required = computed(() => this.ctx.isRequired(this.key()));
   protected readonly lookupResults = signal<{ id: string; label: string }[]>([]);
+  protected readonly answers = computed(() =>
+    this.ctx.answers((type, id) => (type === 'user' ? this.directory.people().find((p) => p.id === id)?.displayName : this.directory.groups().find((g) => g.id === id)?.name)),
+  );
   protected local: any = null;
   protected readonly regexTags = /<[^>]+>/g;
 
   constructor() {
     effect(() => {
       const t = this.spec()?.type;
-      if (t === 'user' || t === 'group') void this.directory.load();
+      if (t === 'user' || t === 'group' || t === 'variables') void this.directory.load();
     });
   }
 

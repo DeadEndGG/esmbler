@@ -53,7 +53,7 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-REC-007 | Audit history of every change with actor, agent, and config revision | MS Kernel | 1 | packages/Esmbler.Kernel.Infrastructure/Records/RecordService.cs, Services/AuditWriter.cs | IntegrationTests/Events/EventDeliveryTests.Record_change_audit_and_event_commit_together | done |
 | REQ-MIG-001 | Schema change classification and migration plans (expand/backfill/contract) | MS Migration | 1 | packages/Esmbler.Kernel.Infrastructure/Configuration/UpgradeService.cs, MigrationExecutor.cs | IntegrationTests/Configuration/UpgradeTests (classification partial, KI-003) | in-progress |
 | REQ-MIG-002 | Failed/partial migrations resume safely, preserve invalid values, block unsafe rollback | MS Migration | 1 | packages/Esmbler.Kernel.Infrastructure/Configuration/MigrationExecutor.cs | IntegrationTests/Configuration/UpgradeTests.Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure | done |
-| REQ-MIG-003 | Workflow definitions versioned; active instances pinned or explicitly migrated | MS Migration | 2 | | | planned |
+| REQ-MIG-003 | Workflow definitions versioned; active instances pinned or explicitly migrated | MS Migration | 2 | packages/Esmbler.Kernel.Infrastructure/Configuration/WorkflowVersions.cs, ConfigActivator.cs, Events/WorkflowMigrationJobHandler.cs, Migrations/0006_workflow_versions.sql (ADR 0015) | IntegrationTests/Configuration/WorkflowVersioningTests.*; UnitTests/Configuration/CatalogOverlayTests.Active_instance_policies_are_validated | done |
 | REQ-MIG-004 | SLA calendars/policies versioned; edits do not corrupt running timers or history | MS Migration | 2 | | | planned |
 
 ## Events and durable execution
@@ -153,7 +153,7 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-BIZ-001 | Ticket lifecycle: ownership, parent/child, reopen, cancel, concurrent edits, audit | MS Business behavior | 1 | packages/Esmbler.Platform/Workflow/WorkflowHook.cs | IntegrationTests/Records/RecordServiceTests.Transition_flow_resolve_and_confirm_by_requester | done |
 | REQ-BIZ-002 | Conversations: public replies vs internal work notes with visibility checks | MS Business behavior | 1 | packages/Esmbler.Kernel.Infrastructure/Records/RecordService.cs (activity visibility) | IntegrationTests/Records/RecordServiceTests.Work_notes_are_hidden_from_requesters | done |
 | REQ-BIZ-003 | Email intake (threading, sender policy, dedup, loop prevention) | MS Business behavior | 2 | | | planned |
-| REQ-BIZ-004 | Requests, catalog, approvals, fulfillment tasks | MS Business behavior | 2 | | | planned |
+| REQ-BIZ-004 | Requests, catalog, approvals, fulfillment tasks | MS Business behavior | 2 | SDK `Specs/Requests.cs`; `Platform/Requests/RequestHook.cs`; `Events/FulfillmentConsumer.cs`; Tickets 1.2.0; web catalog and request form (ADR 0015) | IntegrationTests/Requests/FulfillmentTests.*, Api/CatalogApiTests.*, Mcp/McpServerTests.Agent_builds_a_catalog_item_and_reshapes_a_workflow_through_mcp; e2e `requests.spec.ts` | in-progress (approvals in G2-M3) |
 | REQ-BIZ-005 | SLA and business hours (pause/resume, time zones, DST, holidays) | MS Business behavior | 2 | | | planned |
 | REQ-BIZ-006 | Attachments with object-level authorization, scanning, limits | MS Business behavior | 2 | | | planned |
 | REQ-BIZ-007 | Knowledge lifecycle and permission-aware retrieval | MS Business behavior | 3 | | | planned |
@@ -176,7 +176,7 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-ACC-02 | Competing builder revisions; stale writes rejected with diff | 1 | IntegrationTests/ConfigLifecycleTests.Competing_edits_and_stale_publishes_are_rejected_with_details; e2e @REQ-ACC-02 | done |
 | REQ-ACC-03 | Module upgrade preserves compatible overlays, blocks incompatible with impact report | 1 | IntegrationTests/Configuration/UpgradeTests; UnitTests/Configuration/UpgradeTests; e2e @REQ-ACC-03 | done |
 | REQ-ACC-04 | Field conversion fails partway; safe resume, invalid values preserved, no unsafe rollback | 1 | IntegrationTests/Configuration/UpgradeTests.Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure | done |
-| REQ-ACC-05 | Workflow/approval/SLA definition change with active instances | 2 | | planned |
+| REQ-ACC-05 | Workflow/approval/SLA definition change with active instances | 2 | Workflow part: IntegrationTests/Configuration/WorkflowVersioningTests.*; approvals (G2-M3) and SLA (G2-M4) pending | in-progress |
 | REQ-ACC-06 | Duplicate/out-of-order events cannot regress state or duplicate work | 1 (events), 2 (fulfillment) | IntegrationTests/Events/EventDeliveryTests (Gate 1 events part; fulfillment in Gate 2) | in-progress |
 | REQ-ACC-07 | Revocation across request, cached search, queued job, AI session | 1 | IntegrationTests/Identity/RevocationTests (4) | done |
 | REQ-ACC-08 | Conflicting mods and uninstall of depended-on package | 3 | | planned |

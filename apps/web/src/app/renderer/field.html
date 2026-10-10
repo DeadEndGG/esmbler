@@ -57,6 +57,8 @@
           </div>
         }
         @case ('auto_number') { <span class="mono">{{ value() || '—' }}</span> }
+        @case ('catalog_item') { <span>{{ ctx.display(key()) || '—' }}</span> }
+        @case ('variables') { <ng-container *ngTemplateOutlet="answersTpl" /> }
         @default {
           <input #editor class="input" [id]="node().id + '-input'" [type]="f.type === 'integer' || f.type === 'decimal' ? 'number' : f.type === 'email' ? 'email' : f.type === 'date' ? 'date' : f.type === 'date_time' ? 'datetime-local' : 'text'"
                  [attr.maxlength]="f.maxLength ?? null" [attr.aria-required]="required()" [attr.aria-invalid]="!!error()" [attr.aria-describedby]="error() ? node().id + '-err' : null"
@@ -83,11 +85,24 @@
             @if ((value() ?? []).length) { @for (id of value(); track id) { <span class="badge" [class]="ctx.tone(f, id)">{{ ctx.option(f, id)?.label ?? id }}</span> } } @else { <span class="muted">—</span> }
           }
           @case ('auto_number') { <span class="mono">{{ value() }}</span> }
+          @case ('variables') { <ng-container *ngTemplateOutlet="answersTpl" /> }
           @default { @if (ctx.display(key())) { <span>{{ ctx.display(key()) }}</span> } @else { <span class="muted">—</span> } }
         }
         @if (ctx.saving().has(key())) { <span class="saving muted" aria-live="polite">Saving…</span> }
       </div>
     }
     @if (error()) { <p class="error" [id]="node().id + '-err'" role="alert">{{ error() }}</p> }
+    <ng-template #answersTpl>
+      @let rows = answers();
+      @if (rows.length) {
+        <dl class="answers">
+          @for (a of rows; track a.key) {
+            <div class="answer" [attr.data-variable]="a.key"><dt>{{ a.label }}</dt><dd [class.muted]="a.empty">{{ a.empty ? '—' : a.text }}</dd></div>
+          }
+        </dl>
+      } @else {
+        <span class="muted">—</span>
+      }
+    </ng-template>
   </div>
 }

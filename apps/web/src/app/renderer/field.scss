@@ -21,3 +21,9 @@
 .results { position: absolute; z-index: 10; left: 0; right: 0; margin: 4px 0 0; padding: var(--esm-space-1); list-style: none; background: var(--esm-surface-raised); border: 1px solid var(--esm-border-subtle); border-radius: var(--esm-radius-md); box-shadow: var(--esm-shadow-overlay); }
 .results li { padding: 6px var(--esm-space-2); border-radius: var(--esm-radius-sm); cursor: pointer; }
 .results li:hover { background: var(--esm-state-hover); }
+.answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esm-space-3) var(--esm-space-5); width: 100%; margin: 0; padding: var(--esm-space-3) var(--esm-space-4);
+  border-radius: var(--esm-radius-md); background: var(--esm-surface-sunken); border: 1px solid var(--esm-border-subtle); }
+@media (max-width: 720px) { .answers { grid-template-columns: 1fr; } }
+.answer { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.answer dt { font: var(--esm-text-caption); letter-spacing: 0.03em; text-transform: uppercase; color: var(--esm-text-muted); }
+.answer dd { margin: 0; font: var(--esm-text-body); overflow-wrap: anywhere; }

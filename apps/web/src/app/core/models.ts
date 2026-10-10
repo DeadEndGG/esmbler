@@ -15,6 +15,8 @@ export interface NavItem {
   recordView?: string;
   quickCreateView?: string;
   canCreate: boolean;
+  /** The entity receives catalog requests: "New" opens the service catalog. */
+  requests?: boolean;
 }
 
 export interface AppBootstrap {
@@ -27,6 +29,47 @@ export interface AppBootstrap {
   modules: { id: string; version: string }[];
   navigation: NavItem[];
   workspaces: Workspace[];
+  /** The workspace has a service catalog the user may request from. */
+  catalog?: boolean;
+}
+
+export interface VariableSpec {
+  key: string;
+  label: string;
+  type: string;
+  help?: string;
+  required?: boolean;
+  choiceList?: string;
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  scale?: number;
+  default?: unknown;
+}
+
+export interface CatalogStep {
+  id: string;
+  title: string;
+  dependsOn: string[];
+  conditional: boolean;
+}
+
+export interface CatalogItem {
+  id: string;
+  label: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  requestEntity: string;
+  active: boolean;
+  order: number;
+  variables: VariableSpec[];
+  steps: CatalogStep[];
+}
+
+export interface CatalogView {
+  items: CatalogItem[];
+  choiceLists: ChoiceList[];
 }
 
 export interface ChoiceOption {
@@ -125,6 +168,7 @@ export interface EntityClientSpec {
   rules: RuleSpec[];
   customized: string[];
   configRevision: number;
+  catalogItems?: CatalogItem[];
 }
 
 export interface NodeSpec {
@@ -241,6 +285,19 @@ export interface DraftState {
   changes: ConfigChange[];
   artifactHash?: string;
   permissionImpact: boolean;
+  workflowImpact?: WorkflowImpact[];
+}
+
+/** What publishing a changed workflow does to running records (REQ-MIG-003). */
+export interface WorkflowImpact {
+  workflow: string;
+  entity: string;
+  entityLabel: string;
+  policy: 'pin' | 'migrate' | 'cancel';
+  running: number;
+  moving: number;
+  stayingPinned: number;
+  unmappedStates: string[];
 }
 
 export interface DraftViewSpec {
