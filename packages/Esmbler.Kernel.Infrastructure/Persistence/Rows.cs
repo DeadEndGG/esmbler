@@ -325,6 +325,9 @@ public sealed class ApprovalRow
 
     public Guid? Requester { get; set; }
 
+    /// <summary>JSON array of the people the request was by or for when the approval started (separation of duties).</summary>
+    public string Requesters { get; set; } = "[]";
+
     public string? OutcomeReason { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }

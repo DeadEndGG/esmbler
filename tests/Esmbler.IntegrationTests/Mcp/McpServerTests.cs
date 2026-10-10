@@ -155,7 +155,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     }
 
     [Fact]
-    public async Task Agent_adds_an_approval_policy_but_cannot_remove_an_items_approval()
+    public async Task Agent_adds_an_approval_policy_but_only_people_change_which_policy_an_item_uses()
     {
         var tenant = await platform.NewTenantAsync("mappr", "1.3.0");
         var (api, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
@@ -171,13 +171,14 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
             stages = new object[]
             {
                 new { label = "Manager", mode = "any", roles = new[] { "core.tickets.approver" }, expiresAfterHours = 48, escalateToGroups = new[] { "service_desk" } },
-                new { label = "Finance", groups = new[] { "network" }, when = "variables.model == 'mac'" },
+                new { label = "Finance", groups = new[] { "network" }, when = "record.title != ''" },
             },
             expected_version = version,
         });
         version = added["version"]!.GetValue<int>();
-        version = (await Call(client, "update_catalog_item", new { item = "core.tickets.catalog.new_laptop", approval_policy = "tenant__finance_approval", expected_version = version }))["version"]!.GetValue<int>();
-
+        // Which policy approves an item decides who must say yes: that is permission administration, for a person.
+        var attach = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_catalog_item", new { item = "core.tickets.catalog.new_laptop", approval_policy = "tenant__finance_approval", expected_version = version }));
+        Assert.Contains("forbidden", attach.Body);
         var weaken = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "update_catalog_item", new { item = "core.tickets.catalog.software_access", approval_policy = "", expected_version = version }));
         Assert.Contains("forbidden", weaken.Body);
 
@@ -186,7 +187,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         (await api.PostAsJsonAsync("/api/config/publish", new { artifactHash = pending!["artifactHash"]!.GetValue<string>(), expectedRevision = 1 })).EnsureSuccessStatusCode();
         var after = await Call(client, "list_approval_policies");
         var finance = after["policies"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "tenant__finance_approval")!;
-        Assert.Equal(["core.tickets.catalog.new_laptop"], finance["usedBy"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Empty(finance["usedBy"]!.AsArray());
         Assert.Equal(2, finance["stages"]!.AsArray().Count);
     }
 

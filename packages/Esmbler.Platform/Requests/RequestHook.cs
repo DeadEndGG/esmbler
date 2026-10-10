@@ -58,11 +58,11 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
             return ValueTask.CompletedTask;
         }
 
-        // Requests whose item needs approval reach fulfillment only through the approval engine (ADR 0016).
-        if (ctx.Operation == WriteOperations.Transition && !ctx.SystemActor && binding.Approval is not null && item.ApprovalPolicy is not null
-            && ctx.EffectiveWorkflow is { } flow && ctx.FromState == flow.InitialState && ctx.ToState is { } to && binding.StartStates.Contains(to))
+        // Approvals drive the workflow in and out of the approval state; people cannot step around them (ADR 0016).
+        if (ctx.Operation == WriteOperations.Transition && !ctx.SystemActor && binding.Approval is { } approval && ctx.EffectiveWorkflow is { } flow
+            && ctx.FromState is { } from && ctx.ToState is { } to && ApprovalError(item, binding, approval, flow, from, to) is { } refusal)
         {
-            ctx.Errors.Add(new FieldError(flow.StateField, "approval_required", $"'{item.Label}' needs approval before fulfillment starts.", "It moves on by itself once the approvers sign off."));
+            ctx.Errors.Add(refusal);
             return ValueTask.CompletedTask;
         }
 
@@ -72,11 +72,25 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
             ctx.SystemSet(titleField, JsonValue.Create(item.Label));
         }
 
-        if (ctx.Prior is not null && ctx.Changed.Contains(binding.VariablesField) && !ctx.SystemActor && ctx.EffectiveWorkflow is { } wf
-            && (ctx.Prior[wf.StateField]?.GetValue<string>() ?? wf.InitialState) != wf.InitialState)
+        // What approvers and fulfillers relied on cannot change once the request leaves intake.
+        if (ctx.Prior is not null && !ctx.SystemActor && ctx.EffectiveWorkflow is { } wf && (ctx.Prior[wf.StateField]?.GetValue<string>() ?? wf.InitialState) != wf.InitialState)
         {
-            ctx.Errors.Add(new FieldError(binding.VariablesField, "read_only", "Answers cannot change once the request is being worked on.", "Add a comment with the change, or cancel this request and raise a new one."));
-            return ValueTask.CompletedTask;
+            if (ctx.Changed.Contains(binding.VariablesField))
+            {
+                ctx.Errors.Add(new FieldError(binding.VariablesField, "read_only", "Answers cannot change once the request is being worked on.", "Add a comment with the change, or cancel this request and raise a new one."));
+                return ValueTask.CompletedTask;
+            }
+
+            foreach (var key in binding.LockedFields.Where(ctx.Changed.Contains))
+            {
+                var label = ctx.Entity.FindField(key)?.Label ?? key;
+                ctx.Errors.Add(new FieldError(key, "read_only", $"{label} cannot change once the request is being worked on.", "Add a comment with the change, or cancel this request and raise a new one."));
+            }
+
+            if (ctx.Errors.Count > 0)
+            {
+                return ValueTask.CompletedTask;
+            }
         }
 
         if (ctx.Prior is null || ctx.Changed.Contains(binding.VariablesField))
@@ -85,6 +99,38 @@ public sealed class RequestHook(FieldNormalizer normalizer) : IRecordWriteHook
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// People may not move a request that needs approval out of intake (except to reject or cancel it), out of the
+    /// approval state (except to cancel it), or into the approval state. A record pinned to a workflow version without the approval state predates
+    /// approvals and is grandfathered (ASM-046).
+    /// </summary>
+    private static FieldError? ApprovalError(CatalogItemSpec item, RequestBindingSpec binding, ApprovalBindingSpec approval, WorkflowSpec flow, string from, string to)
+    {
+        if (flow.FindState(approval.State) is null || flow.FindTransition(approval.RequestTransition) is null)
+        {
+            return null;
+        }
+
+        // From intake, a request that needs approval goes nowhere but approval (by the engine) or a cancelled state:
+        // any other path (straight to fulfillment, or via a tenant state such as triage) would skip the approvers.
+        if (item.ApprovalPolicy is not null && from == flow.InitialState && flow.FindState(to)?.Category != StateCategories.Cancelled)
+        {
+            return new FieldError(flow.StateField, "approval_required", $"'{item.Label}' needs approval before anyone works on it.", "It moves on by itself once the approvers sign off; you can still reject or cancel it.");
+        }
+
+        if (from == approval.State && flow.FindState(to)?.Category != StateCategories.Cancelled)
+        {
+            return new FieldError(flow.StateField, "approval_pending", "This request is waiting for approval; only the approvers can move it on.", "Cancel it instead, or ask the approvers to decide.");
+        }
+
+        if (to == approval.State && from != approval.State)
+        {
+            return new FieldError(flow.StateField, "approval_pending", "Only the approval engine sends requests for approval.");
+        }
+
+        return null;
     }
 
     private static void ProtectTaskLinks(RecordWriteContext ctx, RequestBindingSpec owner)

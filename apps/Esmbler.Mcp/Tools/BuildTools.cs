@@ -66,7 +66,7 @@ public sealed class ApprovalStageInput
     [Description("Group keys whose members may approve, e.g. service_desk.")]
     public List<string>? Groups { get; set; }
 
-    [Description("Fields naming the approver: record.<user or group field> or variables.<user or group question>.")]
+    [Description("Read-only user or group fields naming the approver: record.<field>. Requesters never choose their own approvers.")]
     public List<string>? Fields { get; set; }
 
     [Description("Optional condition over record and variables; the stage is skipped when false, e.g. variables.access_level == 'admin'.")]
@@ -349,7 +349,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         string? description = null,
         string? category = null,
         bool? active = null,
-        [Description("Approval policy ID from list_approval_policies that requests for this item pass before fulfillment. Removing an approval is an administrator's decision and is refused here.")] string? approval_policy = null) =>
+        [Description("Approval policy ID from list_approval_policies. Changing which policy approves an item is a permission change that only people with permission administration make; AI agents are refused.")] string? approval_policy = null) =>
         runner.RunAsync("update_catalog_item", AgentScopes.ConfigEdit, item, async ctx =>
             await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active, ApprovalPolicy = approval_policy } }], expected_version));
 

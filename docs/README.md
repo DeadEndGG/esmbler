@@ -50,6 +50,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [Master spec](spec/master-spec.md): product vision and requirements (not edited by agents).
 - [Execution brief](spec/execution-brief.md): how the platform is built; wins over the master spec (not edited by agents).
 - [Traceability matrix](spec/traceability.md): requirement IDs mapped to gate, code, tests and evidence.
+- [Connected workspace and guided creation](spec/connected-workspace.md): requirements addendum from the product owner's review (REQ-WS-001 to 006, REQ-ACC-15).
 
 ## Architecture
 

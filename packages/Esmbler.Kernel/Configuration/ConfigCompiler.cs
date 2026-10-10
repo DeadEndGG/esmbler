@@ -116,6 +116,53 @@ public sealed class ConfigCompiler(ConfigValidator validator)
             changes.Add("Roles changed");
         }
 
+        changes.AddRange(ApprovalChanges(before, after));
+        changes.AddRange(TransitionAccessChanges(before, after));
         return new PermissionImpact { Changed = changes.Count > 0, Changes = changes };
+    }
+
+    /// <summary>Who must approve a request (ADR 0016): an item's policy, or the stages of a policy an item uses.</summary>
+    private static IEnumerable<string> ApprovalChanges(EffectiveConfig before, EffectiveConfig after)
+    {
+        foreach (var item in after.CatalogItems)
+        {
+            var old = before.FindCatalogItem(item.Id);
+            if (old is not null && old.ApprovalPolicy != item.ApprovalPolicy)
+            {
+                yield return $"Changed the approval policy of {item.Id}";
+            }
+        }
+
+        foreach (var policy in after.ApprovalPolicies.Where(p => after.CatalogItems.Exists(i => i.ApprovalPolicy == p.Id)))
+        {
+            var old = before.FindApprovalPolicy(policy.Id);
+            if (old is not null && !JsonNode.DeepEquals(SpecJson.ToNode(old.Stages), SpecJson.ToNode(policy.Stages)))
+            {
+                yield return $"Changed the approvers of {policy.Id}";
+            }
+        }
+    }
+
+    /// <summary>Who may fire a transition and what it writes regardless of field permissions (roles, guard, set values).</summary>
+    private static IEnumerable<string> TransitionAccessChanges(EffectiveConfig before, EffectiveConfig after)
+    {
+        foreach (var wf in after.Workflows)
+        {
+            var old = before.Workflows.Find(w => w.Id == wf.Id);
+            if (old is null)
+            {
+                continue;
+            }
+
+            foreach (var t in wf.Transitions.Where(t => !t.System))
+            {
+                var o = old.FindTransition(t.Id);
+                var access = SpecJson.ToNode(new { t.Roles, t.Guard, t.Set });
+                if (o is null ? t.Roles.Count == 0 || t.Set.Count > 0 : !JsonNode.DeepEquals(access, SpecJson.ToNode(new { o.Roles, o.Guard, o.Set })))
+                {
+                    yield return $"Changed who may fire {wf.Id}/{t.Id}";
+                }
+            }
+        }
     }
 }

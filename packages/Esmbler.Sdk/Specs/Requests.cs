@@ -148,6 +148,12 @@ public sealed class RequestBindingSpec
     /// <summary>System transition that cancels an unfinished task when its request is rejected or cancelled.</summary>
     public required string TaskCancelTransition { get; set; }
 
+    /// <summary>
+    /// Fields that, like the answers, people cannot change once the request leaves its workflow's initial state (what
+    /// approvers and fulfillers relied on, e.g. who the request is for). Platform writes may still set them.
+    /// </summary>
+    public List<string> LockedFields { get; set; } = [];
+
     /// <summary>How approvals drive this entity's workflow; required for catalog items with an approval policy.</summary>
     public ApprovalBindingSpec? Approval { get; set; }
 }

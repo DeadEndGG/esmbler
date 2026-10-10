@@ -561,6 +561,11 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         Need(entity, binding.CatalogItemField, t => t == FieldTypes.CatalogItem, FieldTypes.CatalogItem);
         Need(entity, binding.VariablesField, t => t == FieldTypes.Variables, FieldTypes.Variables);
         Need(entity, binding.OutcomeField, t => t == FieldTypes.SingleSelect, FieldTypes.SingleSelect);
+        foreach (var key in binding.LockedFields.Where(k => entity.FindField(k) is null))
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Locked field '{key}' is not a field of {entity.Label}.", entity.Id, Expression.Suggest(key, entity.Fields.Select(f => f.Key))));
+        }
+
         var task = config.FindEntity(binding.TaskEntity);
         if (task is null)
         {
@@ -611,7 +616,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         NeedTransition(requestFlow, binding.CompleteTransition, "completion");
         if (binding.Approval is { } approval)
         {
-            ValidateApprovalBinding(entity, approval, requestFlow, d);
+            ValidateApprovalBinding(config, entity, approval, requestFlow, d);
         }
 
         NeedTransition(taskFlow, binding.TaskReleaseTransition, "task release");
@@ -640,7 +645,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
     private const int MaxTasks = 50;
 
-    private static void ValidateApprovalBinding(EntitySpec entity, ApprovalBindingSpec approval, WorkflowSpec flow, List<Diagnostic> d)
+    private static void ValidateApprovalBinding(SpecCatalog config, EntitySpec entity, ApprovalBindingSpec approval, WorkflowSpec flow, List<Diagnostic> d)
     {
         if (flow.FindState(approval.State) is null)
         {
@@ -688,6 +693,45 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
             && flow.FindState(target)?.Category != StateCategories.Cancelled)
         {
             d.Add(Diagnostic.Error("config.strands_approvals", $"Migrating {entity.PluralLabel.ToLowerInvariant()} from '{approval.State}' to '{target}' would abandon their pending approvals.", flow.Id, $"Keep '{approval.State}' or map it to a cancelled state."));
+        }
+
+        // Nothing migrates into the approval state (it would wait for an approval that never started), and nothing
+        // migrates out of intake except to a cancelled state (it would skip approval).
+        if (flow.ActiveInstances.Policy == ActiveInstancePolicies.Migrate)
+        {
+            foreach (var (from, to) in flow.ActiveInstances.StateMap.Where(m => m.Key != approval.State && m.Value == approval.State))
+            {
+                d.Add(Diagnostic.Error("config.strands_approvals", $"Migrating {entity.PluralLabel.ToLowerInvariant()} from '{from}' into '{to}' would leave them waiting for an approval that never started.", flow.Id, $"Map '{from}' to another state."));
+            }
+
+            foreach (var (from, to) in flow.ActiveInstances.StateMap.Where(m => m.Key == flow.InitialState && m.Value != flow.InitialState && flow.FindState(m.Value)?.Category != StateCategories.Cancelled))
+            {
+                d.Add(Diagnostic.Error("config.skips_approval", $"Migrating {entity.PluralLabel.ToLowerInvariant()} from '{from}' to '{to}' would skip their approval.", flow.Id, $"Keep '{from}' or map it to a cancelled state."));
+            }
+        }
+
+        foreach (var key in approval.RequesterFields.Where(k => entity.FindField(k)?.Type != FieldTypes.User))
+        {
+            d.Add(Diagnostic.Error("config.bad_approval_binding", $"Requester field '{key}' of {entity.Label} must be a user field.", entity.Id));
+        }
+
+        // The approvers list is written by the approval engine alone: no rule, transition or default may set it.
+        foreach (var rule in config.Rules.Where(r => r.Entity == entity.Id))
+        {
+            if (rule.Actions.Exists(a => a.Field == approval.ApproversField && a.Type == RuleActionTypes.SetValue))
+            {
+                d.Add(Diagnostic.Error("config.platform_field", $"Rule '{rule.Id}' sets '{approval.ApproversField}', which only the approval engine writes.", rule.Id));
+            }
+        }
+
+        if (flow.Transitions.Exists(t => t.Set.ContainsKey(approval.ApproversField)))
+        {
+            d.Add(Diagnostic.Error("config.platform_field", $"A transition of {flow.Id} sets '{approval.ApproversField}', which only the approval engine writes.", flow.Id));
+        }
+
+        if (entity.FindField(approval.ApproversField)?.Default is not null)
+        {
+            d.Add(Diagnostic.Error("config.platform_field", $"'{approval.ApproversField}' cannot have a default; only the approval engine writes it.", $"{entity.Id}/{approval.ApproversField}"));
         }
 
     }
@@ -750,7 +794,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
 
             foreach (var approver in stage.Approvers.Concat(stage.EscalateTo))
             {
-                ValidateApprover(config, entity, items, approver, target, d);
+                ValidateApprover(config, entity, approver, target, d);
             }
 
             if (stage.ExpiresAfterHours is { } hours && (hours < 1 || hours > 24 * 90))
@@ -788,7 +832,7 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
         }
     }
 
-    private static void ValidateApprover(SpecCatalog config, EntitySpec entity, List<CatalogItemSpec> items, ApproverSpec approver, string target, List<Diagnostic> d)
+    private static void ValidateApprover(SpecCatalog config, EntitySpec entity, ApproverSpec approver, string target, List<Diagnostic> d)
     {
         switch (approver.Kind)
         {
@@ -814,13 +858,15 @@ public sealed class ConfigValidator(IElementRegistry registry, IPropsValidator p
                     {
                         d.Add(Diagnostic.Error("config.bad_approvers", $"Approver field '{approver.Ref}' must be a user or group field of {entity.Label}.", target, Expression.Suggest(key, entity.Fields.Where(x => ApproverFieldTypes.Contains(x.Type)).Select(x => x.Key))));
                     }
-                }
-                else if (parts is ["variables", var question])
-                {
-                    foreach (var item in items.Where(i => i.FindVariable(question) is not { } v || !ApproverFieldTypes.Contains(v.Type)))
+                    else if (!f.ReadOnly && !f.System)
                     {
-                        d.Add(Diagnostic.Error("config.bad_approvers", $"Approver '{approver.Ref}' must be a user or group question of every item using the policy; '{item.Label}' has none.", target));
+                        // A field the requester can fill would let them choose their own approver.
+                        d.Add(Diagnostic.Error("config.self_chosen_approver", $"Approver field '{approver.Ref}' can be set by the requester; approvers must not be chosen by the person asking.", target, "Use a read-only field set by agents or the platform, a group, or a role."));
                     }
+                }
+                else if (parts is ["variables", _])
+                {
+                    d.Add(Diagnostic.Error("config.self_chosen_approver", $"Approver '{approver.Ref}' is an answer the requester gives; approvers must not be chosen by the person asking.", target, "Use a group, a role, or a read-only record field."));
                 }
                 else
                 {

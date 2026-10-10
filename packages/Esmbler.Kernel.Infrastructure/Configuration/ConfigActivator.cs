@@ -78,6 +78,16 @@ public sealed class ConfigActivator(ConfigCompiler compiler, ModuleCatalog catal
 
         await RegisterWorkflowsAsync(db, tenantId, environmentId, active?.PreviousRevision, result.Config, revision, source, approvedBy ?? createdBy, ct);
 
+        // Requests still in intake whose item now needs approval are sent for approval after commit (ADR 0016).
+        if (result.Config.CatalogItems.Exists(i => i.ApprovalPolicy is not null))
+        {
+            await JobScheduler.ScheduleAsync(db, tenantId, environmentId, new JobRequest(Approvals.ApprovalService.SweepJobKind, new JsonObject { ["revision"] = revision })
+            {
+                DedupKey = Approvals.ApprovalService.SweepJobKind,
+                ReplaceExisting = true,
+            }, ct);
+        }
+
         db.Outbox.Add(new OutboxRow
         {
             Id = Guid.NewGuid(),

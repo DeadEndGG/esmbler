@@ -104,7 +104,7 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<NotificationRow>().ToTable("notifications").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
-        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot"];
+        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters"];
         foreach (var entity in b.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

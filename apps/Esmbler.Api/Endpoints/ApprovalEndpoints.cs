@@ -20,8 +20,9 @@ public static class ApprovalEndpoints
             new { pending = await service.PendingCountAsync(RequestContextFactory.From(user, "api"), ct) });
         approvals.MapPost("/steps/{stepId:guid}/decision", (Guid stepId, DecisionRequest body, ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>
             service.DecideAsync(RequestContextFactory.From(user, "api"), stepId, body.Decision, body.Comment, ct));
-        approvals.MapGet("/delegations", (ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>
-            service.DelegationsAsync(RequestContextFactory.From(user, "api"), ct));
+        // ?all=true: every current delegation in the workspace, for permission administrators (governance review).
+        approvals.MapGet("/delegations", (bool? all, ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>
+            service.DelegationsAsync(RequestContextFactory.From(user, "api"), ct, all ?? false));
         approvals.MapPost("/delegations", (DelegationRequest body, ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>
             service.DelegateAsync(RequestContextFactory.From(user, "api"), body.Delegate, body.StartsAt, body.EndsAt, ct));
         approvals.MapDelete("/delegations/{id:guid}", async (Guid id, ClaimsPrincipal user, ApprovalService service, CancellationToken ct) =>

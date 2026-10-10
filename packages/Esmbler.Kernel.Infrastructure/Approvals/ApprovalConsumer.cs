@@ -70,3 +70,32 @@ public sealed class ApprovalExpiryJobHandler(ApprovalService approvals) : IJobHa
             return 0;
         }, ct);
 }
+
+/// <summary>Starts approvals for requests already in intake when their item gains a policy (scheduled at activation).</summary>
+public sealed class ApprovalSweepJobHandler(ApprovalService approvals) : IJobHandler
+{
+    public string Kind => ApprovalService.SweepJobKind;
+
+    /// <summary>The publish that set the policy carried the approval; the sweep only starts what the policy requires.</summary>
+    public string? RequiredAction => null;
+
+    public Task RunAsync(JobContext job, CancellationToken ct) =>
+        job.Database.InTenantAsync(job.TenantId, job.EnvironmentId, null, db => approvals.SweepAsync(db, job.TenantId, job.EnvironmentId, ct), ct);
+}
+
+/// <summary>Delegation timer (ADR 0016): grants a delegate read access when the delegation starts, withdraws it when it ends.</summary>
+public sealed class ApprovalDelegationJobHandler(ApprovalService approvals) : IJobHandler
+{
+    public string Kind => ApprovalService.DelegationJobKind;
+
+    /// <summary>Set by the delegator's own action; the timer acts only on that delegation.</summary>
+    public string? RequiredAction => null;
+
+    public Task RunAsync(JobContext job, CancellationToken ct) =>
+        job.Database.InTenantAsync(job.TenantId, job.EnvironmentId, null, async db =>
+        {
+            await approvals.DelegationTimerAsync(db, job.TenantId, job.EnvironmentId, Guid.Parse(job.Payload["delegation"]!.GetValue<string>()), job.Payload["phase"]!.GetValue<string>(), ct);
+            return 0;
+        }, ct);
+}
+

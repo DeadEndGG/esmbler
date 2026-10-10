@@ -176,7 +176,15 @@ const EXAMPLES = [
               }
             </ul>
           }
-          @if (d.permissionImpact) { <p class="callout tone-amber mt-2 text-body-sm"><esm-icon name="shield" [size]="14" /> This draft changes who can see or edit data. Publishing requires permission administration.</p> }
+          @if (d.approvalImpact?.length) {
+            <h3>Approvals in flight</h3>
+            <ul class="impact">
+              @for (a of d.approvalImpact; track a.policy) {
+                <li><strong>{{ a.policyLabel }}</strong> <span class="muted">{{ a.pending }} pending</span> <span class="badge tone-blue">keep the policy they started with</span></li>
+              }
+            </ul>
+          }
+          @if (d.permissionImpact) { <p class="callout tone-amber mt-2 text-body-sm"><esm-icon name="shield" [size]="14" /> This draft changes who can see, edit or approve. Publishing requires permission administration.</p> }
           <h3>What changes</h3>
           <ul class="changes">
             @for (c of d.changes; track c.kind + c.id) {

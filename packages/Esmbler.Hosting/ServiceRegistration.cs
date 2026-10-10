@@ -84,6 +84,8 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Events.UpgradeJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Events.WorkflowMigrationJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalExpiryJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalSweepJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Approvals.ApprovalDelegationJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.OperationsService>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();

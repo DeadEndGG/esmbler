@@ -214,6 +214,13 @@ public sealed class EffectivePermissions
             foreach (var af in entity.AccessFields)
             {
                 var f = entity.FindField(af.Field);
+                if (f?.Type == FieldTypes.Principals && data[af.Field] is JsonArray list
+                    && list.OfType<JsonValue>().Any(x => x.TryGetValue<string>(out var s) && Guid.TryParse(s, out var p) && (p == Facts.PrincipalId || Facts.Groups.Contains(p))))
+                {
+                    reasons.Add(new AccessReason("relationship", $"Is listed in {f.Label} (as an approver or their delegate, or through a group)."));
+                    continue;
+                }
+
                 if (data[af.Field] is JsonValue v && v.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out var id)
                     && (f?.Type == FieldTypes.Group ? Facts.Groups.Contains(id) : id == Facts.PrincipalId))
                 {

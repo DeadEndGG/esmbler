@@ -60,6 +60,39 @@ public class UpgradeTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Upgrading_to_approvals_keeps_requests_already_submitted_workable()
+    {
+        // ASM-046: requests submitted before their item needed approval stay on their workflow version and are
+        // grandfathered; new requests go through approval.
+        var t = await f.NewTenantAsync("upappr", "1.2.0");
+        var admin = f.As(t, "admin");
+        var records = f.Get<RecordService>();
+        var before = await records.CreateAsync(f.As(t, "dana"), "core.tickets.request", new JsonObject { ["catalog_item"] = "core.tickets.catalog.new_laptop", ["variables"] = new JsonObject { ["model"] = "standard", ["justification"] = "Before approvals" } }, null, null, default);
+
+        var upgrades = f.Get<UpgradeService>();
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.3.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);
+        var runner = f.Get<Kernel.Infrastructure.Events.JobRunner>();
+        var dispatcher = f.Get<Kernel.Infrastructure.Events.OutboxDispatcher>();
+        while (await dispatcher.DispatchOnceAsync(default) > 0 | await runner.RunOnceAsync(default) > 0)
+        {
+        }
+
+        var old = await records.GetAsync(f.As(t, "agent"), "core.tickets.request", before.Id, default);
+        Assert.Equal("submitted", old.Data["status"]!.GetValue<string>());
+        var moved = await records.TransitionAsync(f.As(t, "agent"), "core.tickets.request", before.Id, old.Revision, "start_fulfillment", [], null, null, default);
+        Assert.Equal("fulfilling", moved.Data["status"]!.GetValue<string>());
+
+        var after = await records.CreateAsync(f.As(t, "dana"), "core.tickets.request", new JsonObject { ["catalog_item"] = "core.tickets.catalog.new_laptop", ["variables"] = new JsonObject { ["model"] = "standard", ["justification"] = "After approvals" } }, null, null, default);
+        while (await dispatcher.DispatchOnceAsync(default) > 0)
+        {
+        }
+
+        Assert.Equal("awaiting_approval", (await records.GetAsync(f.As(t, "agent"), "core.tickets.request", after.Id, default)).Data["status"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure()
     {
         var t = await f.NewTenantAsync("tu");

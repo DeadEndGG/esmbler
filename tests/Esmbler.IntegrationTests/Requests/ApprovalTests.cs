@@ -278,7 +278,8 @@ public class ApprovalTests(PlatformFixture f)
         Assert.Equal("pending", escalation.Status);
         Assert.Equal("Service Desk", escalation.Approver);
 
-        // The service desk (the agent) can now decide; the original approvers still can too.
+        // The escalation replaces the original approvers: their steps expired, and the service desk decides.
+        Assert.All(view.Stages[0].Steps.Where(s => !s.Escalation), s => Assert.Equal("expired", s.Status));
         Assert.True((await ApprovalAsync(t, escalated.Id, "agent")).Stages[0].Steps.Single(s => s.Escalation).CanDecide);
         await DecideAsync(t, "agent", escalation.Id);
         Assert.Equal("fulfilling", Status(await GetAsync(t, escalated.Id)));
@@ -368,5 +369,209 @@ public class ApprovalTests(PlatformFixture f)
         Assert.Empty((await Approvals.InboxAsync(f.As(other, "jamie"), default)).Pending);
         await Assert.ThrowsAsync<KernelException>(() => Approvals.ForRecordAsync(f.As(other, "agent"), Request, request.Id, default));
         Assert.Equal("awaiting_approval", Status(await GetAsync(t, request.Id)));
+    }
+
+    private static ApprovalPolicySpec TenantPolicy(string id, params ApprovalStageSpec[] stages) => new() { Id = id, Label = id, Entity = Request, Stages = [.. stages] };
+
+    private async Task UsePolicyAsync(ProvisionedTenant t, ApprovalPolicySpec policy, string item = Laptop) =>
+        await PublishAsync(t, new AddApprovalPolicy { Policy = policy }, new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { ApprovalPolicy = policy.Id } });
+
+    private async Task ExpireTimersAsync(ProvisionedTenant t, string kind = ApprovalService.ExpireJobKind)
+    {
+        await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, ctx => ctx.Jobs.Where(j => j.Kind == kind && j.Status == "pending").ExecuteUpdateAsync(s => s.SetProperty(j => j.AvailableAt, DateTimeOffset.UtcNow.AddSeconds(-1)), default), default);
+        await DrainAsync();
+    }
+
+    [Fact]
+    public async Task The_person_a_request_is_for_cannot_approve_it()
+    {
+        var t = await f.NewTenantAsync("forwhom", "1.3.0");
+        var created = await Records.CreateAsync(f.As(t, "dana"), Request, new JsonObject { ["catalog_item"] = Laptop, ["variables"] = LaptopAnswers.DeepClone(), ["requested_for"] = t.Users["jamie"].ToString() }, null, null, default);
+        await DrainAsync();
+        var step = await PendingStepAsync(t, created.Id);
+        var self = await Assert.ThrowsAsync<KernelException>(() => Approvals.DecideAsync(f.As(t, "jamie"), step.Id, "approved", null, default));
+        Assert.Equal(403, self.Status);
+        Assert.DoesNotContain((await Approvals.InboxAsync(f.As(t, "jamie"), default)).Pending, i => i.RecordId == created.Id);
+
+        // Changing who it is for after submission is refused, so the snapshot and the record agree.
+        var mine = await Records.GetAsync(f.As(t, "dana"), Request, created.Id, default);
+        var redirect = await Assert.ThrowsAsync<ValidationFailedException>(() => Records.UpdateAsync(f.As(t, "dana"), Request, created.Id, mine.Revision, new JsonObject { ["requested_for"] = t.Users["riley"].ToString() }, null, null, default));
+        Assert.Contains(redirect.Errors, e => e.Field == "requested_for" && e.Code == "read_only");
+        var notes = await Assert.ThrowsAsync<ValidationFailedException>(() => Records.UpdateAsync(f.As(t, "dana"), Request, created.Id, mine.Revision, new JsonObject { ["description"] = "Make it two laptops" }, null, null, default));
+        Assert.Contains(notes.Errors, e => e.Field == "description");
+
+        await DecideAsync(t, "quinn", step.Id);
+        Assert.Equal("fulfilling", Status(await GetAsync(t, created.Id)));
+    }
+
+    [Fact]
+    public async Task People_cannot_step_around_a_pending_approval_with_their_own_transitions()
+    {
+        var t = await f.NewTenantAsync("around", "1.3.0");
+        const string Flow = "core.tickets.request_lifecycle";
+        await PublishAsync(
+            t,
+            new AddWorkflowState { Workflow = Flow, State = new WorkflowState { Id = "tenant__triage", Category = StateCategories.New }, Label = "Triage", Tone = "accent.blue" },
+            new AddTransition { Workflow = Flow, Transition = new WorkflowTransition { Id = "tenant__triage", Label = "Triage", From = ["submitted"], To = "tenant__triage", Roles = ["core.tickets.agent"] } },
+            new AddTransition { Workflow = Flow, Transition = new WorkflowTransition { Id = "tenant__fast_track", Label = "Fast track", From = ["awaiting_approval", "tenant__triage"], To = "fulfilling", Roles = ["core.tickets.agent"] } });
+
+        // Before the approval engine picks it up, the request is in intake: only reject or cancel are open to people.
+        var fresh = await Records.CreateAsync(f.As(t, "dana"), Request, new JsonObject { ["catalog_item"] = Laptop, ["variables"] = LaptopAnswers.DeepClone() }, null, null, default);
+        var triage = await Assert.ThrowsAsync<ValidationFailedException>(() => Records.TransitionAsync(f.As(t, "agent"), Request, fresh.Id, fresh.Revision, "tenant__triage", [], null, null, default));
+        Assert.Contains(triage.Errors, e => e.Code == "approval_required");
+        await DrainAsync();
+
+        var waiting = await GetAsync(t, fresh.Id);
+        Assert.Equal("awaiting_approval", Status(waiting));
+        var fast = await Assert.ThrowsAsync<ValidationFailedException>(() => Records.TransitionAsync(f.As(t, "agent"), Request, fresh.Id, waiting.Revision, "tenant__fast_track", [], null, null, default));
+        Assert.Contains(fast.Errors, e => e.Code == "approval_pending");
+        Assert.Empty(await TasksAsync(t, fresh.Id));
+    }
+
+    [Fact]
+    public async Task An_escalation_decides_alone_and_its_rejection_rejects_the_request()
+    {
+        var t = await f.NewTenantAsync("escrej", "1.3.0");
+        await UsePolicyAsync(t, TenantPolicy(
+            "tenant__two_keys",
+            new ApprovalStageSpec
+            {
+                Id = "both",
+                Label = "Both keys",
+                Mode = ApprovalModes.All,
+                Approvers = [new ApproverSpec { Kind = ApproverKinds.Role, Ref = "core.tickets.approver" }, new ApproverSpec { Kind = ApproverKinds.Group, Ref = "network" }],
+                ExpiresAfterHours = 24,
+                OnExpiry = ApprovalExpiry.Escalate,
+                EscalateTo = [new ApproverSpec { Kind = ApproverKinds.Group, Ref = "service_desk" }],
+            }));
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        var role = (await ApprovalAsync(t, request.Id)).Stages[0].Steps.Single(s => s.ApproverKind == "role");
+        await DecideAsync(t, "jamie", role.Id);
+        await ExpireTimersAsync(t);
+
+        var escalation = (await ApprovalAsync(t, request.Id)).Stages[0].Steps.Single(s => s.Escalation);
+        await DecideAsync(t, "admin", escalation.Id, "rejected", "Not in this quarter's budget.");
+        Assert.Equal("rejected", Status(await GetAsync(t, request.Id)));
+        Assert.Empty(await TasksAsync(t, request.Id));
+    }
+
+    [Fact]
+    public async Task An_unescalated_stage_that_expires_declines_the_request()
+    {
+        var t = await f.NewTenantAsync("exprej", "1.3.0");
+        await UsePolicyAsync(t, TenantPolicy("tenant__quick", new ApprovalStageSpec { Id = "quick", Label = "Quick check", Approvers = [new ApproverSpec { Kind = ApproverKinds.Role, Ref = "core.tickets.approver" }], ExpiresAfterHours = 1 }));
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        await ExpireTimersAsync(t);
+        Assert.Equal("rejected", Status(await GetAsync(t, request.Id)));
+        Assert.Contains("expired", (await ApprovalAsync(t, request.Id)).OutcomeReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_delegator_cannot_decide_a_second_step_after_their_delegate_decided_one()
+    {
+        var t = await f.NewTenantAsync("double", "1.3.0");
+        await UsePolicyAsync(t, TenantPolicy("tenant__desks", new ApprovalStageSpec
+        {
+            Id = "desks",
+            Label = "Both desks",
+            Mode = ApprovalModes.All,
+            Approvers = [new ApproverSpec { Kind = ApproverKinds.Group, Ref = "service_desk" }, new ApproverSpec { Kind = ApproverKinds.Group, Ref = "network" }],
+        }));
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        await Approvals.DelegateAsync(f.As(t, "agent"), t.Users["riley"], DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(2), default);
+        var steps = (await ApprovalAsync(t, request.Id)).Stages[0].Steps;
+        await DecideAsync(t, "riley", steps.Single(s => s.Approver == "Network").Id);
+
+        var second = await Assert.ThrowsAsync<KernelException>(() => Approvals.DecideAsync(f.As(t, "agent"), steps.Single(s => s.Approver == "Service Desk").Id, "approved", null, default));
+        Assert.Equal(403, second.Status);
+        var audited = await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AnyAsync(a => a.Operation == "approval.decide" && a.Outcome == "denied" && a.TargetId == request.Id.ToString()), default);
+        Assert.True(audited, "denied decisions are audited");
+    }
+
+    [Fact]
+    public async Task A_delegate_reads_requests_only_while_the_delegation_is_active_and_never_through_a_chain()
+    {
+        var t = await f.NewTenantAsync("window", "1.3.0");
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        var later = await Approvals.DelegateAsync(f.As(t, "quinn"), t.Users["riley"], DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow.AddDays(3), default);
+        await DrainAsync();
+        Assert.False(later.Active);
+        await Assert.ThrowsAsync<KernelException>(() => Records.GetAsync(f.As(t, "riley"), Request, request.Id, default));
+
+        // The delegation starts (its timer fires): Riley can read and decide for Quinn.
+        await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.ApprovalDelegations.Where(d => d.Id == later.Id).ExecuteUpdateAsync(s => s.SetProperty(d => d.StartsAt, DateTimeOffset.UtcNow.AddMinutes(-1)), default), default);
+        var startKey = $"{ApprovalService.DelegationJobKind}:{later.Id}:start";
+        await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.Jobs.Where(j => j.DedupKey == startKey).ExecuteUpdateAsync(s => s.SetProperty(j => j.AvailableAt, DateTimeOffset.UtcNow.AddSeconds(-1)), default), default);
+        await DrainAsync();
+        Assert.Equal(request.Id, (await Records.GetAsync(f.As(t, "riley"), Request, request.Id, default)).Id);
+
+        // Riley passes it on to Jordan: Jordan cannot act for Quinn.
+        await Approvals.DelegateAsync(f.As(t, "riley"), t.Users["jordan"], DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(1), default);
+        var step = await PendingStepAsync(t, request.Id);
+        var chained = await Assert.ThrowsAsync<KernelException>(() => Approvals.DecideAsync(f.As(t, "jordan"), step.Id, "approved", null, default));
+        Assert.Equal(403, chained.Status);
+
+        // Revoking withdraws the access Riley had only as Quinn's delegate.
+        await Approvals.RevokeDelegationAsync(f.As(t, "quinn"), later.Id, default);
+        await Assert.ThrowsAsync<KernelException>(() => Records.GetAsync(f.As(t, "riley"), Request, request.Id, default));
+        var tooFar = await Assert.ThrowsAsync<ValidationFailedException>(() => Approvals.DelegateAsync(f.As(t, "quinn"), t.Users["riley"], DateTimeOffset.UtcNow.AddDays(120), DateTimeOffset.UtcNow.AddDays(121), default));
+        Assert.Contains(tooFar.Errors, e => e.Field == "endsAt");
+    }
+
+    [Fact]
+    public async Task People_cannot_write_the_approvers_field()
+    {
+        var t = await f.NewTenantAsync("apprfield", "1.3.0");
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        foreach (var user in new[] { "dana", "agent" })
+        {
+            var current = await Records.GetAsync(f.As(t, user), Request, request.Id, default);
+            var refused = await Assert.ThrowsAsync<ValidationFailedException>(() => Records.UpdateAsync(f.As(t, user), Request, request.Id, current.Revision, new JsonObject { ["approvers"] = new JsonArray(t.Users[user].ToString()) }, null, null, default));
+            Assert.Contains(refused.Errors, e => e.Field == "approvers" && e.Code == "read_only");
+        }
+    }
+
+    [Fact]
+    public async Task Requests_in_intake_go_for_approval_when_their_item_gains_a_policy()
+    {
+        var t = await f.NewTenantAsync("gains", "1.3.0");
+        var request = await SubmitAsync(t, Onboarding, new JsonObject { ["new_hire_name"] = "Ada", ["start_date"] = "2026-12-01", ["department"] = "engineering" });
+        Assert.Equal("submitted", Status(request));
+
+        await PublishAsync(t, new UpdateCatalogItem { Item = Onboarding, Set = new CatalogItemPatch { ApprovalPolicy = "core.tickets.approval.manager" } });
+        await DrainAsync();
+        Assert.Equal("awaiting_approval", Status(await GetAsync(t, request.Id)));
+        Assert.Equal("pending", (await ApprovalAsync(t, request.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Migrating_the_workflow_keeps_pending_approvals_and_they_still_complete()
+    {
+        var t = await f.NewTenantAsync("migappr", "1.3.0");
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        await PublishAsync(
+            t,
+            new AddWorkflowState { Workflow = "core.tickets.request_lifecycle", State = new WorkflowState { Id = "tenant__on_hold", Category = StateCategories.Pending }, Label = "On hold", Tone = "accent.amber" },
+            new SetActiveInstancePolicy { Workflow = "core.tickets.request_lifecycle", Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate } });
+        await DrainAsync();
+
+        Assert.Equal("awaiting_approval", Status(await GetAsync(t, request.Id)));
+        await DecideAsync(t, "jamie", (await PendingStepAsync(t, request.Id)).Id);
+        Assert.Equal("fulfilling", Status(await GetAsync(t, request.Id)));
+        Assert.Equal(3, (await TasksAsync(t, request.Id)).Count);
+    }
+
+    [Fact]
+    public async Task Approvals_stay_in_their_environment_and_admins_review_every_delegation()
+    {
+        var t = await f.NewTenantAsync("envappr", "1.3.0");
+        var request = await SubmitAsync(t, Laptop, LaptopAnswers);
+        Assert.DoesNotContain((await Approvals.InboxAsync(f.As(t, "jamie", env: "sandbox"), default)).Pending, i => i.RecordId == request.Id);
+        await Assert.ThrowsAsync<KernelException>(() => Approvals.ForRecordAsync(f.As(t, "agent", env: "sandbox"), Request, request.Id, default));
+
+        await Approvals.DelegateAsync(f.As(t, "quinn"), t.Users["riley"], DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(2), default);
+        Assert.Contains(await Approvals.DelegationsAsync(f.As(t, "admin"), default, all: true), d => d.DelegatorId == t.Users["quinn"]);
+        var notAdmin = await Assert.ThrowsAsync<KernelException>(() => Approvals.DelegationsAsync(f.As(t, "jamie"), default, all: true));
+        Assert.Equal(403, notAdmin.Status);
     }
 }

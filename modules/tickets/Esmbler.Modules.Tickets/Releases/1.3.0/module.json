@@ -341,8 +341,16 @@
           "requestTransition": "request_approval",
           "approvedTransition": "approve",
           "declinedTransition": "decline",
-          "approversField": "approvers"
-        }
+          "approversField": "approvers",
+          "requesterFields": [
+            "requester",
+            "requested_for"
+          ]
+        },
+        "lockedFields": [
+          "requested_for",
+          "description"
+        ]
       }
     },
     {

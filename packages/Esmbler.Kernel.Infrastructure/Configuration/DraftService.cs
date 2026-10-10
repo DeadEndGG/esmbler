@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
@@ -23,7 +24,11 @@ public sealed record DraftState(
     IReadOnlyList<ConfigChange> Changes,
     string? ArtifactHash,
     bool PermissionImpact,
-    IReadOnlyList<WorkflowImpact>? WorkflowImpact = null);
+    IReadOnlyList<WorkflowImpact>? WorkflowImpact = null,
+    IReadOnlyList<ApprovalImpact>? ApprovalImpact = null);
+
+/// <summary>Approvals in flight under a policy the draft changes or moves items away from; they keep the policy they started with (ADR 0016).</summary>
+public sealed record ApprovalImpact(string Policy, string PolicyLabel, int Pending);
 
 /// <summary>
 /// What publishing a changed workflow does to its running instances (REQ-MIG-003): how many run now, how many the
@@ -235,7 +240,37 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             ConfigDiff.Compare(compiled.Published.Config, compiled.Result.Config),
             compiled.Result.Manifest?.ContentHash,
             compiled.Result.Manifest?.PermissionImpact.Changed ?? false,
-            await WorkflowImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
+            await WorkflowImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct),
+            await ApprovalImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
+    }
+
+    private static async Task<IReadOnlyList<ApprovalImpact>> ApprovalImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)
+    {
+        var affected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in published.CatalogItems.Where(i => i.ApprovalPolicy is not null && draft.FindCatalogItem(i.Id)?.ApprovalPolicy != i.ApprovalPolicy))
+        {
+            affected.Add(item.ApprovalPolicy!);
+        }
+
+        foreach (var policy in published.ApprovalPolicies)
+        {
+            if (draft.FindApprovalPolicy(policy.Id) is not { } now || !JsonNode.DeepEquals(SpecJson.ToNode(now.Stages), SpecJson.ToNode(policy.Stages)))
+            {
+                affected.Add(policy.Id);
+            }
+        }
+
+        var result = new List<ApprovalImpact>();
+        foreach (var id in affected.Order(StringComparer.Ordinal))
+        {
+            var pending = await db.Approvals.CountAsync(a => a.PolicyId == id && a.Status == "pending", ct);
+            if (pending > 0)
+            {
+                result.Add(new ApprovalImpact(id, published.FindApprovalPolicy(id)?.Label ?? id, pending));
+            }
+        }
+
+        return result;
     }
 
     private sealed record StateCount(string? State, int Count);

@@ -343,6 +343,12 @@
               "taskCancelTransition": {
                 "type": "string"
               },
+              "lockedFields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "approval": {
                 "type": [
                   "object",
@@ -363,6 +369,12 @@
                   },
                   "approversField": {
                     "type": "string"
+                  },
+                  "requesterFields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [

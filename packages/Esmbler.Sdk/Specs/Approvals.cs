@@ -101,4 +101,10 @@ public sealed class ApprovalBindingSpec
 
     /// <summary>Field of type <c>principals</c> listing approvers; declared as an access field so they can read the request.</summary>
     public string ApproversField { get; set; } = "approvers";
+
+    /// <summary>
+    /// User fields naming who the request is by or for (e.g. requester, requested_for). Like the creator, these people
+    /// never approve the request (separation of duties).
+    /// </summary>
+    public List<string> RequesterFields { get; set; } = [];
 }

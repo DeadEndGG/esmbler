@@ -358,9 +358,17 @@ export interface DraftState {
   artifactHash?: string;
   permissionImpact: boolean;
   workflowImpact?: WorkflowImpact[];
+  approvalImpact?: ApprovalImpact[];
 }
 
 /** What publishing a changed workflow does to running records (REQ-MIG-003). */
+/** Approvals in flight under a policy the draft changes; they keep the policy they started with (ADR 0016). */
+export interface ApprovalImpact {
+  policy: string;
+  policyLabel: string;
+  pending: number;
+}
+
 export interface WorkflowImpact {
   workflow: string;
   entity: string;

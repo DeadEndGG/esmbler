@@ -380,9 +380,12 @@ public sealed class UpdateCatalogItem : OverlayOp
 
     public override IEnumerable<string> Targets() => [Item];
 
-    /// <summary>Removing an item's approval lets its requests skip approvers: a permission change (ADR 0016).</summary>
+    /// <summary>
+    /// Choosing which policy approves an item's requests decides who must say yes (a weaker policy is as good as none),
+    /// so any change of an item's approval policy is a permission change (ADR 0016).
+    /// </summary>
     [JsonIgnore]
-    public override bool AffectsPermissions => Set.ApprovalPolicy is "";
+    public override bool AffectsPermissions => Set.ApprovalPolicy is not null;
 }
 
 /// <summary>Removes a tenant catalog item. Base items are deactivated instead (requests keep their item).</summary>

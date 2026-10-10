@@ -98,14 +98,16 @@ public class ApprovalPolicyTests
     }
 
     [Fact]
-    public void Weakening_approval_is_a_permission_change_but_adding_a_policy_is_not()
+    public void Changing_who_approves_is_a_permission_change_but_adding_an_unused_policy_is_not()
     {
         Assert.False(new AddApprovalPolicy { Policy = Policy() }.AffectsPermissions);
         Assert.True(new UpdateApprovalPolicy { Policy = "x", Set = new ApprovalPolicyPatch { Stages = [] } }.AffectsPermissions);
         Assert.False(new UpdateApprovalPolicy { Policy = "x", Set = new ApprovalPolicyPatch { Label = "X" } }.AffectsPermissions);
         Assert.True(new RemoveApprovalPolicy { Policy = "x" }.AffectsPermissions);
         Assert.True(new UpdateCatalogItem { Item = Laptop, Set = new CatalogItemPatch { ApprovalPolicy = "" } }.AffectsPermissions);
-        Assert.False(new UpdateCatalogItem { Item = Laptop, Set = new CatalogItemPatch { ApprovalPolicy = "tenant__finance" } }.AffectsPermissions);
+        // Pointing an item at another policy can weaken approval as much as clearing it (a policy whose stages never run).
+        Assert.True(new UpdateCatalogItem { Item = Laptop, Set = new CatalogItemPatch { ApprovalPolicy = "tenant__finance" } }.AffectsPermissions);
+        Assert.False(new UpdateCatalogItem { Item = Laptop, Set = new CatalogItemPatch { Label = "Laptop" } }.AffectsPermissions);
     }
 
     [Fact]
@@ -117,5 +119,52 @@ public class ApprovalPolicyTests
         Assert.Contains("\"op\":\"approval_policy.add\"", json, StringComparison.Ordinal);
         var back = Assert.IsType<AddApprovalPolicy>(SpecJson.Deserialize<OverlayOp>(json));
         Assert.Equal("finance", back.Policy.Stages[1].Id);
+    }
+
+    [Fact]
+    public void Requesters_never_choose_their_own_approvers()
+    {
+        var policy = Policy();
+        policy.Stages[0].Approvers = [new ApproverSpec { Kind = ApproverKinds.Field, Ref = "variables.manager" }];
+        policy.Stages[1].Approvers = [new ApproverSpec { Kind = ApproverKinds.Field, Ref = "record.requested_for" }];
+        var result = Compile("1.3.0", new AddApprovalPolicy { Policy = policy });
+        Assert.Equal(2, result.Errors.Count(e => e.Code == "config.self_chosen_approver"));
+    }
+
+    [Fact]
+    public void Only_the_approval_engine_writes_the_approvers_field()
+    {
+        var result = Compile("1.3.0", new AddRule
+        {
+            Rule = new RuleSpec
+            {
+                Id = "tenant__me_too",
+                Entity = Request,
+                Kind = RuleKinds.Conditional,
+                When = "true",
+                Actions = [new RuleActionSpec { Type = RuleActionTypes.SetValue, Field = "approvers", Value = "['00000000-0000-0000-0000-000000000001']" }],
+            },
+        });
+        Assert.Contains(result.Errors, e => e.Code == "config.platform_field");
+    }
+
+    [Fact]
+    public void Migrations_cannot_skip_approval_or_park_requests_in_the_approval_state()
+    {
+        var skip = Compile("1.3.0", new SetActiveInstancePolicy { Workflow = RequestFlow, Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate, StateMap = new() { ["submitted"] = "fulfilling" } } });
+        Assert.Contains(skip.Errors, e => e.Code == "config.skips_approval");
+        var park = Compile("1.3.0", new SetActiveInstancePolicy { Workflow = RequestFlow, Policy = new ActiveInstancePolicy { Policy = ActiveInstancePolicies.Migrate, StateMap = new() { ["fulfilling"] = "awaiting_approval" } } });
+        Assert.Contains(park.Errors, e => e.Code == "config.strands_approvals");
+    }
+
+    [Fact]
+    public void Changing_an_items_policy_or_a_used_policys_stages_needs_permission_administration()
+    {
+        var published = Compile("1.3.0").Config;
+        var impact = Compiler.Compile([PlatformSpec, Tickets("1.3.0")], [new AddApprovalPolicy { Policy = Policy() }, new UpdateCatalogItem { Item = Laptop, Set = new CatalogItemPatch { ApprovalPolicy = "tenant__finance" } }], published).Manifest!.PermissionImpact;
+        Assert.True(impact.Changed);
+        Assert.Contains(impact.Changes, c => c.Contains(Laptop, StringComparison.Ordinal));
+        var unused = Compiler.Compile([PlatformSpec, Tickets("1.3.0")], [new AddApprovalPolicy { Policy = Policy() }], published).Manifest!.PermissionImpact;
+        Assert.False(unused.Changed);
     }
 }

@@ -102,7 +102,8 @@ public sealed class QueryCompiler
                     if (field?.Type == FieldTypes.Principals)
                     {
                         var ids = permissions.Facts.Groups.Select(g => g.ToString()).Prepend(permissions.Facts.PrincipalId.ToString()).ToArray();
-                        parts.Add($"(r.data->{ctx.Param(af.Field)}) ?| {ctx.Param(ids)}");
+                        var key = ctx.Param(af.Field);
+                        parts.Add($"(jsonb_typeof(r.data->{key}) = 'array' AND (r.data->{key}) ?| {ctx.Param(ids)})");
                     }
                     else if (field?.Type == FieldTypes.Group)
                     {

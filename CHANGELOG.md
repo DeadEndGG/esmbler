@@ -10,6 +10,8 @@ Gate 2: private pilot (in progress).
 
 ### Added
 
+- Approvals (ADR 0016): Tickets 1.3.0 puts New laptop and Software access behind approval policies with sequential stages, all/any approvers, conditional stages, expiry and escalation; approvers decide from the Approvals page or the request's approvals panel; out-of-office delegation with an admin review; the publish review shows approvals in flight; approval policy overlay operations and MCP tools (`list_approval_policies`, `add_approval_policy`); migrations 0007 and 0008. REQ-BIZ-004, REQ-AUTHZ-011, REQ-MIG-003, REQ-ACC-05
+- Requirements addendum for a connected workspace and guided creation (REQ-WS-001 to 006, REQ-ACC-15), from the product owner's review.
 - Service requests (ADR 0015): Tickets 1.2.0 adds requests and fulfillment tasks, a service catalog with typed questions (New laptop, Software access, New hire onboarding), fulfillment tasks with dependencies and conditions, partial completion, rejection and cancellation; catalog page and request form; catalog and workflow overlay operations and MCP tools. REQ-BIZ-004, REQ-AI-003
 - Versioned workflows: published workflow changes create definition versions; running records stay pinned, migrate through a state map, or are cancelled, as the change's policy says, and the publish review shows the effect. REQ-MIG-003, REQ-ACC-05
 - Visual refresh of the web UI on Tailwind CSS v4 mapped onto the design tokens (ADR 0014): new sidebar and workspace switcher, sign-in with a product preview, segmented saved views, status badges with tone dots, card-based record page, AI builder panel with message bubbles and a step timeline, command palette, admin pages with page headers and table cards; Lucide icons; self-hosted Inter; refined light and dark tokens. axe passes in both themes. REQ-DS-001, REQ-DS-002, REQ-DS-003
@@ -17,6 +19,10 @@ Gate 2: private pilot (in progress).
 
 ### Security
 
+- Approvals: nobody decides on a request they made or that is for them, directly or through a delegate; one person's authority counts once per stage; AI agents cannot approve, reject or delegate; rejecting needs a reason; denied decisions are audited.
+- People cannot step around approval: requests that need approval cannot leave intake except to be rejected or cancelled, cannot leave the approval state except to be cancelled, and migrations cannot skip or strand approvals. Changing which policy approves an item, or a used policy's approvers, needs permission administration.
+- An escalated stage is decided by the escalation alone, so an escalation's rejection rejects the request.
+- Approvers read only the requests they decide on, through a platform-maintained field no rule, transition or default can write; delegates read them only while the delegation is active.
 - Request answers are frozen once a request leaves intake, and fulfillment task links can be written only by fulfillment, so conditional tasks such as a security review cannot be skipped or faked.
 - Restricting or disabling a workflow transition applies to running records too; adding a transition anyone may fire, or changing roles, guards or set values, is a permission change (agents cannot make it).
 - Migrate and cancel policies apply only to the publish that sets them and never on rollback; the migration job re-checks the publisher's rights.

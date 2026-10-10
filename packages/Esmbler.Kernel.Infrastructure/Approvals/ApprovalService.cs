@@ -24,10 +24,14 @@ namespace Esmbler.Kernel.Infrastructure.Approvals;
 public sealed class ApprovalService(Database database, ConfigStore configs, RecordService records, AccessService access, IClock clock, ILogger<ApprovalService> logger)
 {
     public const string ExpireJobKind = "approval.expire";
+    public const string SweepJobKind = "approval.sweep";
+    public const string DelegationJobKind = "approval.delegation";
 
     private const int MaxNotified = 100;
     private const int MaxCommentLength = 2000;
     private static readonly TimeSpan MaxDelegation = TimeSpan.FromDays(90);
+    private const int MaxApprovers = 500;
+    private const int SweepBatch = 500;
 
     public static class Statuses
     {
@@ -45,7 +49,7 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
     /// Starts the approval of a request in its initial state whose catalog item names a policy, unless one exists. Called
     /// by <see cref="ApprovalConsumer"/> inside the dispatcher's tenant transaction.
     /// </summary>
-    internal async Task StartIfNeededAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, EntitySpec entity, Guid recordId, CancellationToken ct)
+    internal async Task<bool> StartIfNeededAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, EntitySpec entity, Guid recordId, CancellationToken ct)
     {
         var binding = entity.Request!;
         var approval = binding.Approval!;
@@ -53,7 +57,7 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         var row = await LockRecordAsync(db, recordId, ct);
         if (row is null || flow is null || row.EntityId != entity.Id)
         {
-            return;
+            return false;
         }
 
         var data = JsonNode.Parse(row.Data)!.AsObject();
@@ -63,12 +67,12 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             || artifact.Config.FindApprovalPolicy(policyId) is not { } policy
             || await db.Approvals.AnyAsync(a => a.RecordId == recordId, ct))
         {
-            return;
+            return false;
         }
 
         if (!await records.SystemWriteAsync(db, ctx, artifact, entity, recordId, approval.RequestTransition, [], ct))
         {
-            return;
+            return false;
         }
 
         var now = clock.UtcNow;
@@ -84,12 +88,14 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             Status = Statuses.Pending,
             StageIndex = 0,
             Requester = row.CreatedBy,
+            Requesters = new JsonArray(Requesters(entity, row.CreatedBy, data).Select(r => (JsonNode)JsonValue.Create(r.ToString())).ToArray()).ToJsonString(),
             CreatedAt = now,
         };
         db.Approvals.Add(row2);
         AuditWriter.Add(db, ctx, "approval.start", entity.Id, recordId.ToString(), artifact.Revision, new { approval = row2.Id, policy = policy.Id, item = item.Id, source = "system" });
         await db.SaveChangesAsync(ct);
         await StartStageAsync(db, ctx, artifact, entity, row2, policy, 0, ct);
+        return true;
     }
 
     /// <summary>Cancels the pending approval of a request that entered a cancelled-category state.</summary>
@@ -125,12 +131,24 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         }
 
         var artifact = await configs.GetActiveAsync(db, tenantId, environmentId, ct);
+        var ctx = SystemContext(tenantId, environmentId, approval.Id);
         if (artifact.Config.FindEntity(approval.EntityId) is not { Request.Approval: not null } entity)
         {
+            // The entity no longer takes approvals: close the approval instead of leaving it pending forever.
+            approval.Status = Statuses.Cancelled;
+            approval.OutcomeReason = "Approvals were removed from this kind of request.";
+            approval.DecidedAt = clock.UtcNow;
+            foreach (var open in await db.ApprovalSteps.AsTracking().Where(s => s.ApprovalId == approvalId && s.Status == Statuses.Pending).ToListAsync(ct))
+            {
+                open.Status = Statuses.Cancelled;
+                open.DecidedAt = clock.UtcNow;
+            }
+
+            AuditWriter.AddSystem(db, tenantId, environmentId, "approval.cancelled", approval.EntityId, approval.RecordId.ToString(), new { approval = approval.Id, reason = approval.OutcomeReason }, outcome: "success");
+            await db.SaveChangesAsync(ct);
             return;
         }
 
-        var ctx = SystemContext(tenantId, environmentId, approval.Id);
         var policy = SpecJson.Deserialize<ApprovalPolicySpec>(approval.PolicySnapshot);
         var stage = policy.Stages[stageIndex];
         var steps = await db.ApprovalSteps.AsTracking().Where(s => s.ApprovalId == approvalId && s.StageIndex == stageIndex).ToListAsync(ct);
@@ -141,6 +159,13 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             var escalated = await ResolveAsync(db, artifact.Config, stage.EscalateTo, data, entity, approval, ct);
             if (escalated.Count > 0)
             {
+                // Escalation replaces the original approvers: their open steps expire, and the escalation decides.
+                foreach (var s in steps.Where(s => s.Status == Statuses.Pending))
+                {
+                    s.Status = Statuses.Expired;
+                    s.DecidedAt = now;
+                }
+
                 var due = now.AddHours(stage.ExpiresAfterHours ?? 72);
                 foreach (var (kind, reference) in escalated)
                 {
@@ -196,10 +221,14 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             throw new ValidationFailedException([new FieldError("comment", "too_long", $"Keep the comment under {MaxCommentLength} characters.")]);
         }
 
-        return await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        var result = await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             var peek = await db.ApprovalSteps.AsNoTracking().FirstOrDefaultAsync(s => s.Id == stepId, ct) ?? throw KernelException.NotFound("Approval step");
-            await LockRecordAsync(db, peek.RecordId, ct);
+            if (await LockRecordAsync(db, peek.RecordId, ct) is null)
+            {
+                throw KernelException.NotFound("Request");
+            }
+
             var step = await db.ApprovalSteps.AsTracking().FirstAsync(s => s.Id == stepId, ct);
             var approval = await db.Approvals.AsTracking().FirstAsync(a => a.Id == step.ApprovalId, ct);
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
@@ -213,9 +242,10 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             var eligibility = await EligibilityAsync(db, ctx, artifact.Config, entity, approval, step, data, ct);
             if (eligibility.Denied is { } reason)
             {
+                // Denials are audited: the transaction commits with the audit row and the refusal is raised after it.
                 AuditWriter.Add(db, ctx, "approval.decide", entity.Id, approval.RecordId.ToString(), artifact.Revision, new { step = step.Id, decision }, outcome: "denied");
                 await db.SaveChangesAsync(ct);
-                throw KernelException.Forbidden(reason);
+                return new Decision(null, reason);
             }
 
             var now = clock.UtcNow;
@@ -248,14 +278,31 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
                 await FinishAsync(db, ctx, artifact, entity, approval, Statuses.Rejected, $"Rejected at '{stage.Label}'.", fireTransition: true, ct);
             }
 
-            return await ViewAsync(db, ctx, artifact.Config, entity, approval, ct);
+            return new Decision(await ViewAsync(db, ctx, artifact.Config, entity, approval, ct), null);
         }, ct);
+
+        return result.View ?? throw KernelException.Forbidden(result.Denied!);
     }
 
-    /// <summary><c>all</c>: every step approves, any rejection rejects. <c>any</c>, or an escalated stage: the first approval passes, all rejecting rejects.</summary>
+    private sealed record Decision(RecordApprovalView? View, string? Denied);
+
+    /// <summary>
+    /// <c>all</c>: every step approves, any rejection rejects. <c>any</c>: the first approval passes, all rejecting
+    /// rejects. An escalated stage is decided by its escalation steps alone: the first decision among them decides,
+    /// approve or reject (approvals recorded before the escalation do not count; ASM-047).
+    /// </summary>
     internal static string StageOutcome(ApprovalStageSpec stage, IReadOnlyList<ApprovalStepRow> steps)
     {
-        var anyMode = stage.Mode == ApprovalModes.Any || steps.Any(s => s.Escalation);
+        var escalation = steps.Where(s => s.Escalation).ToList();
+        if (escalation.Count > 0)
+        {
+            return escalation.Exists(s => s.Status == Statuses.Rejected) ? Statuses.Rejected
+                : escalation.Exists(s => s.Status == Statuses.Approved) ? Statuses.Approved
+                : escalation.Exists(s => s.Status == Statuses.Pending) ? Statuses.Pending
+                : Statuses.Rejected;
+        }
+
+        var anyMode = stage.Mode == ApprovalModes.Any;
         var approved = steps.Count(s => s.Status == Statuses.Approved);
         var rejected = steps.Count(s => s.Status == Statuses.Rejected);
         var open = steps.Count(s => s.Status == Statuses.Pending);
@@ -274,11 +321,12 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         var requesters = Requesters(entity, approval, data);
         if (requesters.Contains(ctx.PrincipalId))
         {
-            return new Eligibility("You cannot approve or reject your own request.", null);
+            return new Eligibility("You cannot approve or reject a request you made or that is for you.", null);
         }
 
+        // One person's authority counts once per stage, whether they decided themselves or through their delegate.
         var stageSteps = await db.ApprovalSteps.AsNoTracking().Where(s => s.ApprovalId == approval.Id && s.StageIndex == step.StageIndex && s.Id != step.Id && s.DecidedBy != null).ToListAsync(ct);
-        if (stageSteps.Exists(s => s.DecidedBy == ctx.PrincipalId))
+        if (stageSteps.Exists(s => s.DecidedBy == ctx.PrincipalId || s.OnBehalfOf == ctx.PrincipalId))
         {
             return new Eligibility("You have already decided on this stage; another approver must decide this step.", null);
         }
@@ -314,18 +362,36 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         _ => false,
     };
 
-    /// <summary>Who counts as the requester for separation of duties: the creator and every access field with relation "requester".</summary>
+    /// <summary>
+    /// Who never decides (separation of duties): the snapshot taken when the approval started plus, as the record is
+    /// now, its creator and the binding's requester fields (and any access field with relation "requester").
+    /// </summary>
     private static HashSet<Guid> Requesters(EntitySpec entity, ApprovalRow approval, JsonObject data)
     {
-        var result = new HashSet<Guid>();
-        if (approval.Requester is { } creator)
+        var result = Requesters(entity, approval.Requester, data);
+        foreach (var v in (JsonNode.Parse(approval.Requesters) as JsonArray ?? []).OfType<JsonValue>())
         {
-            result.Add(creator);
+            if (v.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out var id))
+            {
+                result.Add(id);
+            }
         }
 
-        foreach (var field in entity.AccessFields.Where(a => a.Relation == "requester"))
+        return result;
+    }
+
+    private static HashSet<Guid> Requesters(EntitySpec entity, Guid? creator, JsonObject data)
+    {
+        var result = new HashSet<Guid>();
+        if (creator is { } c)
         {
-            if (data[field.Field] is JsonValue v && v.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out var id))
+            result.Add(c);
+        }
+
+        var fields = (entity.Request?.Approval?.RequesterFields ?? []).Concat(entity.AccessFields.Where(a => a.Relation == "requester").Select(a => a.Field)).Distinct();
+        foreach (var field in fields)
+        {
+            if (data[field] is JsonValue v && v.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out var id))
             {
                 result.Add(id);
             }
@@ -446,7 +512,9 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
                     if (source?[key] is JsonValue v && v.TryGetValue<string>(out var raw) && Guid.TryParse(raw, out var id))
                     {
                         var isGroup = type == FieldTypes.Group || (type is null && await db.Groups.AnyAsync(g => g.Id == id, ct));
-                        target = isGroup ? (ApproverKinds.Group, id.ToString()) : requesters.Contains(id) ? null : (ApproverKinds.User, id.ToString());
+                        target = isGroup
+                            ? (await db.Groups.AnyAsync(g => g.Id == id, ct) ? (ApproverKinds.Group, id.ToString()) : null)
+                            : requesters.Contains(id) || !await db.Memberships.AnyAsync(m => m.PrincipalId == id, ct) ? null : (ApproverKinds.User, id.ToString());
                     }
 
                     break;
@@ -536,7 +604,7 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         }
 
         var now = clock.UtcNow;
-        principals.AddRange(await db.ApprovalDelegations.AsNoTracking().Where(d => people.Contains(d.Delegator) && d.RevokedAt == null && d.EndsAt > now).Select(d => d.Delegate).ToListAsync(ct));
+        principals.AddRange(await db.ApprovalDelegations.AsNoTracking().Where(d => people.Contains(d.Delegator) && d.RevokedAt == null && d.StartsAt <= now && d.EndsAt > now).Select(d => d.Delegate).ToListAsync(ct));
         await AddApproversAsync(db, ctx, artifact, entity, recordId, principals, ct);
     }
 
@@ -545,7 +613,13 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
         var field = entity.Request!.Approval!.ApproversField;
         var data = await RecordDataAsync(db, recordId, ct);
         var current = (data[field] as JsonArray ?? []).OfType<JsonValue>().Select(v => v.GetValue<string>()).ToList();
-        var merged = current.Concat(principals.Select(p => p.ToString())).Distinct().Take(500).ToList();
+        var all = current.Concat(principals.Select(p => p.ToString())).Distinct().ToList();
+        if (all.Count > MaxApprovers)
+        {
+            logger.LogWarning("Request {Record} has {Count} approvers; only the first {Max} can open it", recordId, all.Count, MaxApprovers);
+        }
+
+        var merged = all.Take(MaxApprovers).ToList();
         if (merged.Count == current.Count)
         {
             return;
@@ -597,7 +671,8 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
     {
         var data = await RecordDataAsync(db, approval.RecordId, ct);
         var entity = config.FindEntity(approval.EntityId);
-        var title = entity is null ? "a request" : data[entity.TitleField]?.ToString() ?? "a request";
+        // The subject names the catalog item, not the request title: not everyone notified may read the request.
+        var title = entity?.Request is { } binding && config.FindCatalogItem(data[binding.CatalogItemField]?.GetValue<string>() ?? string.Empty) is { } catalogItem ? catalogItem.Label : "a request";
         var requesters = entity is null ? [] : Requesters(entity, approval, data);
         var people = await PeopleAsync(db, approvers, ct);
         var eventId = Guid.NewGuid();
@@ -701,7 +776,7 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
                     continue;
                 }
 
-                var decidedHere = await db.ApprovalSteps.AnyAsync(s => s.ApprovalId == approval.Id && s.StageIndex == step.StageIndex && (s.DecidedBy == ctx.PrincipalId || (onBehalfOf != null && s.OnBehalfOf == onBehalfOf)), ct);
+                var decidedHere = await db.ApprovalSteps.AnyAsync(s => s.ApprovalId == approval.Id && s.StageIndex == step.StageIndex && (s.DecidedBy == ctx.PrincipalId || s.OnBehalfOf == ctx.PrincipalId || (onBehalfOf != null && (s.OnBehalfOf == onBehalfOf || s.DecidedBy == onBehalfOf))), ct);
                 if (!decidedHere)
                 {
                     result.Add((step, onBehalfOf));
@@ -744,7 +819,7 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             step.Status,
             step.DueAt,
             step.Escalation,
-            approval.Requester is { } r ? names.GetValueOrDefault(r) : null,
+            record is not null && approval.Requester is { } r ? names.GetValueOrDefault(r) : null,
             onBehalfOf is { } o ? names.GetValueOrDefault(o) : null,
             step.Comment,
             step.DecidedAt,
@@ -807,19 +882,34 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
 
     // ------------------------------------------------------------------ delegations
 
-    public Task<IReadOnlyList<DelegationView>> DelegationsAsync(RequestContext ctx, CancellationToken ct) =>
+    /// <summary>The caller's delegations (given and received); with <paramref name="all"/>, every current delegation (permission administrators).</summary>
+    public Task<IReadOnlyList<DelegationView>> DelegationsAsync(RequestContext ctx, CancellationToken ct, bool all = false) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
+            if (all)
+            {
+                var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+                if (!(await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true)).Can(PlatformActions.PermissionsAdmin))
+                {
+                    throw KernelException.Forbidden("Only permission administrators can review everyone's delegations.");
+                }
+            }
+
             var now = clock.UtcNow;
             var rows = await db.ApprovalDelegations.AsNoTracking()
-                .Where(d => (d.Delegator == ctx.PrincipalId || d.Delegate == ctx.PrincipalId) && d.RevokedAt == null && d.EndsAt > now)
-                .OrderBy(d => d.StartsAt).ToListAsync(ct);
+                .Where(d => (all || d.Delegator == ctx.PrincipalId || d.Delegate == ctx.PrincipalId) && d.RevokedAt == null && d.EndsAt > now)
+                .OrderBy(d => d.StartsAt).Take(500).ToListAsync(ct);
             var ids = rows.SelectMany(r => new[] { r.Delegator, r.Delegate }).Distinct().ToList();
             var names = await db.Principals.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
             return (IReadOnlyList<DelegationView>)rows.Select(r => new DelegationView(r.Id, r.Delegator, names.GetValueOrDefault(r.Delegator, ""), r.Delegate, names.GetValueOrDefault(r.Delegate, ""), r.StartsAt, r.EndsAt, r.StartsAt <= now)).ToList();
         }, ct);
 
-    /// <summary>Delegates the caller's approvals to another member of the workspace for a period (out of office).</summary>
+    /// <summary>
+    /// Delegates the caller's approvals to another member of the workspace for a period of up to 90 days that starts
+    /// within 90 days (out of office). The delegate can read the requests waiting for the caller only while the
+    /// delegation is active: access is granted when it starts and withdrawn when it ends or is revoked, unless the
+    /// delegate decided on the request or approves it in their own right.
+    /// </summary>
     public async Task<DelegationView> DelegateAsync(RequestContext ctx, Guid @delegate, DateTimeOffset startsAt, DateTimeOffset endsAt, CancellationToken ct)
     {
         if (ctx.AgentId is not null)
@@ -833,9 +923,9 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             throw new ValidationFailedException([new FieldError("delegate", "invalid", "Choose someone other than yourself.")]);
         }
 
-        if (endsAt <= startsAt || endsAt <= now || startsAt < now.AddMinutes(-5) || endsAt - startsAt > MaxDelegation)
+        if (endsAt <= startsAt || endsAt <= now || startsAt < now.AddMinutes(-5) || startsAt > now.Add(MaxDelegation) || endsAt - startsAt > MaxDelegation)
         {
-            throw new ValidationFailedException([new FieldError("endsAt", "invalid", "The delegation must end after it starts, not be in the past, and last at most 90 days.")]);
+            throw new ValidationFailedException([new FieldError("endsAt", "invalid", "The delegation must end after it starts, start within 90 days, and last at most 90 days.")]);
         }
 
         var id = await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
@@ -866,34 +956,152 @@ public sealed class ApprovalService(Database database, ConfigStore configs, Reco
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             AuditWriter.Add(db, ctx, "approval.delegate", "approval_delegation", row.Id.ToString(), artifact.Revision, new { @delegate, startsAt, endsAt });
             await db.SaveChangesAsync(ct);
-
-            // The delegate needs to read the requests waiting for the delegator.
-            var waiting = await WaitingForAsync(db, ctx, artifact.Config, ct);
-            foreach (var recordId in waiting.Where(w => w.OnBehalfOf is null).Select(w => w.Step.RecordId).Distinct())
+            if (startsAt <= now)
             {
-                var approval = await db.Approvals.AsNoTracking().FirstAsync(a => a.RecordId == recordId && a.Status == Statuses.Pending, ct);
-                if (artifact.Config.FindEntity(approval.EntityId) is { Request.Approval: not null } entity)
-                {
-                    await LockRecordAsync(db, recordId, ct);
-                    await AddApproversAsync(db, SystemContext(ctx.TenantId, ctx.EnvironmentId, ctx.CorrelationId) with { PrincipalId = ctx.PrincipalId }, artifact, entity, recordId, [@delegate], ct);
-                }
+                await GrantDelegateAsync(db, ctx, artifact, row, ct);
+            }
+            else
+            {
+                await ScheduleDelegationAsync(db, row, "start", startsAt, ct);
             }
 
+            await ScheduleDelegationAsync(db, row, "end", endsAt, ct);
             return row.Id;
         }, ct);
 
         return (await DelegationsAsync(ctx, ct)).First(d => d.Id == id);
     }
 
-    public Task RevokeDelegationAsync(RequestContext ctx, Guid id, CancellationToken ct) =>
-        database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+    public Task RevokeDelegationAsync(RequestContext ctx, Guid id, CancellationToken ct)
+    {
+        if (ctx.AgentId is not null)
         {
-            var row = await db.ApprovalDelegations.AsTracking().FirstOrDefaultAsync(d => d.Id == id && d.Delegator == ctx.PrincipalId, ct) ?? throw KernelException.NotFound("Delegation");
+            throw KernelException.Forbidden("AI agents cannot change delegations.");
+        }
+
+        return database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            var row = await db.ApprovalDelegations.AsTracking().FirstOrDefaultAsync(d => d.Id == id && d.Delegator == ctx.PrincipalId && d.RevokedAt == null, ct) ?? throw KernelException.NotFound("Delegation");
             row.RevokedAt = clock.UtcNow;
             AuditWriter.Add(db, ctx, "approval.delegate.revoke", "approval_delegation", id.ToString(), null);
             await db.SaveChangesAsync(ct);
+            await JobScheduler.CancelAsync(db, $"{DelegationJobKind}:{id}:start", ct);
+            await JobScheduler.CancelAsync(db, $"{DelegationJobKind}:{id}:end", ct);
+            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            await WithdrawDelegateAsync(db, SystemContext(ctx.TenantId, ctx.EnvironmentId, id) with { PrincipalId = ctx.PrincipalId }, artifact, row, ct);
             return 0;
         }, ct);
+    }
+
+    /// <summary>Delegation timer: grants read access when a delegation starts and withdraws it when it ends.</summary>
+    internal async Task DelegationTimerAsync(KernelDbContext db, Guid tenantId, Guid environmentId, Guid delegationId, string phase, CancellationToken ct)
+    {
+        var row = await db.ApprovalDelegations.AsNoTracking().FirstOrDefaultAsync(d => d.Id == delegationId, ct);
+        if (row is null || row.RevokedAt is not null)
+        {
+            return;
+        }
+
+        var artifact = await configs.GetActiveAsync(db, tenantId, environmentId, ct);
+        var ctx = SystemContext(tenantId, environmentId, delegationId) with { PrincipalId = row.Delegator };
+        if (phase == "start")
+        {
+            await GrantDelegateAsync(db, ctx, artifact, row, ct);
+        }
+        else
+        {
+            await WithdrawDelegateAsync(db, ctx, artifact, row, ct);
+        }
+    }
+
+    private static Task ScheduleDelegationAsync(KernelDbContext db, ApprovalDelegationRow row, string phase, DateTimeOffset at, CancellationToken ct) =>
+        JobScheduler.ScheduleAsync(db, row.TenantId, row.EnvironmentId, new JobRequest(DelegationJobKind, new JsonObject { ["delegation"] = row.Id.ToString(), ["phase"] = phase })
+        {
+            RunAt = at,
+            DedupKey = $"{DelegationJobKind}:{row.Id}:{phase}",
+            ReplaceExisting = true,
+        }, ct);
+
+    /// <summary>Adds the delegate to the approvers of the requests waiting for the delegator.</summary>
+    private async Task GrantDelegateAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, ApprovalDelegationRow row, CancellationToken ct)
+    {
+        var waiting = await WaitingForAsync(db, ctx with { PrincipalId = row.Delegator }, artifact.Config, ct);
+        foreach (var recordId in waiting.Where(w => w.OnBehalfOf is null).Select(w => w.Step.RecordId).Distinct())
+        {
+            var approval = await db.Approvals.AsNoTracking().FirstAsync(a => a.RecordId == recordId && a.Status == Statuses.Pending, ct);
+            if (artifact.Config.FindEntity(approval.EntityId) is { Request.Approval: not null } entity && await LockRecordAsync(db, recordId, ct) is not null)
+            {
+                await AddApproversAsync(db, ctx, artifact, entity, recordId, [row.Delegate], ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes the delegate from the approvers of pending requests they neither decided on nor may decide in their own
+    /// right (ADR 0016: delegated read access lasts only as long as the delegation).
+    /// </summary>
+    private async Task WithdrawDelegateAsync(KernelDbContext db, RequestContext ctx, ActiveArtifact artifact, ApprovalDelegationRow row, CancellationToken ct)
+    {
+        var id = row.Delegate.ToString();
+        var facts = (await access.ForAsync(db, ctx with { PrincipalId = row.Delegate }, artifact.Config, ct, fresh: true)).Facts;
+        var pending = await db.Approvals.AsNoTracking().Where(a => a.Status == Statuses.Pending).ToListAsync(ct);
+        foreach (var approval in pending)
+        {
+            if (artifact.Config.FindEntity(approval.EntityId) is not { Request.Approval: { } binding } entity)
+            {
+                continue;
+            }
+
+            var data = await RecordDataAsync(db, approval.RecordId, ct);
+            if (data[binding.ApproversField] is not JsonArray list || !list.OfType<JsonValue>().Any(v => v.GetValue<string>() == id))
+            {
+                continue;
+            }
+
+            var steps = await db.ApprovalSteps.AsNoTracking().Where(s => s.ApprovalId == approval.Id).ToListAsync(ct);
+            if (steps.Exists(s => s.DecidedBy == row.Delegate) || steps.Exists(s => Matches(s, facts)) || await LockRecordAsync(db, approval.RecordId, ct) is null)
+            {
+                continue;
+            }
+
+            var kept = list.OfType<JsonValue>().Select(v => v.GetValue<string>()).Where(v => v != id).Select(v => (JsonNode)JsonValue.Create(v)).ToArray();
+            await records.SystemWriteAsync(db, ctx, artifact, entity, approval.RecordId, null, new JsonObject { [binding.ApproversField] = new JsonArray(kept) }, ct);
+        }
+    }
+
+    // ------------------------------------------------------------------ intake sweep
+
+    /// <summary>
+    /// Starts approvals for requests still in intake whose item now names a policy (scheduled after each activation).
+    /// Records pinned to a workflow version without the approval state predate approvals and are left alone (ASM-046).
+    /// </summary>
+    internal async Task<int> SweepAsync(KernelDbContext db, Guid tenantId, Guid environmentId, CancellationToken ct)
+    {
+        var artifact = await configs.GetActiveAsync(db, tenantId, environmentId, ct);
+        var started = 0;
+        foreach (var entity in artifact.Config.Entities.Where(e => e.Request?.Approval is not null))
+        {
+            var binding = entity.Request!;
+            var flow = artifact.Config.WorkflowFor(entity.Id);
+            var items = artifact.Config.CatalogItems.Where(i => i.RequestEntity == entity.Id && i.ApprovalPolicy is not null).Select(i => i.Id).ToList();
+            if (flow is null || items.Count == 0)
+            {
+                continue;
+            }
+
+            var candidates = await db.Records.FromSqlInterpolated($"SELECT * FROM kernel.records r WHERE r.entity_id = {entity.Id} AND r.deleted_at IS NULL AND coalesce(r.data->>{flow.StateField}, {flow.InitialState}) = {flow.InitialState} AND r.data->>{binding.CatalogItemField} = ANY({items.ToArray()}) AND NOT EXISTS (SELECT 1 FROM kernel.approvals a WHERE a.record_id = r.id) ORDER BY r.created_at LIMIT {SweepBatch}")
+                .AsNoTracking().Select(r => r.Id).ToListAsync(ct);
+            foreach (var recordId in candidates)
+            {
+                if (await StartIfNeededAsync(db, SystemContext(tenantId, environmentId, recordId), artifact, entity, recordId, ct))
+                {
+                    started++;
+                }
+            }
+        }
+
+        return started;
+    }
 
     // ------------------------------------------------------------------ helpers
 
