@@ -18,8 +18,8 @@ using Esmbler.Sdk.Events;
 using Esmbler.Sdk.Specs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Database = Esmbler.Kernel.Infrastructure.Persistence.Database;
 using Npgsql;
+using Database = Esmbler.Kernel.Infrastructure.Persistence.Database;
 
 namespace Esmbler.Kernel.Infrastructure.Records;
 
