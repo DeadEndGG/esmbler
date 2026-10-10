@@ -51,7 +51,7 @@ How are catalog items, variables, tasks and workflow versions modeled, and which
   - **Completion:** when every task is finished, fire the request's completion transition and set the outcome to `complete`, or `partial` when any task was cancelled (skipped). If every task was skipped, the outcome is `partial` too; the request owner decides what happens next.
   - **Rejection and cancellation:** when a request enters a `cancelled` category state, cancel its open and blocked tasks.
 - The consumer reconciles against the request's current state, never the event payload, and locks the request row first (`SELECT … FOR UPDATE`), so concurrent reconciliations of one request serialize. System writes use the record engine (`RecordService.SystemWriteAsync`) with a system actor (`WriteOperations.System` for field sets, a system transition for state changes) and take the record's row lock instead of an expected revision. A transition that is no longer valid (for example a second "complete" after the first won the race) returns false and is treated as done, so concurrent completions converge.
-- Request versus task SLAs are owned in G2-M4: the request carries the requester-facing SLA, tasks carry team SLAs.
+- Request versus task SLAs (G2-M4, done in [ADR 0018](0018-sla-and-business-hours.md)): the request carries the requester-facing SLA, tasks carry team SLAs.
 - Option 3 would couple the requester's write latency to task fan-out and would not get retries, backoff and dead letters for free.
 
 ### Workflow versions (REQ-MIG-003)

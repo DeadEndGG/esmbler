@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005]
 ---
 
 # Tickets module architecture
@@ -108,7 +108,7 @@ stateDiagram-v2
 | `reopen` (Reopen) | resolved → in_progress | requester, agent, admin | | `reopen_count + 1`, `resolved_at = null`, `confirmed = false` |
 | `cancel` (Cancel, danger tone) | new, assigned, in_progress, on_hold → cancelled | requester, agent, admin | | |
 
-State categories (`new`, `active`, `pending`, `resolved`, `closed`, `cancelled`) drive saved views and, from Gate 2, SLA pause rules.
+State categories (`new`, `active`, `pending`, `resolved`, `closed`, `cancelled`) drive saved views. SLA conditions (1.5.0) name status values instead, for example `record.status == 'on_hold'` pauses resolution.
 
 ## Rules
 
@@ -343,7 +343,7 @@ The generated [events reference](../../reference/asyncapi.json) lists the payloa
 
 | Element | IDs and detail |
 | --- | --- |
-| Business calendar | `core.tickets.calendar.business_hours` (Service desk hours): America/New_York, Monday to Friday 08:00–18:00, US federal holidays 2026–2027 (ASM-054). Tenants change the time zone, hours and holidays with `business_calendar.update` |
+| Business calendar | `core.tickets.calendar.business_hours` (Service desk hours): America/New_York, Monday to Friday 08:00–18:00, nine US federal holidays a year for 2026–2027 as observed (Columbus Day and Veterans Day are working days; ASM-054). Tenants change the time zone, hours and holidays with `business_calendar.update` |
 | Ticket SLA | `core.tickets.sla.ticket`: `response` (First response, stops when the ticket leaves `new`, no restart on reopen) and `resolution` (pauses `on_hold`, stops when resolved, closed or cancelled, resumes on reopen). Goals: P1 30 min / 4 h around the clock; P2 2 h / 10 h, P3 8 h / 30 h, P4 16 h / 50 h in service desk hours. Warning at 75% |
 | Request SLA | `core.tickets.sla.request`: `fulfillment`, 50 service desk hours (five days), paused while awaiting approval, stops when fulfilled, closed, rejected or cancelled. Warning at 80% |
 | Task SLA | `core.tickets.sla.task`: `completion`, 20 service desk hours (two days), starts when a task is open or in progress (blocked tasks wait), stops when done or skipped |

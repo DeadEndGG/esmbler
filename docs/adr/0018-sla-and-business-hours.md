@@ -54,7 +54,7 @@ How are SLA policies and calendars modeled, where do timers live, when do they c
 - Conditions of running timers are evaluated without the entity schema, so a field removed later reads as null instead of freezing the clock; new timers are validated against the schema. Policies are re-checked when a target restarts: a disabled or no longer applicable policy starts no new cycle.
 - A deadline that passed before a write (for example a pause) is recorded as a breach at the deadline.
 - Due and warning times are computed in business time from the remaining goal. A paused timer has no due time.
-- One durable job per running timer (`sla.check`, dedup key `sla:{timer}`) fires at the next warning or due time. It locks the record, re-reads the timer and publishes `platform.sla.warning` or `platform.sla.breached` once. It locks the record before reading the timer, then completes itself and schedules the next check in the same transaction, so a write that moves the timer later always finds a pending job to move. Keyed timer jobs are exempt from the per-environment job quota (they are bounded by the timers they belong to), so a busy environment never silently stops detecting breaches.
+- One durable job per running timer (`sla.check`, dedup key `sla:{timer}`) fires at the next warning or due time. In one transaction it marks itself complete, locks the record, re-reads the timer, publishes `platform.sla.warning` or `platform.sla.breached` once and schedules the next check. Because it locks the record before reading the timer, a write that moves the timer later always finds a pending job to move. Keyed timer jobs are exempt from the per-environment job quota (they are bounded by the timers they belong to), so a busy environment never silently stops detecting breaches.
 - A breach is recorded once (`breached_at`) and stays recorded: stopping later gives outcome `breached`, and reopening and meeting the goal never clears it.
 
 ### Limits
@@ -69,7 +69,7 @@ Calendars allow at most 4 intervals a day of at least 15 minutes, at most 400 ho
 
 ### Read paths and events
 
-- `GET /api/records/{entity}/{id}/sla` returns the record's latest timer per target to people who can read the record.
+- `GET /api/records/{entity}/{id}/sla` returns the record's latest non-cancelled timer per target (highest cycle) to people who can read the record.
 - The `activity.sla` element renders it: on track, at risk, paused, breached, met or missed; time left or overrun; goal and calendar.
 - Platform event types `platform.sla.warning` and `platform.sla.breached` (source `platform.sla`) carry policy, target, goal, due time and timer ID.
 
@@ -79,7 +79,7 @@ Calendars allow at most 4 intervals a day of at least 15 minutes, at most 400 ho
 
 ### Tickets 1.5.0
 
-- Calendar `core.tickets.calendar.business_hours`: America/New_York, Monday to Friday 08:00–18:00, US federal holidays 2026–2027 (ASM-054).
+- Calendar `core.tickets.calendar.business_hours`: America/New_York, Monday to Friday 08:00–18:00, nine US federal holidays a year for 2026–2027 as observed (Columbus Day and Veterans Day are working days; ASM-054).
 - Ticket policy: first response (stops when the ticket leaves `new`) and resolution (pauses on hold, stops when resolved, closed or cancelled, resumes on reopen). P1 is measured around the clock; P2–P4 in business hours.
 - Request fulfillment: pauses while awaiting approval.
 - Task completion: starts when a task can be worked.

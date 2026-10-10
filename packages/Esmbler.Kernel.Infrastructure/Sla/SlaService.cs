@@ -71,7 +71,7 @@ public sealed class SlaService(Database database, ConfigStore configs, AccessSer
             ["now"] = Kernel.Records.FieldNormalizer.FormatInstant(clock.UtcNow),
         }, startAsCreate, null, ct);
 
-    /// <summary>Cancels a deleted record's open timers (a restored record starts fresh ones on its next write).</summary>
+    /// <summary>Cancels a deleted record's open timers; restoring the record starts fresh ones in a new cycle (<see cref="ApplyDataAsync"/>).</summary>
     internal async Task CancelAsync(KernelDbContext db, Guid recordId, CancellationToken ct)
     {
         var open = await db.SlaTimers.AsTracking().Where(t => t.RecordId == recordId && (t.Status == SlaStatuses.Running || t.Status == SlaStatuses.Paused)).ToListAsync(ct);
