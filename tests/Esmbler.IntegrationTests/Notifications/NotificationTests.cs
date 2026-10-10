@@ -264,6 +264,39 @@ public class NotificationTests(PlatformFixture f)
         Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Service.PreviewAsync(f.As(t, "dana"), "tenant__route_resolved", ticket.Id, default))).Status);
     }
 
+    [Fact]
+    public async Task Upgrading_tickets_adds_a_mandatory_p1_alert_and_keeps_the_workspace_routes()
+    {
+        // Tickets 1.7.0: escalations and P1 alerts become module routes. A workspace with its own route upgrades without
+        // conflicts, a ticket becoming P1 reaches its assignee and team, and nobody can mute that alert.
+        var t = await TenantAsync("ntup", ResolvedRoute());
+        var admin = f.As(t, "admin");
+        var upgrades = f.Get<UpgradeService>();
+        var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.7.0", default);
+        Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
+        Assert.All(plan.Overlay, o => Assert.Equal(OpStatus.Applied, o.Status));
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.route.p1_raised" && c.Change == "added");
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.7.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);
+
+        var records = f.Get<RecordService>();
+        var agent = f.As(t, "agent");
+        var ticket = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Core switch down", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "high", ["priority"] = "p3", ["assignee"] = t.Users["agent"].ToString() }, null, null, default);
+        await records.UpdateAsync(agent, Ticket, ticket.Id, ticket.Revision, new JsonObject { ["priority"] = "p1" }, null, null, default);
+        await PumpAsync();
+
+        var p1 = (await DeliveriesAsync(t)).Where(d => d.RouteId == "core.tickets.route.p1_raised").ToList();
+        Assert.Contains(p1, d => d.RecipientPrincipal == t.Users["agent"] && d.ChannelType == "in_app" && d.Status == DeliveryStatuses.Sent && d.Mandatory);
+        var number = (await records.GetAsync(agent, Ticket, ticket.Id, default)).Number;
+        Assert.Contains((await Service.InboxAsync(agent, false, null, default)).Items, i => i.Subject == $"P1: {number} Core switch down");
+        Assert.Equal(409, (await Assert.ThrowsAsync<KernelException>(() => Service.SetPreferenceAsync(agent, "core.tickets.route.p1_raised", "*", true, default))).Status);
+
+        // The workspace's own route survived the upgrade and still delivers.
+        await ResolveTicketAsync(t, "After the upgrade");
+        Assert.Contains(await DeliveriesAsync(t), d => d.RouteId == "tenant__route_resolved" && d.Subject == "Closed out: After the upgrade");
+    }
+
     private sealed class FakeEmail(ChannelResult result, bool idempotent) : INotificationChannel
     {
         public string Type => "email";

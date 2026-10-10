@@ -2015,6 +2015,14 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                 d.Add(Diagnostic.Error("config.bad_template", $"Route '{route.Label}' uses template '{template.Id}', which has its own trigger.", route.Id, "Use a template without an event trigger."));
             }
 
+            // A mandatory route must keep reaching people: nothing it relies on may be switched off, and the bell is
+            // always one of its channels (REQ-NOT-004).
+            if (route.Mandatory && route.Enabled && (sub?.Enabled == false || template?.Enabled == false || profile?.Enabled == false || profile?.Channels.Contains(NotificationChannels.InApp) == false))
+            {
+                d.Add(Diagnostic.Error("config.mandatory_unreachable", $"Mandatory route '{route.Label}' would stop reaching people: its subscription, template and profile must stay enabled and the profile must include in_app.", route.Id,
+                    "Keep them enabled and in_app in the profile, or ask an administrator to make the route optional first."));
+            }
+
             if (route.Recipients.Count is 0 or > MaxRecipients)
             {
                 d.Add(Diagnostic.Error(route.Recipients.Count == 0 ? "config.bad_recipient" : "config.too_large", $"Route '{route.Label}' needs 1 to {MaxRecipients} recipient rules.", route.Id));

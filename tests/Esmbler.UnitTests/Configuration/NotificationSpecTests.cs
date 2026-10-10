@@ -115,4 +115,25 @@ public class NotificationSpecTests
         Assert.Equal(OpStatus.Applied, Last(new UpdateNotificationProfile { Profile = PlatformModule.UrgentProfile, Set = new NotificationProfilePatch { Enabled = false } }));
         Assert.Equal(OpStatus.Failed, Last([.. Setup(), new AddSubscription { Subscription = Resolved() }]));
     }
+
+    [Fact]
+    public void Tickets_routes_escalations_and_makes_the_p1_alert_mandatory()
+    {
+        var config = Compile("1.7.0").Config;
+        var p1 = config.FindNotificationRoute("core.tickets.route.p1_raised")!;
+        Assert.True(p1.Mandatory);
+        Assert.Equal(PlatformModule.UrgentProfile, p1.Profile);
+        Assert.Equal("core.tickets.ticket.priority_raised", config.FindSubscription(p1.Subscription)!.Event);
+        var escalated = config.FindNotificationRoute("core.tickets.route.escalated")!;
+        Assert.False(escalated.Mandatory);
+        Assert.Contains(escalated.Recipients, r => r is { Kind: RecipientKinds.Field, Ref: "assignment_group" });
+
+        // A tenant can quiet the optional route but not the mandatory one, nor anything the mandatory route relies on.
+        Assert.True(Compile("1.7.0", new UpdateNotificationRoute { Route = escalated.Id, Set = new NotificationRoutePatch { Enabled = false } }).Succeeded);
+        Assert.Equal(OpStatus.Failed, Compile("1.7.0", new UpdateNotificationRoute { Route = p1.Id, Set = new NotificationRoutePatch { Enabled = false } }).Composition.Outcomes[^1].Status);
+        Assert.Contains(Compile("1.7.0", new UpdateNotificationProfile { Profile = PlatformModule.UrgentProfile, Set = new NotificationProfilePatch { Enabled = false } }).Errors, e => e.Code == "config.mandatory_unreachable");
+        Assert.Contains(Compile("1.7.0", new UpdateNotificationProfile { Profile = PlatformModule.UrgentProfile, Set = new NotificationProfilePatch { Channels = [NotificationChannels.Email] } }).Errors, e => e.Code == "config.mandatory_unreachable");
+        Assert.Contains(Compile("1.7.0", new UpdateSubscription { Subscription = p1.Subscription, Set = new SubscriptionPatch { Enabled = false } }).Errors, e => e.Code == "config.mandatory_unreachable");
+        Assert.Contains(Compile("1.7.0", new UpdateNotificationTemplate { Template = p1.Template, Set = new NotificationTemplatePatch { Enabled = false } }).Errors, e => e.Code == "config.mandatory_unreachable");
+    }
 }
