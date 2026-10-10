@@ -93,6 +93,27 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Sla.SlaCheckJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.OperationsService>();
 
+        // Notifications (ADR 0021): subscription router, resolve and delivery jobs, channel adapters, secret references.
+        services.AddSingleton(sp =>
+        {
+            var o = sp.GetRequiredService<PlatformOptions>().Notifications;
+            return new Kernel.Infrastructure.Notifications.NotificationOptions
+            {
+                AllowedEmailHosts = o.AllowedEmailHosts,
+                AllowedSmsHosts = o.AllowedSmsHosts,
+                MaxRecipientsPerEvent = o.MaxRecipientsPerEvent,
+                WebUrl = configuration["Esmbler:WebUrl"] ?? "http://localhost:8080",
+            };
+        });
+        services.AddSingleton<Kernel.Infrastructure.Notifications.ISecretStore, Kernel.Infrastructure.Notifications.EnvironmentSecretStore>();
+        services.AddHttpClient("notifications.sms");
+        services.AddSingleton<Sdk.Notifications.INotificationChannel, Kernel.Infrastructure.Notifications.Channels.SmtpEmailChannel>();
+        services.AddSingleton<Sdk.Notifications.INotificationChannel, Kernel.Infrastructure.Notifications.Channels.HttpSmsChannel>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Notifications.SubscriptionRouter>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Notifications.NotifyResolveJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Notifications.NotifyDeliverJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Notifications.NotificationService>();
+
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));
         services.AddSingleton<IRelationshipGraph>(sp =>

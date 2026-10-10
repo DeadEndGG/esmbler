@@ -39,6 +39,7 @@ public sealed class EffectivePermissions
             actions.Remove(PlatformActions.PermissionsAdmin);
             actions.Remove(PlatformActions.ConfigPublish);
             actions.Remove(PlatformActions.ModulesManage);
+            actions.Remove(PlatformActions.NotificationsManage);
             if (!context.HasScope(AgentScopes.ConfigEdit))
             {
                 actions.Remove(PlatformActions.ConfigEdit);

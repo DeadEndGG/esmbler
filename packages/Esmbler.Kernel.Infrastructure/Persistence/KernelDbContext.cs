@@ -59,6 +59,14 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<NotificationRow> Notifications => Set<NotificationRow>();
 
+    public DbSet<NotificationChannelRow> NotificationChannels => Set<NotificationChannelRow>();
+
+    public DbSet<NotificationDeliveryRow> NotificationDeliveries => Set<NotificationDeliveryRow>();
+
+    public DbSet<NotificationDeliveryAttemptRow> NotificationDeliveryAttempts => Set<NotificationDeliveryAttemptRow>();
+
+    public DbSet<NotificationPreferenceRow> NotificationPreferences => Set<NotificationPreferenceRow>();
+
     public DbSet<RefreshTokenRow> RefreshTokens => Set<RefreshTokenRow>();
 
     public DbSet<WorkflowDefinitionRow> WorkflowDefinitions => Set<WorkflowDefinitionRow>();
@@ -108,9 +116,13 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<MigrationRunRow>().ToTable("migration_runs").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<UpgradeRow>().ToTable("upgrades").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<NotificationRow>().ToTable("notifications").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<NotificationChannelRow>().ToTable("notification_channels").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<NotificationDeliveryRow>().ToTable("notification_deliveries").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<NotificationDeliveryAttemptRow>().ToTable("notification_delivery_attempts").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<NotificationPreferenceRow>().ToTable("notification_preferences").HasKey(x => new { x.TenantId, x.EnvironmentId, x.PrincipalId, x.RouteId, x.ChannelType });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
-        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot"];
+        string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot", "Settings", "SecretRefs"];
         foreach (var entity in b.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

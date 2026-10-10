@@ -696,6 +696,152 @@ public sealed class NotificationRow
     public string Channel { get; set; } = "in_app_fake";
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>When the recipient read it (inbox, G2-M18).</summary>
+    public DateTimeOffset? ReadAt { get; set; }
+
+    public Guid? DeliveryId { get; set; }
+
+    public string? Severity { get; set; }
+
+    public string? EntityId { get; set; }
+
+    public Guid? RecordId { get; set; }
+}
+
+/// <summary>A channel instance of an environment (ADR 0021): settings and secret references, never secret values.</summary>
+public sealed class NotificationChannelRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string Key { get; set; } = "";
+
+    public string Type { get; set; } = "";
+
+    public string Label { get; set; } = "";
+
+    public string Mode { get; set; } = "capture";
+
+    public string Settings { get; set; } = "{}";
+
+    public string SecretRefs { get; set; } = "{}";
+
+    public int RatePerMinute { get; set; } = 60;
+
+    public int Version { get; set; } = 1;
+
+    public Guid? UpdatedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>One recipient and channel for an event and route (ADR 0021).</summary>
+public sealed class NotificationDeliveryRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid EventId { get; set; }
+
+    public string EventType { get; set; } = "";
+
+    public string SubscriptionId { get; set; } = "";
+
+    public string RouteId { get; set; } = "";
+
+    public string TemplateId { get; set; } = "";
+
+    public string ProfileId { get; set; } = "";
+
+    public string ChannelType { get; set; } = "";
+
+    public string? ChannelKey { get; set; }
+
+    public Guid? RecipientPrincipal { get; set; }
+
+    public string? RecipientAddress { get; set; }
+
+    public bool External { get; set; }
+
+    public bool Mandatory { get; set; }
+
+    public string? Severity { get; set; }
+
+    public string? EntityId { get; set; }
+
+    public Guid? RecordId { get; set; }
+
+    public string Status { get; set; } = "queued";
+
+    public string? StatusReason { get; set; }
+
+    public int Attempts { get; set; }
+
+    public string IdempotencyKey { get; set; } = "";
+
+    public string? ProviderMessageId { get; set; }
+
+    public string Subject { get; set; } = "";
+
+    public string Body { get; set; } = "";
+
+    public int ConfigRevision { get; set; }
+
+    public Guid? ReplayOf { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    public DateTimeOffset? SentAt { get; set; }
+}
+
+public sealed class NotificationDeliveryAttemptRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid DeliveryId { get; set; }
+
+    public int Attempt { get; set; }
+
+    public string Outcome { get; set; } = "";
+
+    public string? Code { get; set; }
+
+    public string? ProviderMessageId { get; set; }
+
+    public DateTimeOffset At { get; set; }
+}
+
+/// <summary>A person's mute of a route ("*" channel) or of one channel of it; mandatory routes ignore it.</summary>
+public sealed class NotificationPreferenceRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid PrincipalId { get; set; }
+
+    public string RouteId { get; set; } = "";
+
+    public string ChannelType { get; set; } = "*";
+
+    public bool Muted { get; set; } = true;
+
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class RefreshTokenRow

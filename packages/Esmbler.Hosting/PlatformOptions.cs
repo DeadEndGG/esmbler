@@ -11,6 +11,8 @@ public sealed class PlatformOptions
 
     public AuthSettings Auth { get; set; } = new();
 
+    public NotificationSettings Notifications { get; set; } = new();
+
     /// <summary>Apply migrations at startup (API host only).</summary>
     public bool MigrateOnStartup { get; set; } = true;
 
@@ -34,6 +36,17 @@ public sealed class PlatformOptions
         public string App { get; set; } = "";
 
         public string? Migrator { get; set; }
+    }
+
+    /// <summary>Notification delivery (ADR 0021): provider hosts channel instances may use live, and the fan-out cap.</summary>
+    public sealed class NotificationSettings
+    {
+        /// <summary>SMTP hosts allowed for live email (Esmbler__Notifications__AllowedEmailHosts__0=smtp.example.com). Empty: capture only.</summary>
+        public List<string> AllowedEmailHosts { get; set; } = [];
+
+        public List<string> AllowedSmsHosts { get; set; } = ["api.twilio.com"];
+
+        public int MaxRecipientsPerEvent { get; set; } = 200;
     }
 
     public sealed class OpenFgaSettings

@@ -94,7 +94,10 @@ public static class PlatformActions
     public const string RecordsExport = "records.export";
     public const string ModulesManage = "modules.manage";
 
-    public static IReadOnlyList<string> All { get; } = [ConfigEdit, ConfigPublish, PermissionsAdmin, AuditRead, RecordsExport, ModulesManage];
+    /// <summary>Channel instances, delivery inspection, replay and test sends (ADR 0021); implied by permissions.admin.</summary>
+    public const string NotificationsManage = "notifications.manage";
+
+    public static IReadOnlyList<string> All { get; } = [ConfigEdit, ConfigPublish, PermissionsAdmin, AuditRead, RecordsExport, ModulesManage, NotificationsManage];
 }
 
 public sealed class PermissionSetSpec
