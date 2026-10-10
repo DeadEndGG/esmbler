@@ -80,7 +80,7 @@ All of these tables have `FORCE ROW LEVEL SECURITY` with the tenant-and-environm
 
 The worker cannot see rows across tenants under RLS. It claims work through two narrow `SECURITY DEFINER` functions owned by the `NOLOGIN BYPASSRLS` role `esmbler_definer`, each with `SET search_path = kernel, pg_temp`. Both take `(p_worker text, p_batch integer, p_lease_seconds integer)`, lock rows with `FOR UPDATE SKIP LOCKED`, set `locked_until`/`locked_by`, increment `attempts`, and return identifiers only:
 
-- `kernel.claim_outbox` returns `(id, tenant_id, environment_id, attempts)` for pending events whose lease is free, oldest first.
+- `kernel.claim_outbox` returns `(id, tenant_id, environment_id, attempts)` for pending events whose lease is free, interleaved across tenants: every tenant's oldest event is claimed before any tenant's second-oldest (`row_number() OVER (PARTITION BY tenant_id ...)`, migration `0005_durable_jobs`), so one tenant's backlog cannot delay another's events (REQ-ACC-11).
 - `kernel.claim_jobs` returns `(id, tenant_id, environment_id, kind, attempts)` and is fair across tenants: at most one job per tenant per claim round, and none for a tenant that already has a running job with a live lease. It also reclaims `running` jobs whose lease expired (the worker crashed), which then resume from their checkpoint. Claimed jobs move to `running`.
 
 ```sql
@@ -100,14 +100,18 @@ WITH candidates AS (
 UPDATE kernel.jobs j SET status = 'running', locked_until = now() + make_interval(secs => p_lease_seconds), ...
 ```
 
-For each claimed item the worker opens a transaction through `Database.InTenantAsync` (which sets `app.tenant_id`/`app.environment_id` with `set_config(..., true)`), reads the item under RLS, and runs the handler. `apps/Esmbler.Worker` hosts `OutboxDispatcher` and `JobRunner` (`packages/Esmbler.Kernel.Infrastructure/Events/`). Gate 1 consumers are `RecordStateProjection` and `NotificationConsumer` (in-app notifications); the Gate 1 job kind is `upgrade.run` (module upgrades with data migrations, [ADR 0003](0003-configuration-artifact-and-overlay-format.md)).
+For each claimed item the worker opens a transaction through `Database.InTenantAsync` (which sets `app.tenant_id`/`app.environment_id` with `set_config(..., true)`), reads the item under RLS, and runs the handler. `apps/Esmbler.Worker` hosts `OutboxDispatcher` and `JobRunner` (`packages/Esmbler.Kernel.Infrastructure/Events/`). Gate 1 consumers are `RecordStateProjection` and `NotificationConsumer` (in-app notifications).
+
+**Job handlers (Gate 2).** Each job kind has an `IJobHandler` (`Events/Jobs.cs`) registered in DI: `Kind`, the `RequiredAction` its creator must still hold, `RunAsync(JobContext)`, and an optional `OnAbandonedAsync`. `JobContext` gives the payload, the previous attempt's checkpoint, `SaveCheckpointAsync` and `RenewLeaseAsync`. A handler throws `JobTerminalException` for failures retrying cannot fix. The first kind is `upgrade.run` (`UpgradeJobHandler`, [ADR 0003](0003-configuration-artifact-and-overlay-format.md)).
+
+**Scheduling and timers.** `JobScheduler.ScheduleAsync(db, tenant, environment, JobRequest)` runs inside the caller's tenant transaction, so a job exists exactly when the change that needs it commits. Timers are jobs with a future `RunAt` and a `DedupKey` (for example `sla:{record}:resolution`): a unique index allows one live job per key; scheduling again keeps the live job or, with `ReplaceExisting`, moves it; `JobScheduler.CancelAsync(db, key)` cancels it.
 
 - **Leases:** outbox claims use 60 s leases in batches of 50; job claims use 5-minute leases in batches of 10, renewed by long jobs. An outbox event whose lease expired is claimable again (it stays `pending` until dispatched); an expired running job is reclaimed by `claim_jobs`.
-- **Backoff:** exponential from 5 s (outbox: `min(5 s × 2^(attempts−1), 15 min)`).
-- **Dead letter:** outbox events become `dead` after 10 attempts, jobs after `max_attempts` (default 5), with `last_error`; operators inspect and replay (Gate 2 UI; replay is audited and re-authorizes the principal).
+- **Backoff:** `min(5 s × 2^(attempts−1), 15 min)`; jobs add ±20% jitter.
+- **Dead letter:** outbox events become `dead` after 10 attempts, jobs after `max_attempts` (default 5), with `last_error`; jobs denied on re-authorization or failing terminally become `failed`. `OperationsService` (`/api/admin/operations/queues`, `/dead-letters`, `POST /{queue}/{id}/replay`, page **Operations**) shows queue depth and the oldest waiting age, lists dead letters, and replays them; replay needs `permissions.admin`, is audited (`operations.replay`), and the job is re-authorized as its creator when it runs again.
 - **Inbox:** a handler inserts `(consumer, event_id)` in the same transaction as its effect; a duplicate key means "already done" and the item is acknowledged.
 - **Per-record ordering and stale revisions:** `claim_outbox` does not order per record, so consumers must tolerate reordering: projections (`kernel.record_projections`) store the last applied `record_revision` and ignore lower ones; business-transition consumers detect gaps and reload the record.
-- **Cycles and fan-out (Gate 2):** a causation depth above 8 (carried in the event envelope) stops automation with an audited `automation.depth_exceeded`; fan-out per event is capped at 100 jobs (Gate 2 governor).
+- **Governors:** a job request deeper than 8 automated steps (`JobRequest.Depth`, from the envelope's `Depth`) is refused with an audited `automation.depth_exceeded`; one causing event may start at most 100 jobs (`automation.fanout_exceeded`); an environment may hold at most 50,000 waiting jobs (`quota.jobs_exceeded`). Refusals return `null` and are audited in the caller's transaction instead of failing the caller's change.
 - **Tenant isolation of jobs:** a job always carries tenant, environment and principal (`created_by`); before each attempt `JobRunner` re-authorizes that principal with fresh facts for the right the job kind needs, and a denied job fails closed without retrying (REQ-ACC-07).
 
 ```mermaid
@@ -143,5 +147,5 @@ sequenceDiagram
 ## More information
 
 - Revisit triggers: approvals and SLA timers in Gate 2 need long-running compensation that the state machine cannot express (re-evaluate Temporal/Elsa); oldest pending event age p95 > 30 s; more than 50 tenants.
-- Verification: `Events.EventDeliveryTests.Record_change_audit_and_event_commit_together`, `Events.EventDeliveryTests.Resolving_notifies_the_requester_once_even_when_redelivered`, `Events.EventDeliveryTests.Projection_ignores_stale_and_duplicate_revisions`, `Identity.RevocationTests.Queued_job_is_reauthorized_and_fails_closed_when_its_owner_lost_the_right`, `Configuration.UpgradeTests.Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure`. Planned (Gate 2): `Overloaded_tenant_does_not_starve_others` (REQ-ACC-11).
+- Verification: `Events.EventDeliveryTests.Record_change_audit_and_event_commit_together`, `Events.EventDeliveryTests.Resolving_notifies_the_requester_once_even_when_redelivered`, `Events.EventDeliveryTests.Projection_ignores_stale_and_duplicate_revisions`, `Identity.RevocationTests.Queued_job_is_reauthorized_and_fails_closed_when_its_owner_lost_the_right`, `Configuration.UpgradeTests.Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure`. `Events.DurableJobsTests` (tenant fairness for jobs and events, dead letters and replay, timers, governors, checkpoints; REQ-ACC-11). The full load test with p95 queue-wait budgets is part of G2-M16.
 - Related: [ADR 0003](0003-configuration-artifact-and-overlay-format.md) (migration jobs), [ADR 0004](0004-authorization-engine.md) (job re-authorization).

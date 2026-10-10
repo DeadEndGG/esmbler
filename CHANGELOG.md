@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Gate 2: private pilot (not started).
+Gate 2: private pilot (in progress).
+
+### Added
+
+- Durable jobs and timers: job handler registry with per-attempt re-authorization, checkpoints and lease renewal; idempotent, cancellable timers; jittered backoff; dead letters with audited operator replay (Operations page); tenant-interleaved event dispatch; automation depth, fan-out and queue quotas. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11
 
 ## [0.2.0] - 2026-10-10 (`gate-1-complete`)
 

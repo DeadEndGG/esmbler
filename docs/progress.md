@@ -15,9 +15,9 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 | Field | Value |
 | --- | --- |
 | Current gate | Gate 2: Private pilot |
-| Current milestone | G2-M1 durable jobs and timers |
+| Current milestone | G2-M2 full request workflow |
 | Done | Gate 0 (tag `gate-0-complete`). Gate 1 (tag `gate-1-complete`): all milestones G1-M1 to G1-M18; see [Gate 1 test guide](testing/gate-1-test-guide.md) |
-| Next | G2-M1 durable jobs and timers, then the request workflow and approvals (G2-M2, G2-M3) |
+| Next | G2-M2 requests, catalog items and fulfillment tasks; then approvals (G2-M3) and SLA (G2-M4) |
 | Blockers | None. Open human actions: Anthropic API key to score the Claude planner; product-target confirmation ([human actions](human-actions.md)) |
 
 ## How to read the backlog
@@ -62,7 +62,7 @@ Updated after every milestone ([execution brief section 1](spec/execution-brief.
 
 ## Gate 2: private pilot
 
-- [ ] **G2-M1 Durable jobs and timers.** Leases, backoff, dead letters, operator replay, tenant fairness and quotas, cycle detection and budgets. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11
+- [x] **G2-M1 Durable jobs and timers.** Leases, backoff, dead letters, operator replay, tenant fairness and quotas, cycle detection and budgets. REQ-EVT-005, REQ-EVT-006, REQ-TEN-006, REQ-ACC-11 Done: handler registry, idempotent timers, jittered backoff, dead letters with audited replay (Operations page), tenant-interleaved outbox claims, depth/fan-out/quota governors (`Events/DurableJobsTests`); load test with queue-wait budgets in G2-M16.
 - [ ] **G2-M2 Full request workflow.** Requests and catalog items, typed variables, fulfillment tasks and dependencies, workflow versioning with pinned instances. REQ-BIZ-004, REQ-MIG-003, REQ-ACC-05
 - [ ] **G2-M3 Approvals.** Approval policy and panel, sequential and parallel stages, delegation, expiry, separation of duties. REQ-BIZ-004, REQ-AUTHZ-011
 - [ ] **G2-M4 SLA and business hours.** SLA policy and timer, calendars, pause and resume, time zones, DST, holidays, versioning. REQ-BIZ-005, REQ-MIG-004, REQ-ACC-13

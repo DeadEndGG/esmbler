@@ -21,7 +21,7 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-TEN-003 | Tenant/environment switching is explicit and authorized; never inferred from record IDs or tool arguments | MS Domain boundaries | 1 | apps/Esmbler.Api/Endpoints/AuthEndpoints.cs, packages/Esmbler.Hosting/Auth/RequestContextFactory.cs | IntegrationTests/Api/ApiTests.Switching_to_a_tenant_you_do_not_belong_to_is_forbidden, Requests_without_a_selected_workspace_are_refused | done |
 | REQ-TEN-004 | Per-tenant environments (sandbox, prod) with promotion and rollback of overlay changes | MS Multi-tenancy | 2 | | | planned |
 | REQ-TEN-005 | Sandbox data synthetic; production credentials, destinations, schedules never copied | MS Environment safety | 2 | | | planned |
-| REQ-TEN-006 | Per-tenant rate limits, quotas, and fair scheduling | MS Multi-tenancy | 2 | | | planned |
+| REQ-TEN-006 | Per-tenant rate limits, quotas, and fair scheduling | MS Multi-tenancy | 2 | packages/Esmbler.Kernel.Infrastructure/Migrations/0005_durable_jobs.sql (claim_outbox), claim_jobs, Events/Jobs.cs (quota) | IntegrationTests/Events/DurableJobsTests (fairness); per-tenant API rate limit is KI-010 | in-progress |
 | REQ-TEN-007 | Dedicated database/region tier without code changes | MS Tenancy tiers | 4 | | | planned |
 
 ## Configuration composition and deployment
@@ -64,8 +64,8 @@ Source sections refer to `docs/spec/master-spec.md` (MS) and `docs/spec/executio
 | REQ-EVT-002 | At-least-once delivery with durable inbox deduplication and idempotent handlers | MS Transactions | 1 | packages/Esmbler.Kernel.Infrastructure/Events/OutboxDispatcher.cs (inbox) | IntegrationTests/Events/EventDeliveryTests.Resolving_notifies_the_requester_once_even_when_redelivered | done |
 | REQ-EVT-003 | Event envelope fields (IDs, tenant/env, revision, schema version, config ref, correlation/causation) | MS Transactions | 1 | packages/Esmbler.Sdk/Events/EventEnvelope.cs | IntegrationTests/Events/EventDeliveryTests.Record_change_audit_and_event_commit_together | done |
 | REQ-EVT-004 | Per-record ordering; projections reject stale revisions | MS Transactions | 1 | packages/Esmbler.Kernel.Infrastructure/Events/RecordStateProjection.cs | IntegrationTests/Events/EventDeliveryTests.Projection_ignores_stale_and_duplicate_revisions | done |
-| REQ-EVT-005 | Durable jobs and timers with leases, backoff, max attempts, dead letters, replay | MS Transactions | 2 | | | planned |
-| REQ-EVT-006 | Automation cycle detection, execution budgets, fan-out limits | MS Transactions | 2 | | | planned |
+| REQ-EVT-005 | Durable jobs and timers with leases, backoff, max attempts, dead letters, replay | MS Transactions | 2 | packages/Esmbler.Kernel.Infrastructure/Events/Jobs.cs, JobRunner.cs, OperationsService.cs | IntegrationTests/Events/DurableJobsTests | done |
+| REQ-EVT-006 | Automation cycle detection, execution budgets, fan-out limits | MS Transactions | 2 | packages/Esmbler.Kernel.Infrastructure/Events/Jobs.cs (JobScheduler governors) | IntegrationTests/Events/DurableJobsTests.Automation_depth_and_fan_out_are_bounded_and_audited | done |
 | REQ-EVT-007 | External side effects idempotent or reconciled | MS Transactions | 2 | | | planned |
 
 ## Identity and authorization
