@@ -76,18 +76,11 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     public async Task Api_streams_progress_and_the_change_lands_in_the_draft()
     {
         var tenant = await platform.NewTenantAsync("as");
-        await using var api = Api.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<IAssistantGatewayFactory>(new InMemoryGatewayFactory(Mcp))));
-        var client = await SignInAsync(api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var api = AssistantTestSupport.WithAssistant(Api, Mcp);
+        var client = await AssistantTestSupport.SignInAsync(api, $"admin@{Slug(tenant)}.example", Slug(tenant));
         await client.PostAsync("/api/drafts", null);
 
-        await using var hub = new HubConnectionBuilder()
-            .WithUrl(new Uri(api.Server.BaseAddress, "/hubs/live"), o =>
-            {
-                o.HttpMessageHandlerFactory = _ => api.Server.CreateHandler();
-                o.Transports = HttpTransportType.LongPolling;
-                o.AccessTokenProvider = () => Task.FromResult(client.DefaultRequestHeaders.Authorization?.Parameter);
-            })
-            .Build();
+        await using var hub = AssistantTestSupport.Hub(api, client);
         var events = new ConcurrentQueue<JsonElement>();
         var done = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         hub.On<JsonElement>("assistantEvent", e =>
@@ -119,24 +112,10 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     public async Task Assistant_cannot_act_for_someone_without_builder_rights()
     {
         var tenant = await platform.NewTenantAsync("an");
-        await using var api = Api.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton<IAssistantGatewayFactory>(new InMemoryGatewayFactory(Mcp))));
-        var requester = await SignInAsync(api, $"dana@{Slug(tenant)}.example", Slug(tenant));
+        await using var api = AssistantTestSupport.WithAssistant(Api, Mcp);
+        var requester = await AssistantTestSupport.SignInAsync(api, $"dana@{Slug(tenant)}.example", Slug(tenant));
         var res = await requester.PostAsJsonAsync("/api/assistant/messages", new { text = "Add a \"Vendor\" field" });
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
-    }
-
-    private static async Task<HttpClient> SignInAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Esmbler.Api.Endpoints.KernelExceptionHandler> api, string email, string tenant)
-    {
-        var client = api.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
-        var login = await client.PostAsJsonAsync("/api/auth/login", new { email, password = Kernel.Infrastructure.Services.ProvisioningService.DemoPassword });
-        login.EnsureSuccessStatusCode();
-        var token = (await login.Content.ReadFromJsonAsync<JsonObject>(ApiFactory.Json))!["accessToken"]!.GetValue<string>();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        var sw = await client.PostAsJsonAsync("/api/auth/switch", new { tenant, environment = "prod" });
-        sw.EnsureSuccessStatusCode();
-        var scoped = (await sw.Content.ReadFromJsonAsync<JsonObject>(ApiFactory.Json))!["accessToken"]!.GetValue<string>();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", scoped);
-        return client;
     }
 
     private async Task<List<string>> RunCaseAsync(IPlanner planner, string caseId)
@@ -274,11 +253,5 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
             Events.Enqueue(e);
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class InMemoryGatewayFactory(McpFactory mcp) : IAssistantGatewayFactory
-    {
-        public async Task<IToolGateway> ConnectAsync(string agentToken, AssistantBudget budget, CancellationToken ct) =>
-            new McpToolGateway(await mcp.ConnectAsync(agentToken), budget);
     }
 }
