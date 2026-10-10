@@ -178,7 +178,7 @@ const STATUS_TONES: Record<string, string> = { sent: 'tone-green', captured: 'to
                     </td>
                     <td>{{ d.recipient ?? '—' }} @if (d.external) { <span class="badge tone-amber">external</span> }</td>
                     <td>{{ d.channel }}</td>
-                    <td><span class="badge" [class]="tone(d.status)">{{ d.status }}</span> @if (d.reason) { <span class="text-caption text-muted">{{ d.reason }}</span> } <span class="text-caption text-muted">· {{ d.attempts }} attempt{{ d.attempts === 1 ? '' : 's' }}</span></td>
+                    <td><span class="badge" [class]="tone(d.status)">{{ d.status }}</span> @if (d.reason) { <span class="ml-1 text-caption text-muted">{{ d.reason }}</span> } <span class="ml-1 text-caption text-muted">· {{ d.attempts }} attempt{{ d.attempts === 1 ? '' : 's' }}</span></td>
                     <td class="text-right">
                       @if (d.status === 'failed' || d.status === 'ambiguous') {
                         <button class="btn btn-sm" (click)="replay(d, false)">Retry</button>

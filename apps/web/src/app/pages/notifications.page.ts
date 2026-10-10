@@ -50,11 +50,13 @@ const CHANNEL_LABELS: Record<string, string> = { in_app: 'In the app', email: 'E
         </div>
       </header>
 
-      <div class="mb-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Notifications">
-        <button class="pill" role="tab" [attr.aria-selected]="tab() === 'inbox'" [class.on]="tab() === 'inbox'" (click)="tab.set('inbox')">
-          Inbox <span class="count">{{ page()?.unread ?? 0 }}</span>
-        </button>
-        <button class="pill" role="tab" [attr.aria-selected]="tab() === 'settings'" [class.on]="tab() === 'settings'" (click)="openSettings()">What I receive</button>
+      <div class="mb-4 flex flex-wrap items-center gap-2">
+        <div class="flex gap-2" role="tablist" aria-label="Notifications">
+          <button class="pill" role="tab" [attr.aria-selected]="tab() === 'inbox'" [class.on]="tab() === 'inbox'" (click)="tab.set('inbox')">
+            Inbox <span class="count">{{ page()?.unread ?? 0 }}</span>
+          </button>
+          <button class="pill" role="tab" [attr.aria-selected]="tab() === 'settings'" [class.on]="tab() === 'settings'" (click)="openSettings()">What I receive</button>
+        </div>
         <span class="flex-1"></span>
         @if (tab() === 'inbox') {
           <label class="flex items-center gap-2 text-body-sm"><input type="checkbox" [checked]="unreadOnly()" (change)="toggleUnread()" /> Unread only</label>
@@ -74,7 +76,7 @@ const CHANNEL_LABELS: Record<string, string> = { in_app: 'In the app', email: 'E
             @for (n of page()!.items; track n.id) {
               <li class="item" [class.unread]="!n.readAt">
                 <div class="flex items-start gap-3">
-                  <span class="dot" [class.on]="!n.readAt" [attr.aria-label]="n.readAt ? null : 'Unread'"></span>
+                  <span class="dot" [class.on]="!n.readAt" aria-hidden="true"></span>
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-baseline gap-2">
                       @if (n.entity && n.recordId) {
@@ -82,6 +84,7 @@ const CHANNEL_LABELS: Record<string, string> = { in_app: 'In the app', email: 'E
                       } @else {
                         <span class="title">{{ n.subject }}</span>
                       }
+                      @if (!n.readAt) { <span class="sr-only">(unread)</span> }
                       @if (n.severity === 'high' || n.severity === 'critical') { <span class="badge tone-red">{{ n.severity }}</span> }
                       <span class="text-caption text-muted">{{ n.createdAt | date: 'MMM d, HH:mm' }}</span>
                     </div>

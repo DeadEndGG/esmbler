@@ -1,4 +1,4 @@
-import { Component, DestroyRef, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { BuilderState } from '../builder/builder-state';
 import { Api, ApiError } from '../core/api';
@@ -32,6 +32,9 @@ import { Icon } from '../ui/icon';
         <form (submit)="$event.preventDefault(); submit()" novalidate>
           @for (m of ctx.states().messages; track $index) { <div class="callout tone-blue" role="note">{{ m.text }}</div> }
           <esm-node [node]="s.view.layout" [viewId]="s.view.id" />
+          @if (extra(); as more) {
+            <esm-node [node]="more" [viewId]="s.view.id" />
+          }
           <div class="actions">
             <a class="btn btn-ghost" [routerLink]="['/records', entity()]">Cancel</a>
             <button class="btn btn-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Creating…' : 'Create' }} <kbd>⌘↵</kbd></button>
@@ -67,6 +70,28 @@ export class CreatePage {
   protected readonly error = signal<string | null>(null);
   private readonly idempotencyKey = crypto.randomUUID();
 
+  /** Field keys the form places. */
+  private readonly placed = computed(() => new Set(this.ctx.spec() ? fieldsOf(this.ctx.spec()!.view.layout) : []));
+
+  /**
+   * Fields the form does not place but that are required now (by the field or a rule, e.g. impact for a P1 ticket)
+   * and that this person may fill in: shown in an "Also needed" card so the form can always be completed.
+   */
+  protected readonly extra = computed<NodeSpec | null>(() => {
+    const entity = this.ctx.entity();
+    if (!entity) return null;
+    const keys = entity.entity.fields
+      .filter((f) => !this.placed().has(f.key) && f.default === undefined && !f.defaultExpression && this.ctx.isRequired(f.key) && !this.ctx.isHidden(f.key) && this.ctx.canEdit(f.key))
+      .map((f) => f.key);
+    if (!keys.length) return null;
+    return {
+      id: 'form.also_needed',
+      type: 'layout.card',
+      props: { title: 'Also needed' },
+      children: keys.map((k) => ({ id: `form.also_needed.${k}`, type: 'field', props: { field: k }, children: [] })),
+    };
+  });
+
   constructor() {
     this.ctx.mode.set('form');
     this.ctx.commitField = async (key, value) => this.ctx.setValue(key, value);
@@ -101,10 +126,16 @@ export class CreatePage {
     }
   }
 
+  /** Fields shown: the form's own and the "Also needed" ones. */
+  private onForm(): Set<string> {
+    const extra = this.extra();
+    return new Set([...this.placed(), ...(extra ? fieldsOf(extra) : [])]);
+  }
+
   protected async submit(): Promise<void> {
     if (this.saving() || !this.ctx.spec()) return;
     // Only fields on this form are checked here; the server fills defaults (e.g. the requester) and re-validates the rest.
-    const onForm = new Set(fieldsOf(this.ctx.spec()!.view.layout));
+    const onForm = this.onForm();
     const missing = this.ctx
       .entity()!
       .entity.fields.filter((f) => onForm.has(f.key) && f.default === undefined && !f.defaultExpression && this.ctx.isRequired(f.key) && !this.ctx.isHidden(f.key) && isEmpty(this.ctx.values()[f.key]))
@@ -125,7 +156,7 @@ export class CreatePage {
       if (e instanceof ApiError && e.problem.errors?.length) {
         this.ctx.errors.set(Object.fromEntries(e.problem.errors.map((x) => [x.field, x.message])));
         // Errors on fields this form does not show would otherwise be invisible.
-        const onForm = new Set(fieldsOf(this.ctx.spec()!.view.layout));
+        const onForm = this.onForm();
         const elsewhere = e.problem.errors.filter((x) => !onForm.has(x.field));
         if (elsewhere.length) this.toasts.show(elsewhere.map((x) => x.message).join(' '), 'warning');
       } else {

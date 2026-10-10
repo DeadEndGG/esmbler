@@ -3552,7 +3552,7 @@
       "label": "Ticket became P1",
       "entity": "core.tickets.ticket",
       "subject": "P1: {{record.number}} {{record.title}}",
-      "body": "{{record.number}} is now P1 (was {{event.previous}}).\n\nAssignment group and assignee are notified until it is resolved.\n\n{{link}}",
+      "body": "{{record.number}} is now P1: {{record.title}}\n\nThe assignee and the assignment group are told; this alert cannot be muted.\n\n{{link}}",
       "variants": {
         "sms": {
           "body": "P1 {{record.number}}: {{record.title}} {{link}}"
