@@ -117,6 +117,36 @@ public class NotificationSpecTests
     }
 
     [Fact]
+    public void Conditions_and_text_never_carry_hidden_values()
+    {
+        // estimated_effort is hidden from requesters (Tickets permission sets).
+        var hidden = Compile("1.7.0", Setup(Resolved("record.estimated_effort == 'big'")));
+        Assert.Contains(hidden.Errors, e => e.Code == "config.notification_hidden_field");
+
+        var restricted = new AddEventType { EventType = new EventTypeSpec { Id = "tenant__effort_noted", Label = "Effort noted", SubjectEntity = Ticket, Sensitivity = EventSensitivities.Restricted, Fields = new() { ["effort"] = new EventFieldSpec { Type = EventFieldTypes.String } } } };
+        var sub = new SubscriptionSpec { Id = "tenant__sub_resolved", Label = "Effort", Event = "tenant__effort_noted" };
+        Assert.Contains(Compile("1.7.0", [restricted, .. Setup(sub, Template("Effort: {{event.effort}}"))]).Errors, e => e.Code == "config.restricted_event_text");
+        sub.When = "event.effort == 'big'";
+        Assert.Contains(Compile("1.7.0", [restricted, .. Setup(sub)]).Errors, e => e.Code == "config.restricted_event_text");
+    }
+
+    [Fact]
+    public void Email_fields_are_external_and_mandatory_or_external_routes_cannot_change_quietly()
+    {
+        // An email field of the record reaches outside the workspace: internal events never go there.
+        var email = Compile("1.7.0", Setup(route: Route(new RecipientSpec { Kind = RecipientKinds.Field, Ref = "contact_email" })));
+        Assert.Contains(email.Errors, e => e.Code == "config.external_redaction");
+
+        // Silencing the mandatory P1 alert through what it relies on is a permission change.
+        var before = Compile("1.7.0").Config;
+        PermissionImpact Impact(params OverlayOp[] ops) => ConfigCompiler.PermissionDiff(before, Compile("1.7.0", ops).Config);
+        Assert.True(Impact(new UpdateRule { Rule = "core.tickets.rules.p1_raised", Enabled = false }).Changed);
+        Assert.True(Impact(new UpdateNotificationProfile { Profile = PlatformModule.UrgentProfile, Set = new NotificationProfilePatch { MinSeverity = EventSeverities.Critical, Delivery = NotificationDelivery.Fallback } }).Changed);
+        Assert.True(Impact(new UpdateNotificationTemplate { Template = "core.tickets.template.p1_raised", Set = new NotificationTemplatePatch { Body = "Nothing to see. {{link}}" } }).Changed);
+        Assert.False(Impact(new UpdateNotificationTemplate { Template = "core.tickets.template.escalated", Set = new NotificationTemplatePatch { Body = "Escalated. {{link}}" } }).Changed);
+    }
+
+    [Fact]
     public void Modules_keep_notification_elements_in_their_namespace_and_route_only_through_their_own()
     {
         var billing = new ModuleSpec

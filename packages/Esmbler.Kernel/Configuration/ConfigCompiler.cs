@@ -123,11 +123,17 @@ public sealed class ConfigCompiler(ConfigValidator validator)
         foreach (var route in after.NotificationRoutes)
         {
             var old = before.FindNotificationRoute(route.Id);
-            var external = route.Recipients.Where(RecipientKinds.IsExternal).Select(r => r.Ref).Order(StringComparer.Ordinal);
-            var oldExternal = (old?.Recipients ?? []).Where(RecipientKinds.IsExternal).Select(r => r.Ref).Order(StringComparer.Ordinal);
+            var external = External(after, route).Order(StringComparer.Ordinal);
+            var oldExternal = (old is null ? [] : External(before, old)).Order(StringComparer.Ordinal);
             if ((old?.Mandatory ?? false) != route.Mandatory || !external.SequenceEqual(oldExternal, StringComparer.Ordinal))
             {
                 changes.Add($"Changed who must be told or external recipients of route {route.Id}");
+            }
+            else if (old is not null && (route.Mandatory || external.Any()) && !JsonNode.DeepEquals(Reach(before, old), Reach(after, route)))
+            {
+                // A mandatory route can be silenced, and an external one widened, through what it relies on: its
+                // recipients, subscription condition, profile, template, or the rules and transitions that publish the event.
+                changes.Add($"Changed what route {route.Id} sends or to whom ({(route.Mandatory ? "mandatory" : "external recipients")})");
             }
         }
 
@@ -141,6 +147,39 @@ public sealed class ConfigCompiler(ConfigValidator validator)
             .Where(m => before.FindMetric(m.Id) is { } old && !old.Roles.Order(StringComparer.Ordinal).SequenceEqual(m.Roles.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             .Select(m => $"Changed who sees metric {m.Id}"));
         return new PermissionImpact { Changed = changes.Count > 0, Changes = changes };
+    }
+
+    private static IEnumerable<string> External(EffectiveConfig config, NotificationRouteSpec route)
+    {
+        var sub = config.FindSubscription(route.Subscription);
+        var entityId = sub?.Entity ?? (sub is null ? null : config.FindEventType(sub.Event)?.SubjectEntity);
+        var entity = entityId is null ? null : config.FindEntity(entityId);
+        return route.Recipients.Where(r => ConfigValidator.IsExternalRecipient(entity, r)).Select(r => $"{r.Kind}:{r.Ref}");
+    }
+
+    /// <summary>Everything that decides whether and what a route sends, as one comparable value.</summary>
+    private static JsonNode Reach(EffectiveConfig config, NotificationRouteSpec route)
+    {
+        var sub = config.FindSubscription(route.Subscription);
+        var template = config.FindNotificationTemplate(route.Template);
+        var profile = config.FindNotificationProfile(route.Profile);
+        var type = sub?.Event;
+        var rules = config.Rules.Where(r => r.Actions.Exists(a => a.Emit?.Type == type)).OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new { r.Id, r.Enabled, r.When, r.Entity });
+        var transitions = config.Workflows.SelectMany(w => w.Transitions.Where(t => t.Emits.Exists(e => e.Type == type)).Select(t => new { Id = $"{w.Id}/{t.Id}", t.Enabled }))
+            .OrderBy(t => t.Id, StringComparer.Ordinal);
+        return SpecJson.ToNode(new
+        {
+            route.Recipients,
+            route.Enabled,
+            subscriptionId = route.Subscription,
+            templateId = route.Template,
+            profileId = route.Profile,
+            subscription = sub is null ? null : new { sub.Event, sub.Entity, sub.When, sub.Enabled },
+            template = template is null ? null : new { template.Entity, template.Subject, template.Body, template.Variants, template.ExternalFields, template.Enabled },
+            profile = profile is null ? null : new { profile.Channels, profile.Delivery, profile.MinSeverity, profile.Enabled },
+            rules,
+            transitions,
+        })!;
     }
 
     /// <summary>Who must approve a request (ADR 0016): an item's policy, or the stages of a policy an item uses.</summary>

@@ -1999,7 +1999,20 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
             {
                 try
                 {
-                    Expression.Compile(sub.When, EntitySchema.ForSubscription(entity, type));
+                    var references = Expression.Compile(sub.When, EntitySchema.ForSubscription(entity, type)).References;
+
+                    // Whether someone is told reveals what the condition read: no hidden fields, and no values of
+                    // restricted events (their payloads may carry hidden fields).
+                    var hidden = entity is null ? [] : HiddenFields(config, entity);
+                    if (references.Where(r => r.StartsWith("record.", StringComparison.Ordinal)).Select(r => r["record.".Length..]).FirstOrDefault(hidden.Contains) is { } secret)
+                    {
+                        d.Add(Diagnostic.Error("config.notification_hidden_field", $"The condition of subscription '{sub.Label}' reads '{secret}', which some people may not see.", sub.Id, "Use a field everyone who reads the record can see."));
+                    }
+
+                    if (type.Sensitivity == EventSensitivities.Restricted && references.Any(r => r.StartsWith("event.", StringComparison.Ordinal)))
+                    {
+                        d.Add(Diagnostic.Error("config.restricted_event_text", $"The condition of subscription '{sub.Label}' reads values of restricted event '{type.Id}'.", sub.Id, "Use record fields everyone who reads the record can see."));
+                    }
                 }
                 catch (ExpressionException ex)
                 {
@@ -2089,13 +2102,29 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                 }
             }
 
-            // External recipients only get public events, and only the template's external fields.
-            if (route.Recipients.Any(RecipientKinds.IsExternal) && type is not null && type.Sensitivity != EventSensitivities.Public)
+            // External recipients (addresses and email fields) only get public events, and only the template's external fields.
+            if (route.Recipients.Any(r => IsExternalRecipient(entity, r)) && type is not null && type.Sensitivity != EventSensitivities.Public)
             {
                 d.Add(Diagnostic.Error("config.external_redaction", $"Route '{route.Label}' sends {type.Sensitivity} event '{type.Id}' to external addresses.", route.Id, "Only public events go to external recipients; notify people in the workspace instead."));
             }
+
+            // Restricted payloads may carry hidden fields: their values never become message text.
+            if (type?.Sensitivity == EventSensitivities.Restricted && template is not null && TemplateTexts(template).Any(t => AnyPlaceholder().Matches(t).Any(m => m.Groups[1].Value.StartsWith("event.", StringComparison.Ordinal))))
+            {
+                d.Add(Diagnostic.Error("config.restricted_event_text", $"Route '{route.Label}' renders values of restricted event '{type.Id}' with template '{template.Id}'.", route.Id, "Use {{record.<field>}} placeholders, which render per recipient, instead of {{event.<field>}}."));
+            }
         }
     }
+
+    /// <summary>Recipients outside the workspace: addresses, and email fields of the record (ADR 0021).</summary>
+    internal static bool IsExternalRecipient(EntitySpec? entity, RecipientSpec r) =>
+        RecipientKinds.IsExternal(r) || (r.Kind == RecipientKinds.Field && entity?.FindField(r.Ref)?.Type == FieldTypes.Email);
+
+    private static IEnumerable<string> TemplateTexts(NotificationTemplateSpec t) =>
+        [t.Subject, t.Body, .. t.Variants.Values.SelectMany(v => new[] { v.Subject ?? string.Empty, v.Body })];
+
+    private static HashSet<string> HiddenFields(SpecCatalog config, EntitySpec entity) =>
+        config.PermissionSets.SelectMany(p => p.Fields).Where(f => f.Entity == entity.Id && f.Access == FieldAccessLevels.Hidden).Select(f => f.Field).ToHashSet(StringComparer.Ordinal);
 
     [GeneratedRegex(@"\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}")]
     private static partial Regex AnyPlaceholder();
