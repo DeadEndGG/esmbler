@@ -81,6 +81,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0018 SLAs and business hours](adr/0018-sla-and-business-hours.md): calendars and SLA policies as spec objects, timers in the record write transaction with pinned snapshots, durable warning and breach checks.
 - [0019 Metrics, dashboards and the connected explorer](adr/0019-metrics-dashboards-and-connected-explorer.md): metrics as spec objects evaluated through the explorer's query compiler, drill-down as the exact query, restricted figures removed, explorer state in the URL, draft change sets.
 - [0020 Self-service workspace creation](adr/0020-self-service-workspace-creation.md): module-declared starters, self-service creation that operators turn on, workspaces created from the latest release and activated only when provisioning finishes, a per-person limit enforced in a definer function, labeled preview figures on empty workspaces.
+- [0021 Notification routing and delivery](adr/0021-notification-routing-and-delivery.md): subscriptions, routes, profiles and per-channel templates as configuration with module, tenant and personal layers and mandatory routes; channel instances as environment settings (live, capture, disabled) with secret references and host allow-lists; rendering once per recipient under their permissions; delivery states with idempotency keys, ambiguous outcomes and explicit replay.
 
 ## Decisions
 

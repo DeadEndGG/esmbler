@@ -3,7 +3,7 @@ title: Human actions
 status: living
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-AISAFE-005, REQ-IAM-003, REQ-BIZ-003, REQ-BIZ-006, REQ-MKT-002, REQ-OPS-006, REQ-ADM-002]
+requirements: [REQ-AISAFE-005, REQ-IAM-003, REQ-BIZ-003, REQ-BIZ-006, REQ-MKT-002, REQ-OPS-006, REQ-ADM-002, REQ-NOT-001]
 ---
 
 # Human actions
@@ -20,7 +20,11 @@ Things only a human can provide (execution brief, section 1). The platform keeps
 | Provide production JWT signing key / KMS | Tokens must not be signed with the development key | Before any non-local deployment | Development-only default key from `deploy/docker-compose.yml` (`ESMBLER_SIGNING_KEY`); production startup refuses the dev key ([ADR 0011](adr/0011-identity-and-development-authentication.md)) | open |
 | Choose cloud account and region for hosting | Pooled hosting in one provider and region | Before Gate 2 pilot | Docker Compose locally; Kubernetes manifests provided but not deployed | open |
 | Provide DNS names and TLS certificates | Public HTTPS for web, API, MCP | Before Gate 2 pilot | Local HTTP/self-signed certificates in Compose | open |
-| Provide email domain and inbound/outbound provider | Email intake and notifications | Gate 2 | In-app fake notification outbox (Gate 1); local SMTP fake and inbound fixture files (Gate 2) | not needed yet |
+| Provide email domain and inbound provider | Email intake (G2-M5) | Gate 2 | Inbound fixture files and a fake adapter (G2-M5) | not needed yet |
+| Provide outbound SMTP credentials for notification email | Live email notifications ([ADR 0021](adr/0021-notification-routing-and-delivery.md)) | Before the Gate 2 pilot | Email channel instances run in capture mode: messages are rendered and kept under Notification channels, Deliveries, and never sent. To go live: allow the relay with `Esmbler__Notifications__AllowedEmailHosts__0=smtp.example.com` on the API and worker hosts, set the credentials as `ESMBLER_SECRET__<WORKSPACE_SLUG>__SMTP_USERNAME` and `ESMBLER_SECRET__<WORKSPACE_SLUG>__SMTP_PASSWORD` (slug upper-cased, hyphens as underscores; other names through the `usernameRef` and `passwordRef` settings) on the worker and API hosts (the API only reports whether each is set), list those names under the instance's secret references, fill in its `host`, `port`, `security` (`starttls` or `ssl`) and `from` settings, then switch it to live | open |
+| Provide an SMS provider account (Twilio or a Twilio-compatible API) | Live text messages for urgent notifications | Before the Gate 2 pilot, if SMS is wanted | SMS instances capture; people have no phone numbers on file yet, so SMS reaches only explicit addresses (ASM-088). To go live: the instance's `accountSid` and `from` settings, the auth token as `ESMBLER_SECRET__<WORKSPACE_SLUG>__SMS_AUTH_TOKEN` on the worker and API hosts (or the name in `tokenRef`), and a non-default host in `Esmbler__Notifications__AllowedSmsHosts__0` (default `api.twilio.com`) | not needed yet |
+| Set the public web URL and notification limits for production | Links in notifications point at the web app; the fan-out cap fits the pilot | Before any non-local deployment | `Esmbler__WebUrl` defaults to `http://localhost:8080`, so links in emails only work locally; `Esmbler__Notifications__MaxRecipientsPerEvent` defaults to 200. Docker Compose sets neither | open |
+| Provide a vault for workspace secrets | Channel credentials per workspace without environment variables | Before Gate 2 pilot hosting (G2-M12) | The development secret store reads `ESMBLER_SECRET__<WORKSPACE_SLUG>__<NAME>` environment variables on the API and worker hosts ([ADR 0021](adr/0021-notification-routing-and-delivery.md), ASM-078) | not needed yet |
 | Provide object storage bucket | Attachments and exports | Gate 2 | Local filesystem / MinIO-compatible fake behind the storage adapter | not needed yet |
 | Register OIDC/SAML identity provider(s) | Per-tenant SSO, SCIM, MFA | Gate 2 | Local password login ([ADR 0011](adr/0011-identity-and-development-authentication.md)) | not needed yet |
 | Provide payment provider sandbox credentials | Marketplace billing and payouts against a sandbox | Gate 5 | Fake payment adapter | not needed yet |

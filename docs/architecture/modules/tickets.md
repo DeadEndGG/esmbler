@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) and `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)) and `1.7.0` (notification routes, see [Release 1.7.0](#release-170-notification-routes)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -374,6 +374,21 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/SlaPolicyTests.cs` (`Release_1_
 **Upgrade note:** the Unassigned saved view now also leaves out resolved tickets. In 1.5.0 it left out only closed and cancelled tickets. This is intended: the view and the Unassigned tile count the same tickets (ASM-068).
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/MetricSpecTests.cs` (`Release_1_6_0_ships_an_overview_dashboard_built_from_shared_metrics`), `tests/Esmbler.IntegrationTests/Records/MetricTests.cs`, `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs` (`Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`), Playwright `dashboard.spec.ts`.
+
+## Release 1.7.0: notification routes
+
+1.7.0 routes the 1.4.0 ticket events to people through the notification service ([ADR 0021](../../adr/0021-notification-routing-and-delivery.md)). The release is additive with no data migrations; workspace routes, mutes and the Gate 1 templates (`core.tickets.notify.*`, which keep their own triggers) are unchanged on upgrade.
+
+| Element | IDs and detail |
+| --- | --- |
+| Subscriptions | `core.tickets.sub.escalated` (event `core.tickets.ticket.escalated`), `core.tickets.sub.p1_raised` (event `core.tickets.ticket.priority_raised`, published each time a ticket becomes P1) |
+| Templates | `core.tickets.template.escalated` ("Escalated: {{record.number}} {{record.title}}" with the reason, priority and link) and `core.tickets.template.p1_raised` ("P1: {{record.number}} {{record.title}}"), each with a shorter `sms` variant |
+| Route `core.tickets.route.escalated` | Escalations to the assignee and team: recipients `field:assignee` and `field:assignment_group`, profile `core.platform.profile.in_app_email` (bell and email). Optional: people can mute it or its email |
+| Route `core.tickets.route.p1_raised` | P1 alert to the assignee and team: same recipients, profile `core.platform.profile.urgent` (bell, email, and text message where a number is known, for high and critical events). Mandatory: nobody can mute it, the tenant cannot turn it off or change its recipients, and making it optional is a permission change (ASM-081) |
+
+Email and text messages need a channel instance in the environment ([human actions](../../human-actions.md)); without one they are recorded as suppressed and the bell still delivers. Every recipient sees only the ticket fields they may read.
+
+Evidence: `tests/Esmbler.UnitTests/Configuration/NotificationSpecTests.cs` (`Tickets_routes_escalations_and_makes_the_p1_alert_mandatory`), `tests/Esmbler.IntegrationTests/Notifications/NotificationTests.cs` (`Upgrading_tickets_adds_a_mandatory_p1_alert_and_keeps_the_workspace_routes`), Playwright `notifications.spec.ts` (`@REQ-NOT-004`).
 
 ## Starter: IT ticketing
 

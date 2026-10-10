@@ -3,7 +3,7 @@ title: "ADR 0010: Database migrations and roles"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-10
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004, REQ-EVT-005, REQ-EVT-009, REQ-WS-001]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-REC-007, REQ-OPS-002, REQ-OPS-006, REQ-MIG-003, REQ-BIZ-004, REQ-EVT-005, REQ-EVT-009, REQ-WS-001, REQ-NOT-005]
 ---
 
 # ADR 0010: Database migrations and roles
@@ -124,6 +124,7 @@ The first five are in `0001_kernel.sql`. `Isolation.DatabaseIsolationTests.Only_
 | `0011_draft_batches.sql` | `kernel.draft_commands.batch_id`: steps applied by one request share a batch, applied whole or not at all; the batch can be undone as one change or step by step (REQ-WS-005, REQ-LIVE-003, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)) |
 | `0012_workspace_creation.sql` | `kernel.tenants.created_by` (null for operator and seed provisioning) and the privileged function `kernel.create_workspace` that enforces the per-person workspace limit (REQ-WS-001, [ADR 0020](0020-self-service-workspace-creation.md)) |
 | `0013_workspace_provisioning_state.sql` | `kernel.tenants.status` gains `provisioning`; `esmbler_definer` may update `status`; `kernel.create_workspace` replaced (fails closed, enabled people only, inserts as `provisioning`, counts active plus recent provisioning workspaces) and the new privileged function `kernel.activate_workspace` (REQ-WS-001, [ADR 0020](0020-self-service-workspace-creation.md)) |
+| `0014_notifications.sql` | Notification service ([ADR 0021](0021-notification-routing-and-delivery.md)): `kernel.notifications` gains `read_at`, `delivery_id`, `severity`, `entity_id` and `record_id` (the in-app inbox); `kernel.notification_channels` (environment channel instances: mode, settings, secret names, rate), `kernel.notification_deliveries` (one row per event, recipient and channel, unique `idempotency_key`, rendered text), `kernel.notification_delivery_attempts` and `kernel.notification_preferences`, all with FORCE RLS on tenant and environment; `esmbler_app` gets `SELECT`/`INSERT`/`UPDATE` on channels and deliveries, only `SELECT`/`INSERT` on attempts (append-only) and `DELETE` only on preferences (REQ-NOT-001, REQ-NOT-004, REQ-NOT-005) |
 
 ### Consequences
 

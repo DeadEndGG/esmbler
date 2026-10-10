@@ -130,7 +130,7 @@ The validator checks that emitted payloads conform to the declared schema (expre
 
 ### 3.3 Subscriptions
 
-Built in G2-M18 with the notification service, which is their first target.
+Built in G2-M18 with the notification service, which is their first target ([ADR 0021](../adr/0021-notification-routing-and-delivery.md)). The built subscription has `event`, an optional `entity` and `when` condition over `event` and `record`, and the target `notify`; the other targets come later.
 
 One public contract for "something reacts to events", stored as configuration:
 
@@ -189,6 +189,8 @@ Lifecycle: `open → acknowledged → resolved`, plus `suppressed` (maintenance 
 Storage: `kernel.alerts` (rule, dedup key, status, severity, title, subject record, owner, level, occurrences, opened/acknowledged/resolved at and by) and `kernel.alert_activity` (timeline). Permissions: `alerts.read`, `alerts.acknowledge`; owners and notified people see the alerts they are part of.
 
 ## 6. Notifications
+
+This section is the design target. What G2-M18 built, and where it differs (a smaller channel contract, recipients on routes rather than profiles, no team layer, schedules or quiet hours yet), is recorded in [ADR 0021](../adr/0021-notification-routing-and-delivery.md).
 
 ### 6.1 Channel types and channel instances
 
@@ -439,7 +441,7 @@ What each store holds afterwards:
 | Phase | Milestone | Scope | Exit evidence |
 | --- | --- | --- | --- |
 | 1 | G2-M17 Event platform v2 (done; SLA events moved to G2-M4, subscriptions to G2-M18, subject and payload schema reference as in ASM-052) | Envelope v2 (source, subject, dataSchema, traceparent, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and the `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention | Tickets 1.4.0 emits `ticket.escalated`; a poison consumer no longer blocks others; contract tests for envelope v1/v2 |
-| 2 | G2-M18 Notification service | Subscriptions spec object and the subscription router (section 3.3); channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
+| 2 | G2-M18 Notification service (done per [ADR 0021](../adr/0021-notification-routing-and-delivery.md); team layer, schedules and quiet hours, approvals and legacy templates onto routes, live push and Admin Center editing of routes deferred) | Subscriptions spec object and the subscription router (section 3.3); channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
 | 3 | G2-M19 Alerts and audit policy | Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, maintenance suppression, alerts page; SLA breach alerts; audit retention and legal hold, export, hash-chain verifier | The section 8 example runs as an acceptance test |
 | 4 | Gate 3 | User preferences UI and team-level routes; digests; on-call schedules (with the org model); webhook, Teams, Slack and push channels; package subscribers through the extension runtime; the automation engine (trigger → condition → action) as a subscription target | Package subscriber conformance tests; automation governors enforced end to end |
 
