@@ -5,6 +5,7 @@ using Esmbler.Hosting;
 using Esmbler.Hosting.Auth;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Services;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
 if (await HealthCheckCommand.TryRunAsync(args) is { } exitCode)
@@ -57,6 +58,14 @@ if (args.Contains("seed") || options.SeedDemoData)
 }
 
 app.UseExceptionHandler();
+if (platformOptions.Auth.TrustForwardedHeaders)
+{
+    var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto, ForwardLimit = 1 };
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwarded);
+}
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

@@ -121,3 +121,31 @@ test('@REQ-ACC-03 the module upgrade keeps the customization', async ({ page }) 
   await expect(page.locator('.field', { hasText: vendor })).toBeVisible();
   await expect(page.locator('.field', { hasText: 'Impact' }).first()).toBeVisible();
 });
+
+test('@REQ-LIVE-003 @REQ-LAY-003 point at a card, ask for a field there, and undo that step alone', async ({ page }) => {
+  await signIn(page, 'alex@acme.example', 'Acme');
+  await openFirstTicket(page);
+  await page.getByRole('button', { name: /AI builder/ }).click();
+  await expect(page.getByText('Draft preview')).toBeVisible();
+
+  // Point-and-prompt: clicking a card in draft mode attaches it to the chat.
+  const assignment = page.locator('section.card', { has: page.getByRole('heading', { name: 'Assignment' }) });
+  await assignment.getByRole('heading', { name: 'Assignment' }).click();
+  await expect(page.locator('.composer .chip', { hasText: 'Assignment' })).toBeVisible();
+
+  const label = `Pointed ${run}`;
+  await ask(page, `Add a "${label}" field here`);
+  await expect(assignment.getByText(label)).toBeVisible();
+
+  // Undo only the step that placed the field: it leaves the card, the step is struck through, and Redo brings it back.
+  const step = page.locator('.steps li').last();
+  await step.getByRole('button', { name: /^Undo/ }).click();
+  await expect(assignment.getByText(label)).toHaveCount(0);
+  await expect(page.locator('.steps li.undone').last()).toBeVisible();
+  await page.locator('.steps li').last().getByRole('button', { name: 'Redo' }).click();
+  await expect(assignment.getByText(label)).toBeVisible();
+
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(page.getByText(/Draft discarded/)).toBeVisible();
+});

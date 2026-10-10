@@ -71,6 +71,8 @@ services:
       Esmbler__Database__Migrator: Host=postgres;Database=esmbler;Username=esmbler_migrator;Password=${ESMBLER_MIGRATOR_PASSWORD:-dev-only-migrator};Gss Encryption Mode=Disable
       Esmbler__MigrateOnStartup: "true"
       Esmbler__SeedDemoData: "true"
+      # The API is published for local tooling, but browsers reach it through the web container's nginx.
+      Esmbler__Auth__TrustForwardedHeaders: "true"
       Esmbler__Assistant__McpUrl: http://mcp:8080/mcp
       # Leave empty to use the built-in scripted assistant; set to use Claude (human action: provide the key).
       Esmbler__Assistant__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}

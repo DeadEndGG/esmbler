@@ -9,8 +9,8 @@
     [class.changed]="changed() && draft()"
     [attr.data-node]="n.id"
     [attr.tabindex]="draft() && isBlock() ? 0 : null"
-    [attr.aria-selected]="draft() && isBlock() ? selected() : null"
-    [attr.aria-label]="draft() && isBlock() ? label() + ' block' : null"
+    [attr.role]="draft() && isBlock() ? 'group' : null"
+    [attr.aria-label]="draft() && isBlock() ? label() + ' block' + (selected() ? ', selected' : '') : null"
     (click)="select($event)"
     (keydown)="onKey($event)"
   >

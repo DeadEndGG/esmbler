@@ -33,7 +33,7 @@ public sealed class AssistantOptions
 
     public int MaxSeconds { get; set; } = 120;
 
-    public int MaxMessagesPerMinute { get; set; } = 12;
+    public int MaxMessagesPerMinute { get; set; } = 30;
 
     public int MaxMessageLength { get; set; } = 4000;
 }

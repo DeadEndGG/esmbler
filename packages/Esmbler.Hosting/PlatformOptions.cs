@@ -46,7 +46,13 @@ public sealed class PlatformOptions
         public bool AllowDevelopmentKey { get; set; }
 
         /// <summary>Login attempts allowed per client address per minute.</summary>
-        public int LoginAttemptsPerMinute { get; set; } = 20;
+        public int LoginAttemptsPerMinute { get; set; } = 30;
+
+        /// <summary>
+        /// Use X-Forwarded-For/-Proto from the reverse proxy in front of the API (the web container's nginx in Compose),
+        /// so rate limits and cookies see the real client. Enable only when the API is reachable through that proxy alone.
+        /// </summary>
+        public bool TrustForwardedHeaders { get; set; }
 
         /// <summary>Failed sign-ins per account within 15 minutes before the account is temporarily locked.</summary>
         public int FailedLoginsPerAccount { get; set; } = 8;

@@ -110,6 +110,60 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     }
 
     [Fact]
+    public async Task Tool_calls_are_rate_limited_per_agent_session()
+    {
+        // REQ-AISAFE-003: bounded tool calls.
+        var tenant = await platform.NewTenantAsync("ml");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"builder@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        McpToolException? limited = null;
+        for (var i = 0; i <= Esmbler.Mcp.Tools.ToolRunner.MaxCallsPerMinute && limited is null; i++)
+        {
+            try
+            {
+                await Call(client, "list_elements", new { category = "display" });
+            }
+            catch (McpToolException ex)
+            {
+                limited = ex;
+            }
+        }
+
+        Assert.NotNull(limited);
+        Assert.Equal("rate_limited", JsonNode.Parse(limited!.Body)!["error"]!["code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Disabling_the_agent_stops_its_next_call()
+    {
+        // REQ-AISAFE-003 kill switch: an administrator disables a person's AI agent.
+        var tenant = await platform.NewTenantAsync("mk");
+        var builder = await Api.SignInAsync($"builder@{Slug(tenant)}.example", Slug(tenant));
+        var minted = await (await builder.PostAsJsonAsync("/api/auth/agent-token", new { })).Content.ReadFromJsonAsync<JsonObject>(ApiFactory.Json);
+        await using var client = await Mcp.ConnectAsync(minted!["accessToken"]!.GetValue<string>());
+        await Call(client, "describe_entity", new { entity = "core.tickets.ticket" });
+
+        var admin = await Api.SignInAsync($"admin@{Slug(tenant)}.example", Slug(tenant));
+        (await admin.PostAsync($"/api/admin/agents/{minted["agentId"]!.GetValue<string>()}/disable", null)).EnsureSuccessStatusCode();
+
+        var denied = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "describe_entity", new { entity = "core.tickets.ticket" }));
+        Assert.Equal("forbidden", JsonNode.Parse(denied.Body)!["error"]!["code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Explain_access_tool_says_why_a_field_is_hidden()
+    {
+        // REQ-AUTHZ-009 over MCP: explanations come from the same decision point as enforcement.
+        var tenant = await platform.NewTenantAsync("mx");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var explained = await Call(client, "explain_access", new { entity = "core.tickets.ticket", principal = tenant.Users["dana"], field = "estimated_effort" });
+        var text = explained.ToJsonString();
+        Assert.Contains("hidden", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("requester", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Scopes_limit_the_agent_and_errors_are_structured()
     {
         var (_, readOnly) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme", "config:read");

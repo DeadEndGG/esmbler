@@ -13,6 +13,9 @@ namespace Esmbler.Api.Endpoints;
 public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
 {
     public const string Policy = "auth";
+
+    /// <summary>Refresh redeems a 256-bit random token, so it only needs flood protection, not guessing protection.</summary>
+    public const string RefreshPolicy = "auth-refresh";
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -83,6 +86,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.AddPolicy(Policy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = options.Auth.LoginAttemptsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(RefreshPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.Auth.LoginAttemptsPerMinute, 1) * 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
     }
 }

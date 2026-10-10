@@ -9,12 +9,14 @@ import { openFirstTicket, run, signIn } from './helpers';
  * Results are written to test-results/experience.json and summarized in docs/testing/gate-1-test-guide.md.
  */
 test('@REQ-LIVE-002 experience targets for live AI editing', async ({ page }) => {
+  test.setTimeout(240_000);
   await signIn(page, 'alex@acme.example', 'Acme');
   await openFirstTicket(page);
   await page.getByRole('button', { name: /AI builder/ }).click();
   await expect(page.getByText('Draft preview')).toBeVisible();
 
-  const cards = ['Details', 'Assignment', 'Classification', 'Requester', 'Details', 'Assignment'];
+  // 20 samples of the most common simple change (add a field to a card), cycling through the page's cards.
+  const cards = Array.from({ length: 20 }, (_, i) => ['Details', 'Assignment', 'Classification', 'Requester'][i % 4]);
   const promptToPreview: number[] = [];
   const stepLatency: number[] = [];
 

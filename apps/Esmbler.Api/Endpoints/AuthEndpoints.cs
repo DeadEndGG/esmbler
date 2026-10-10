@@ -74,7 +74,7 @@ public static class AuthEndpoints
             var name = await identity.DisplayNameAsync(principalId, ct);
             var access = tokens.IssueApi(principalId, name, tenantId, envId);
             return Results.Ok(new { access.AccessToken, access.ExpiresAt, workspaces });
-        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.Policy);
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.RefreshPolicy);
 
         g.MapPost("/logout", async (TokenService tokens, HttpContext http, CancellationToken ct) =>
         {
