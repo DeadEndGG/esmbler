@@ -3,7 +3,7 @@ title: Architecture overview
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-11
-requirements: [REQ-TEN-001, REQ-TEN-002, REQ-TEN-003, REQ-CFG-001, REQ-CFG-006, REQ-CFG-007, REQ-CFG-008, REQ-REC-001, REQ-EVT-001, REQ-EVT-002, REQ-EVT-008, REQ-EVT-009, REQ-AUTHZ-001, REQ-AI-003, REQ-AI-006, REQ-LIVE-002, REQ-MOD-002, REQ-EXT-001, REQ-OPS-006, REQ-BIZ-004, REQ-MIG-003, REQ-BIZ-005, REQ-MIG-004, REQ-AUTHZ-011, REQ-AISAFE-001, REQ-OPS-004, REQ-WS-001, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-NOT-001, REQ-NOT-004, REQ-NOT-005, REQ-ALR-001, REQ-AUD-001, REQ-BIZ-003]
+requirements: [REQ-TEN-001, REQ-TEN-002, REQ-TEN-003, REQ-CFG-001, REQ-CFG-006, REQ-CFG-007, REQ-CFG-008, REQ-REC-001, REQ-EVT-001, REQ-EVT-002, REQ-EVT-008, REQ-EVT-009, REQ-AUTHZ-001, REQ-AI-003, REQ-AI-006, REQ-LIVE-002, REQ-MOD-002, REQ-EXT-001, REQ-OPS-006, REQ-BIZ-004, REQ-MIG-003, REQ-BIZ-005, REQ-MIG-004, REQ-AUTHZ-011, REQ-AISAFE-001, REQ-OPS-004, REQ-WS-001, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-NOT-001, REQ-NOT-004, REQ-NOT-005, REQ-ALR-001, REQ-AUD-001, REQ-BIZ-003, REQ-AI-005, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007]
 ---
 
 # Architecture overview
@@ -18,13 +18,13 @@ Esmbler is an AI-native, composable Enterprise Service Management platform. It i
 - **Configuration is a compiled artifact.** Base modules plus the tenant overlay (typed operations) compile into an immutable, content-hashed `EffectiveConfig`. Each request pins one config revision ([ADR 0003](../adr/0003-configuration-artifact-and-overlay-format.md), [layered configuration](../explanation/layered-configuration.md)).
 - **Storage is pooled.** One PostgreSQL 18 database, schema `kernel`, a shared `kernel.records` table with JSONB data, and RLS with `FORCE` on every tenant table ([ADR 0002](../adr/0002-storage-and-query-model.md), [ADR 0010](../adr/0010-database-migrations-and-roles.md)).
 - **Authorization** is a kernel PDP over versioned permission-set specs plus OpenFGA relationship facts ([ADR 0004](../adr/0004-authorization-engine.md), [authorization model](../explanation/authorization-model.md)).
-- **The AI builder** uses Esmbler's own MCP server (`apps/Esmbler.Mcp`). The in-app chat (`packages/Esmbler.Assistant`, run by the API) drives Claude, or a deterministic scripted planner without an API key, as an MCP client with the user's delegated agent token ([ADR 0007](../adr/0007-mcp-server-design.md), [ADR 0013](../adr/0013-ai-assistant-model-adapter.md)).
+- **The AI builder** uses Esmbler's own MCP server (`apps/Esmbler.Mcp`). The in-app chat (`packages/Esmbler.Assistant`, run by the API) drives the workspace's model (Anthropic, OpenAI or Azure OpenAI, chosen from the operator's catalog of evaluated models, within a daily budget), or a deterministic scripted planner without a key, as an MCP client with the user's delegated agent token ([ADR 0007](../adr/0007-mcp-server-design.md), [ADR 0013](../adr/0013-ai-assistant-model-adapter.md), [ADR 0024](../adr/0024-multiple-model-providers.md)). ChatGPT, Claude and other external assistants connect to the same MCP server through OAuth 2.1, with Esmbler as the authorization server and one agent principal per connection ([ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md)).
 - **Live editing:** every build tool writes a Command to the draft. A SignalR push lets the Angular renderer show each change in under a second (measured p95 about 390 ms) ([ADR 0008](../adr/0008-realtime-channel-for-live-editing.md)).
 - **Extensions** (Gate 3) run in a Rust Wasmtime sidecar with no database credentials and no egress ([ADR 0006](../adr/0006-extension-runtime.md)).
 
 ### Build status
 
-Gate 1 (architecture proof) is implemented: REST API, record engine, drafts and publish with activation health checks and rollback, module upgrades with resumable data migrations, the worker (outbox dispatcher, job runner, notifications), the MCP server and its tools, the SignalR live channel, the AI assistant (Claude or scripted planner) and the Angular renderer with live draft mode. Gate 2 has added durable jobs and timers (G2-M1), service requests with versioned workflows (G2-M2, [ADR 0015](../adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)), approvals (G2-M3, [ADR 0016](../adr/0016-approvals.md)), the event platform v2 (G2-M17, [ADR 0017](../adr/0017-event-audit-alert-notification-services.md)), SLAs and business hours (G2-M4, [ADR 0018](../adr/0018-sla-and-business-hours.md)), metrics, dashboards and the connected explorer (G2-M9, [ADR 0019](../adr/0019-metrics-dashboards-and-connected-explorer.md)) guided workspace creation (G2-M9b, [ADR 0020](../adr/0020-self-service-workspace-creation.md)) the notification service (G2-M18, [ADR 0021](../adr/0021-notification-routing-and-delivery.md)), alerts and the audit policy (G2-M19, [ADR 0022](../adr/0022-alerts-and-audit-policy.md)) and email intake (G2-M5, [ADR 0023](../adr/0023-email-intake.md)). Migrations are `0001_kernel.sql` to `0018_mail_intake.sql`. What is not built yet is listed in [progress](../progress.md) and [known issues](../known-issues.md). The diagrams below show the Gate 1 system; Gate 2+ elements are labeled.
+Gate 1 (architecture proof) is implemented: REST API, record engine, drafts and publish with activation health checks and rollback, module upgrades with resumable data migrations, the worker (outbox dispatcher, job runner, notifications), the MCP server and its tools, the SignalR live channel, the AI assistant (Claude or scripted planner) and the Angular renderer with live draft mode. Gate 2 has added durable jobs and timers (G2-M1), service requests with versioned workflows (G2-M2, [ADR 0015](../adr/0015-requests-catalog-fulfillment-and-workflow-versions.md)), approvals (G2-M3, [ADR 0016](../adr/0016-approvals.md)), the event platform v2 (G2-M17, [ADR 0017](../adr/0017-event-audit-alert-notification-services.md)), SLAs and business hours (G2-M4, [ADR 0018](../adr/0018-sla-and-business-hours.md)), metrics, dashboards and the connected explorer (G2-M9, [ADR 0019](../adr/0019-metrics-dashboards-and-connected-explorer.md)) guided workspace creation (G2-M9b, [ADR 0020](../adr/0020-self-service-workspace-creation.md)) the notification service (G2-M18, [ADR 0021](../adr/0021-notification-routing-and-delivery.md)), alerts and the audit policy (G2-M19, [ADR 0022](../adr/0022-alerts-and-audit-policy.md)), email intake (G2-M5, [ADR 0023](../adr/0023-email-intake.md)) and multiple AI providers with OAuth for external MCP clients (G2-M20, [ADR 0024](../adr/0024-multiple-model-providers.md), [ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md)). Migrations are `0001_kernel.sql` to `0020_mcp_oauth.sql`. What is not built yet is listed in [progress](../progress.md) and [known issues](../known-issues.md). The diagrams below show the Gate 1 system; Gate 2+ elements are labeled.
 
 ### Invariants
 
@@ -41,8 +41,8 @@ flowchart LR
     agent([Service desk agent])
     requester([Requester])
     admin([Tenant admin / builder])
-    claude[[Claude via Anthropic API]]
-    extmcp[[External MCP client<br/>e.g. Claude Desktop]]
+    claude[[Model providers<br/>Anthropic, OpenAI, Azure OpenAI]]
+    extmcp[[External MCP client<br/>ChatGPT, Claude, Claude Code]]
     esm[(Esmbler platform)]
     idp[[Tenant IdP: OIDC/SAML<br/>Gate 2]]
     email[[Email provider<br/>Gate 2]]
@@ -53,7 +53,7 @@ flowchart LR
     requester -- raises and follows requests --> esm
     admin -- customizes by chat, drag and drop, slash menu --> esm
     esm -- assistant loop: prompts + MCP tool results --> claude
-    extmcp -- MCP over streamable HTTP, esmbler-mcp token --> esm
+    extmcp -- OAuth 2.1, then MCP over streamable HTTP --> esm
     esm -. SSO, SCIM .-> idp
     esm -. inbound and outbound mail .-> email
     esm -. attachments .-> storage
@@ -63,8 +63,8 @@ flowchart LR
 | Actor or system | Interaction | Gate |
 | --- | --- | --- |
 | Agents, requesters, admins | Browser UI (Angular). Dev auth uses local passwords | 1 |
-| Claude (Anthropic API) | Called by the API's assistant loop. A deterministic scripted planner replaces it when no API key is configured (`ANTHROPIC_API_KEY`, mapped to `Esmbler__Assistant__AnthropicApiKey`) | 1 |
-| External MCP clients | Connect to `/mcp` with an agent token minted for a user (`POST /api/auth/agent-token`) | 1 |
+| Model providers (Anthropic, OpenAI, Azure OpenAI) | Called by the API's assistant loop with the workspace's catalog model and the operator's named credential (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_*` or `Esmbler__Assistant__Credentials__*`). A deterministic scripted planner replaces them when no credential is configured ([ADR 0024](../adr/0024-multiple-model-providers.md)) | 1, 2 |
+| External MCP clients | Connect to `/mcp` with an agent token minted for a user (`POST /api/auth/agent-token`), or, when `Esmbler:Mcp:PublicUrl` is set and the issuer is HTTPS, through OAuth 2.1 with the person's consent (ChatGPT, Claude; [ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md)) | 1, 2 |
 | Email, object storage | Behind adapters with local fakes. Notification email goes through an SMTP adapter and SMS through a Twilio-style HTTPS adapter, both only to operator allow-listed hosts and in capture mode until a person turns a channel live ([ADR 0021](../adr/0021-notification-routing-and-delivery.md)). Inbound email arrives through a webhook with a per-mailbox token or by IMAP polling from allow-listed servers ([ADR 0023](../adr/0023-email-intake.md)); object storage comes later | 2 |
 | Identity providers | Per-tenant OIDC/SAML/SCIM | 2 |
 | Payment provider | Sandbox first; live credentials are a human action | 5 |
@@ -83,7 +83,7 @@ flowchart TB
         fga[openfga v1.22<br/>store per tenant]
         ext[extension runtime sidecar<br/>Rust + Wasmtime 48 LTS<br/>Gate 3]
     end
-    claude[[Anthropic API]]
+    claude[[Model providers]]
     extclient[[External MCP client]]
 
     browser --> web
@@ -91,6 +91,7 @@ flowchart TB
     api -- MCP client, agent token --> mcp
     api --> claude
     extclient --> mcp
+    extclient -- OAuth via web proxy --> api
     api -- esmbler_app role, RLS; migrator role for schema --> pg
     mcp -- esmbler_app role, RLS --> pg
     worker -- esmbler_app role, RLS --> pg
@@ -107,10 +108,10 @@ flowchart TB
 | Container | Technology | Responsibilities | Data access |
 | --- | --- | --- | --- |
 | `web` | Angular 22 (standalone, signals, zoneless), Angular CDK | Shell, server-driven renderer (one component per registry element), live editing, command palette, chat panel | None directly; REST and SignalR to `api` |
-| `api` | ASP.NET Core on .NET 10 | REST API (OpenAPI from code), auth endpoints, SignalR hub `/hubs/live`, assistant (`Esmbler.Assistant`: Anthropic SDK + MCP client), `DraftNotificationListener` (`LISTEN esmbler_draft`); the inbound mail webhook `POST /api/mail/inbound` (no session, mailbox token, rate limited); `/health/live`, `/health/ready` | `esmbler_app` role via kernel; runs schema migrations as `esmbler_migrator` at startup (`Esmbler:MigrateOnStartup`) or with the `migrate` argument |
-| `mcp` | ASP.NET Core + `ModelContextProtocol.AspNetCore` | Discovery, build, review, lifecycle and explain tools; resources `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph`. Accepts only `esmbler-mcp` audience tokens | Same kernel services in-process, same authorization |
+| `api` | ASP.NET Core on .NET 10 | REST API (OpenAPI from code), auth endpoints, SignalR hub `/hubs/live`, assistant (`Esmbler.Assistant`: `ToolLoopPlanner` with Anthropic and OpenAI clients + MCP client; AI settings `/api/admin/ai`), the OAuth authorization server for external MCP clients (`/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, consent and connections APIs, ADR 0025), `DraftNotificationListener` (`LISTEN esmbler_draft`); the inbound mail webhook `POST /api/mail/inbound` (no session, mailbox token, rate limited); `/health/live`, `/health/ready` | `esmbler_app` role via kernel; runs schema migrations as `esmbler_migrator` at startup (`Esmbler:MigrateOnStartup`) or with the `migrate` argument |
+| `mcp` | ASP.NET Core + `ModelContextProtocol.AspNetCore` | Discovery, build, review, lifecycle and explain tools; resources `esmbler://registry/elements`, `esmbler://design-system/tokens`, `esmbler://app/graph`. Accepts only MCP audience tokens (`esmbler-mcp`, or `Esmbler:Mcp:PublicUrl` when public); when public, serves RFC 9728 protected resource metadata and a `401` challenge pointing at it, and checks an external connection is still active on every tool call | Same kernel services in-process, same authorization |
 | `worker` | .NET generic host | Outbox and job dispatch through `kernel.claim_outbox` / `kernel.claim_jobs` (`FOR UPDATE SKIP LOCKED`, leases, backoff, dead letters), one transaction per consumer and event with per-consumer dead letters, outbox retention (`kernel.purge_outbox`), inbox dedup, record projection, notifications (`SubscriptionRouter`, legacy `NotificationConsumer`), request fulfillment (`FulfillmentConsumer`), starting and cancelling approvals (`ApprovalConsumer`), durable jobs and timers: module-upgrade data migrations (`upgrade.run`), workflow instance migration (`workflow.migrate`), approval stage expiry (`approval.expire`), SLA warning and breach checks (`sla.check`), notification resolution and delivery (`notify.resolve`, `notify.deliver`, the only outbound calls: SMTP and SMS providers on the allow-lists), alerts (`AlertRouter`, `alert.evaluate`, `alert.escalate`), inbound mail processing (`mail.process`) and IMAP polling of allow-listed servers (`ImapPollingService`, every minute, through `kernel.mail_inboxes_due`), and `AuditMaintenanceService`: sealing the audit hash chain every 10 s, verifying chains daily and retention hourly through the definer functions `kernel.seal_audit`, `kernel.verify_audit_chain`, `kernel.audit_verification_due`, `kernel.purge_retention` and `kernel.purge_inbound_mail` | `esmbler_app` only |
-| `postgres` | PostgreSQL 18 | Database `esmbler`: `kernel` schema (records, audit log, outbox, inbox, jobs, config artifacts, drafts, workflow definitions, approvals, SLA timers, notification channels, deliveries and preferences, alerts, audit chain heads, audit policies and legal holds, mailboxes and inbound messages, identity) and `esmbler_meta.schema_migrations` (migrations up to `0018_mail_intake.sql`); separate `openfga` database. Roles from `deploy/postgres/00-roles.sh` | RLS with `FORCE`; runtime role is not owner and has no `BYPASSRLS` |
+| `postgres` | PostgreSQL 18 | Database `esmbler`: `kernel` schema (records, audit log, outbox, inbox, jobs, config artifacts, drafts, workflow definitions, approvals, SLA timers, notification channels, deliveries and preferences, alerts, audit chain heads, audit policies and legal holds, mailboxes and inbound messages, AI settings and usage, MCP connections, OAuth codes and refresh tokens, identity) and `esmbler_meta.schema_migrations` (migrations up to `0020_mcp_oauth.sql`); separate `openfga` database. Roles from `deploy/postgres/00-roles.sh` | RLS with `FORCE`; runtime role is not owner and has no `BYPASSRLS` |
 | `openfga` | OpenFGA v1.22 | Relationship facts: nested group membership, role assignments, agent `acts_for`. A derived index of `kernel.group_members` / `kernel.role_assignments`, one store per tenant | Own database (`openfga`, role `esmbler_openfga`); isolation by store |
 | extension runtime | Rust sidecar, `wasmtime =48.0.5` (Gate 3) | Runs tenant extension components with fuel, epoch and memory limits | None: no DB or vault credentials, egress denied |
 
@@ -121,7 +122,7 @@ flowchart LR
     subgraph host[Esmbler.Api / Esmbler.Mcp hosts]
         rest[REST endpoints]
         hub[SignalR hub<br/>/hubs/live]
-        loop[Assistant<br/>Claude or scripted planner]
+        loop[Assistant<br/>tool loop over a model client,<br/>or scripted planner]
         tools[MCP tools]
         listen[pg_notify listener]
     end
@@ -198,7 +199,8 @@ flowchart LR
 | Alerts | Alert rules on `alert` subscriptions raise alerts in a durable `alert.evaluate` job: one active alert per rule and key (unique index), occurrences, maintenance windows, cool-down reopen, auto-resolve by record or key; `alert.escalate` raises the level on timers until acknowledged. Alerts only publish `platform.alert.*` events about the subject record; routes with `alert_owner` recipients tell people. Owners, the assignee and `alerts.respond` see and answer alerts, each view needs read access to the record, and agents never act. REST `/api/alerts`, `/api/admin/alerts/suppressions` ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)) | `AlertRouter`, `AlertEvaluateJobHandler`, `AlertEscalateJobHandler`, `AlertService`, `AlertLifecycle`; `AlertRuleSpec`; `kernel.alerts`, `kernel.alert_activity`, `kernel.alert_suppressions` (migration 0015) |
 | Email intake | Mail intakes (module spec objects) say what a message to a mailbox creates. Mailboxes are environment settings (webhook token stored as a hash, or an allow-listed IMAP server with secret references). Each message is stored once per mailbox and Message-ID and processed by a durable `mail.process` job: guards (own mail, RFC 3834 automatic mail, per-sender cap, sender verification through the trusted server's `Authentication-Results`, membership), then threading (delivery Message-ID, inbound Message-ID, `[NUMBER]`) and a write as the sender through `RecordService`; doubtful mail waits at `/mail` for people who work the entity. Outbound email carries Message-ID, References, Reply-To and `Auto-Submitted`; `{{activity.body}}` shows public replies only. REST `/api/mail/inbound`, `/api/mail/messages`, `/api/admin/mail/inboxes`, `/api/admin/mail/intakes` ([ADR 0023](../adr/0023-email-intake.md)) | `MailIntakeService`, `MailProcessJobHandler`, `MailParser`, `MailGuard`, `MailThreading`, `ImapPoller`; `MailIntakeSpec`; `kernel.mail_inboxes`, `kernel.inbound_messages` (migration 0018) |
 | SignalR hub | Group `draft:{tenant}:{env}` (builders only, joined with `WatchDraft`); pushes `draftChanged {d, v, s, k, targets, agent, at}` with IDs only, and the client reloads. Group `user:{principal}` carries `assistantEvent` progress | `LiveHub`, `DraftNotificationListener` |
-| Assistant | Planner loop with bounded tool calls, model requests and time; acts only through MCP with a builder-scoped agent token; record text from tools arrives wrapped as `untrusted_data` | `IPlanner`, `ClaudePlanner`, `ScriptedPlanner`, `McpToolGateway`, `AssistantService` ([ADR 0013](../adr/0013-ai-assistant-model-adapter.md)) |
+| Assistant | Provider-neutral planner loop with bounded tool calls, model requests and time and a per-workspace daily spend budget; acts only through MCP with a builder-scoped agent token; record text from tools arrives wrapped as `untrusted_data`. The workspace's model and credential come from the operator's catalog (`AiCatalog`, `AiSettingsService`, `kernel.ai_settings`, usage in `kernel.ai_usage`) | `IPlanner`, `ToolLoopPlanner`, `IModelClient` (`AnthropicModelClient`, `OpenAIResponsesModelClient`), `ScriptedPlanner`, `McpToolGateway`, `AssistantService`, `AiUsageMeter` ([ADR 0013](../adr/0013-ai-assistant-model-adapter.md), [ADR 0024](../adr/0024-multiple-model-providers.md)) |
+| OAuth for external MCP clients | A minimal authorization server: PKCE S256, allowlisted Client ID Metadata Documents, `resource` bound to `PublicUrl`, consent by a signed-in person who picks the environment and scopes, one agent principal per connection (`kernel.mcp_connections`), hashed single-use codes and rotating refresh tokens found through two definer lookups, RFC 7009 revocation; the workspace policy (`off`, `non_production`, `all`) lives with the AI settings | `OAuthService`, `HttpClientMetadataSource`, `OAuthEndpoints`, `TokenService.McpAudience` ([ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md)) |
 
 ## Key flows
 
@@ -247,6 +249,10 @@ sequenceDiagram
 ```
 
 The p95 target from tool completion to render is under 1 s ([REQ-LIVE-002](../spec/traceability.md)); `tests/e2e/specs/experience.spec.ts` measured about 390 ms p95 over 20 samples, and about 650 ms p50 from prompt to previewed draft.
+
+### External assistant connection
+
+ChatGPT or Claude calls `/mcp` without a token and gets a `401` whose `resource_metadata` names the protected resource metadata; that names the API as authorization server. The host sends the person to `/oauth/authorize`, which checks the client's metadata document and sends the browser to the consent page (`/connect`); the person approves for one environment, the host redeems the code for a 15-minute token whose audience is the MCP server's public URL, and each tool call runs as the connection's own agent through the same MCP tools, permissions and audit as the in-app assistant. The full sequence is in [ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md#consent).
 
 ### Inbound email
 
@@ -354,7 +360,7 @@ Costs to plan for: a network hop on the record write path, broker operations, di
 
 ## Deployment
 
-- `docker compose -f deploy/docker-compose.yml up --build` starts postgres, openfga (after `openfga-migrate`), api, mcp, worker and web. Ports: web 8080, API 5080, MCP 5090 (`/mcp`), OpenFGA 8081, Postgres 55432. Compose sets `Esmbler__SeedDemoData=true`, so the API seeds demo tenants `acme` and `globex` (environments `prod` and `sandbox`) with sample tickets on first start ([REQ-OPS-006](../spec/traceability.md)). The browser reaches the API through the web container's nginx (`/api`, `/hubs`).
+- `docker compose -f deploy/docker-compose.yml up --build` starts postgres, openfga (after `openfga-migrate`), api, mcp, worker and web. Ports: web 8080, API 5080, MCP 5090 (`/mcp`), OpenFGA 8081, Postgres 55432. Compose sets `Esmbler__SeedDemoData=true`, so the API seeds demo tenants `acme` and `globex` (environments `prod` and `sandbox`) with sample tickets on first start ([REQ-OPS-006](../spec/traceability.md)). The browser reaches the API through the web container's nginx (`/api`, `/hubs`, and for OAuth `/oauth/` and `/.well-known/oauth-authorization-server`). OAuth for external MCP clients stays off in Compose because `Esmbler__Mcp__PublicUrl` is not set ([human actions](../human-actions.md)).
 - Images: one per deployable. `deploy/docker/dotnet.Dockerfile` builds each .NET host (`APP` = `Esmbler.Api`, `Esmbler.Mcp` or `Esmbler.Worker`); `deploy/docker/web.Dockerfile` builds the Angular bundle served by nginx. Health checks run `dotnet <Host>.dll healthcheck <path>`, so runtime images need no curl. The extension runtime is added in Gate 3.
 - Kubernetes manifests are planned and will not be exercised in CI at first ([assumptions](../decisions/assumptions.md)).
 

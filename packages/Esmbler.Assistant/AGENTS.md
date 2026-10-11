@@ -11,6 +11,13 @@ short-lived agent token, so the assistant can never do more than the person it a
   they never call tools, never log bodies, and turn provider failures into `AssistantUnavailableException` without
   provider text, endpoints or keys. `ProviderState` is replayed only to its own provider within a turn; history across
   turns is plain text. `IModelUsageMeter` checks the workspace's spend budget before and records usage after each request.
+  `ModelUsage` is normalized across providers: `InputTokens` excludes cache reads (`CachedInputTokens`) and cache writes
+  (`CacheWriteTokens`); OpenAI's `input_tokens` include cached tokens, so its client subtracts them. Arguments that are
+  not a JSON object go back to the model as an `invalid_arguments` tool error.
+- Which model a workspace uses, its key and its budget are decided outside this package (`AiCatalog` and
+  `AiSettingsService` in `Esmbler.Kernel.Infrastructure`, wired in `apps/Esmbler.Api/Assistant/AssistantService.cs` with
+  `AiUsageMeter`). Clients receive a key only through their constructor and must never put it in exceptions, logs or
+  `ToString()`. A new provider is a new `IModelClient` plus translation tests, never a change to the loop.
 - `IToolGateway` abstracts the MCP client; `McpToolGateway` is the real one. Tests use fakes.
 - Events (`AssistantEvent`) stream to the person through `IAssistantSink`; every applied step is reported with its
   targets so the UI can highlight it.
@@ -22,6 +29,7 @@ short-lived agent token, so the assistant can never do more than the person it a
   found inside record text.
 - Must not reference `Esmbler.Kernel*`, `Esmbler.Platform`, `Esmbler.Hosting`, the hosts, modules, `Esmbler.Sdk`,
   Npgsql, EF Core or OpenFGA (architecture test `Assistant_changes_workspaces_only_through_mcp`).
-- Tests: `dotnet test tests/Esmbler.UnitTests --filter FullyQualifiedName~Assistant` (planner) and
-  `dotnet test tests/Esmbler.IntegrationTests --filter FullyQualifiedName~AssistantTests` (evaluation cases in
-  `tests/ai-evals/builder-cases.json`, needs Docker).
+- Tests: `dotnet test tests/Esmbler.UnitTests --filter FullyQualifiedName~Assistant` (planners, `ModelProviderTests`
+  for the loop and the client translations) and `dotnet test tests/Esmbler.IntegrationTests --filter
+  FullyQualifiedName~AssistantTests` (evaluation cases in `tests/ai-evals/builder-cases.json`, needs Docker;
+  `Model_driven_planner_evaluation_runs_when_a_key_is_configured` scores each provider whose key is set, KI-007).

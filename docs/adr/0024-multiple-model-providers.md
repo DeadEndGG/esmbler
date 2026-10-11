@@ -3,7 +3,7 @@ title: "ADR 0024: Multiple model providers"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-11
-requirements: [REQ-AI-005, REQ-AI-007, REQ-AISAFE-001, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AISAFE-005, REQ-AUTHZ-007, REQ-ADM-002, REQ-TEN-001]
+requirements: [REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AISAFE-005, REQ-AUTHZ-007, REQ-ADM-002, REQ-TEN-001]
 ---
 
 # ADR 0024: Multiple model providers
@@ -21,7 +21,7 @@ Questions this ADR settles:
 - Where does provider-specific code live, and what stays provider-neutral?
 - How does OpenAI fit the loop without weakening the safeguards of ADR 0013?
 - How does a tenant choose a provider and model, where do keys come from, and who pays?
-- How is spend bounded per tenant (KI-002)?
+- How is spend bounded per tenant ([KI-002](../known-issues.md))?
 - What happens to a person's ChatGPT or Claude subscription?
 
 ## Decision drivers
@@ -53,20 +53,22 @@ Questions this ADR settles:
 - **`ToolLoopPlanner`**: the provider-neutral loop. It lists the MCP tools once, calls `IModelClient.CompleteAsync`, runs each `ToolCall` through `IToolGateway` with narration and step events, appends the `ToolResult` items, and repeats until `EndTurn`, `Refusal` or a bound. It owns the system prompt, the model-turn bound, the deadline, cancellation and the history window.
 - **`IModelClient`**: one request to one provider. It translates to the provider's API and back and never calls tools.
 
-The types live in the namespace `Esmbler.Assistant.Models` (research section 1.3). The sketch below fixes the shapes; the code in `packages/Esmbler.Assistant/Models/` is authoritative for details such as where `ModelSettings` is passed:
+The types live in the namespace `Esmbler.Assistant.Models` (research section 1.3). The shapes as built (`packages/Esmbler.Assistant/Models/ModelContracts.cs` is authoritative):
 
 ```csharp
 namespace Esmbler.Assistant.Models;
 
 public interface IModelClient
 {
-    string Provider { get; }                 // "anthropic", "openai", "azure-openai", ...
-    ModelCapabilities Capabilities { get; }  // tool calling, parallel calls, reasoning replay, caching, streaming
+    string Provider { get; }   // "anthropic", "openai", "azure-openai" or "fake"
+    string Model { get; }
     Task<ModelResponse> CompleteAsync(ModelRequest request, CancellationToken ct);
 }
 
-public sealed record ModelRequest(string Instructions, IReadOnlyList<ModelItem> Items,
-    IReadOnlyList<ToolDefinition> Tools, ModelSettings Settings);
+// Per client, resolved by the host: model, effort, 16k output tokens, 60 s timeout, Anthropic fallback model.
+public sealed record ModelSettings { /* Model, Effort, MaxOutputTokens, Timeout, FallbackModel */ }
+
+public sealed record ModelRequest(string Instructions, IReadOnlyList<ModelItem> Items, IReadOnlyList<ToolDefinition> Tools);
 
 public abstract record ModelItem;
 public sealed record UserText(string Text) : ModelItem;
@@ -77,39 +79,47 @@ public sealed record ProviderState(string Provider, string Json) : ModelItem; //
 
 public sealed record ModelResponse(StopKind Stop, IReadOnlyList<ModelItem> Output, ModelUsage Usage);
 public enum StopKind { EndTurn, ToolUse, MaxTokens, Refusal }
-public sealed record ModelUsage(int InputTokens, int OutputTokens, int CachedInputTokens, string Model);
+
+// Normalized: InputTokens is input neither read from nor written to the cache.
+public sealed record ModelUsage(int InputTokens, int OutputTokens, int CachedInputTokens, string Model, int CacheWriteTokens = 0);
+
+public interface IModelUsageMeter
+{
+    Task EnsureWithinBudgetAsync(CancellationToken ct);                        // before every request
+    Task RecordAsync(string provider, ModelUsage usage, CancellationToken ct); // after every request
+}
 ```
 
 Clients:
 
 | Client | Status | Notes |
 | --- | --- | --- |
-| `AnthropicModelClient` | G2-M20b | Behavior-preserving refactor of `ClaudePlanner` on the `Anthropic` NuGet: the cache breakpoint on the system block, effort, the server-side refusal fallback model, the 60 s request timeout and 16k output tokens. Claude `thinking` blocks with signatures become `ProviderState` items |
-| `OpenAIResponsesModelClient` | G2-M20c | The OpenAI **Responses API** (recommended by OpenAI for new projects), called as documented REST (`POST {base}/v1/responses`) with `HttpClient` and `System.Text.Json`, not through the `OpenAI` NuGet (ASM-133). Function tools with `strict: false` (our MCP input schemas have optional properties and free-form objects), `store: false`, `include: ["reasoning.encrypted_content"]`, reasoning effort from the catalog. Returned reasoning items become `ProviderState` and are replayed within the turn. `previous_response_id` is never used, so no conversation state is kept at OpenAI |
-| Azure OpenAI | G2-M20c | The same client with an endpoint variant (`{endpoint}/openai/v1/responses`, header `api-key`); the deployment name is the model |
-| `FakeModelClient` | G2-M20b | Replays a scripted list of `ToolCall`s and texts, so `ToolLoopPlanner` is unit-tested without a network |
-| `OpenAICompatibleChatModelClient` (Chat Completions: Gemini, self-hosted, gateways) | Deferred | Operator-configured endpoint only (never a tenant's, SSRF), labelled experimental, offered only after a model passes the evaluation gate |
-| Bedrock, Vertex AI and Foundry variants of the Anthropic client | Deferred (Gate 3, on demand) | `Anthropic.Bedrock`, `Anthropic.Vertex`, `Anthropic.Foundry`; beta features (effort, refusal fallback) checked per platform first |
+| `AnthropicModelClient` | Built (G2-M20b) | Behavior-preserving refactor of `ClaudePlanner` on the `Anthropic` NuGet: the cache breakpoint on the system block, effort, the server-side refusal fallback model (per catalog entry), the 60 s request timeout and 16k output tokens. Claude `thinking` and `redacted_thinking` blocks become `ProviderState` items. Anthropic's `input_tokens` already excludes cache reads and writes |
+| `OpenAIResponsesModelClient` | Built (G2-M20c) | The OpenAI **Responses API** (recommended by OpenAI for new projects), called as documented REST (`POST {base}/v1/responses`) with `HttpClient` and `System.Text.Json`, not through the `OpenAI` NuGet (ASM-133). Function tools with `strict: false` (our MCP input schemas have optional properties and free-form objects), `store: false`, `include: ["reasoning.encrypted_content"]`, reasoning effort, `parallel_tool_calls: false`. Returned reasoning items become `ProviderState` and are replayed within the turn. `previous_response_id` is never used, so no conversation state is kept at OpenAI. OpenAI's `input_tokens` include cached tokens, so usage is normalized to uncached input plus cache reads. No streaming ([KI-065](../known-issues.md)) |
+| Azure OpenAI | Built (G2-M20c) | The same client with an endpoint variant (`{endpoint}/openai/v1/responses`, header `api-key`, an HTTPS endpoint only); the deployment name is the model, and usage is recorded under the configured model, which is what the catalog prices |
+| `FakeModelClient` | Built (G2-M20b) | Replays scripted responses and records each request, so `ToolLoopPlanner` is unit-tested without a network |
+| `OpenAICompatibleChatModelClient` (Chat Completions: Gemini, self-hosted, gateways) | Deferred ([KI-066](../known-issues.md)) | Operator-configured endpoint only (never a tenant's, SSRF), labelled experimental, offered only after a model passes the evaluation gate |
+| Bedrock, Vertex AI and Foundry variants of the Anthropic client | Deferred to Gate 3, on demand ([KI-066](../known-issues.md)) | `Anthropic.Bedrock`, `Anthropic.Vertex`, `Anthropic.Foundry`; beta features (effort, refusal fallback) checked per platform first |
 
 How each safeguard carries over:
 
 | Concern | After the split |
 | --- | --- |
-| Budgets | `ToolLoopPlanner` enforces model requests per turn (15) and the deadline (120 s); `McpToolGateway` still counts tool calls (30). `ModelUsage` feeds metering and the daily spend budget |
-| Cancellation | The turn token reaches `CompleteAsync`, which aborts the HTTP request, and is checked before every tool call |
+| Budgets | `ToolLoopPlanner` enforces model requests per turn (15) and the deadline (120 s); `McpToolGateway` still counts tool calls (30). Before every request the loop asks `IModelUsageMeter` whether the workspace is within its daily budget, and after it records the `ModelUsage` |
+| Cancellation | The turn token reaches `CompleteAsync`, which aborts the HTTP request, and is checked before every model request and tool call |
 | Untrusted content | Unchanged: MCP wraps user-written text as `untrusted_data`, and the shared system prompt says it is data. Every client puts tool output only in the provider's tool-result channel (`tool_result`, `function_call_output`), never in system or developer instructions |
-| Refusal | Each client maps its provider's signal to `StopKind.Refusal` (Anthropic `stop_reason: "refusal"`; OpenAI refusal content or an incomplete or failed response). The loop ends the turn with "I can't help with that request." |
-| Errors and secrecy | Clients catch provider failures and throw `AssistantUnavailableException` with a generic message: no provider error bodies (they can echo request data), endpoints or keys. SDK and `HttpClient` request logging is off, and log redaction covers `Authorization`, `x-api-key` and `api-key` |
+| Refusal | Each client maps its provider's signal to `StopKind.Refusal` (Anthropic `stop_reason: "refusal"`; OpenAI `refusal` content or an `incomplete` response with reason `content_filter`). The loop ends the turn with "I can't help with that request." An OpenAI `failed` response is an `AssistantUnavailableException`, not a refusal. Arguments that are not a JSON object go back to the model as an `invalid_arguments` tool error, and no tool runs |
+| Errors and secrecy | Clients catch provider failures and throw `AssistantUnavailableException` with a generic message (the status code at most): no provider error bodies (they can echo request data), endpoints or keys. Clients never log request or response bodies, and the text forms of `AiCredential` and `OpenAIEndpoint` omit the key |
 | Provider state | `ProviderState` items are replayed only within the same turn and provider. **Cross-turn history stays plain text** (`UserText`, `AssistantText` and short tool summaries), so a tenant can switch providers between turns without breaking a conversation |
 | Fallback | No silent cross-provider fallback: a provider outage ends the turn with a clear message. Data-residency or contractual policy may forbid sending context elsewhere. Anthropic's server-side refusal fallback stays, configured per catalog entry, because it stays within one provider |
-| Architecture | The models and clients live in `packages/Esmbler.Assistant` (still no kernel references, architecture test). Resolving tenant settings and credentials happens in `apps/Esmbler.Api/Assistant/AssistantService.cs`, which builds the `IModelClient` for the turn |
+| Architecture | The models and clients live in `packages/Esmbler.Assistant` (still no kernel references, architecture test). The catalog and settings live in `packages/Esmbler.Kernel.Infrastructure/Assistant` (`AiCatalog`, `AiSettingsService`); `apps/Esmbler.Api/Assistant/AssistantService.cs` resolves the workspace's model and credential for each turn, builds the `IModelClient` and wraps it in `ToolLoopPlanner` with an `AiUsageMeter` |
 
 ```mermaid
 flowchart LR
     UI[Chat panel] --> AS[AssistantService<br/>apps/Esmbler.Api]
     AS -->|tenant AI settings| SET[(kernel.ai_settings<br/>FORCE RLS)]
-    AS -->|credential name| RES[Credential resolver<br/>environment now, vault after G2-M12]
-    AS -->|budget check| MET[Usage metering<br/>daily spend budget]
+    AS -->|model and credential| RES[AiCatalog<br/>operator configuration; vault after G2-M12]
+    AS -->|IModelUsageMeter| MET[(kernel.ai_usage<br/>daily spend budget)]
     AS --> LOOP[ToolLoopPlanner<br/>bounds, cancel, narration]
     LOOP --> MC{IModelClient}
     MC --> ANT[AnthropicModelClient<br/>Anthropic SDK]
@@ -122,33 +132,39 @@ flowchart LR
 
 ### Named credentials and the model catalog (platform level)
 
-The operator configures, under `Esmbler:Assistant` (environment variables):
+`AiCatalogFactory` (`packages/Esmbler.Hosting`) builds the operator's `AiCatalog` from configuration under `Esmbler:Assistant` (environment variables), never from workspace data:
 
-- **Named credentials**: `Esmbler__Assistant__Credentials__<name>__Provider` and `__ApiKey` (Azure also `__Endpoint`). Two names are wired by default: `ANTHROPIC_API_KEY` becomes the credential `anthropic-default` (today's behavior keeps working), and `OPENAI_API_KEY` becomes `openai-default`.
-- **The model catalog**: entries with an ID, provider, credential name, model ID, effort, prices per million input, cached input and output tokens, region, and whether and when the model passed evaluation.
-- **The evaluation gate**: an entry can be offered to tenants only after `tests/ai-evals/builder-cases.json` has run against it and met the ADR 0013 bar: task completion of at least 80% and zero injection or policy failures. The evaluation test runs once per configured credential. An entry without a passing result is visible to operators only.
+- **Named credentials**: three are wired by default. `anthropic-default` takes `Esmbler__Assistant__AnthropicApiKey` or `ANTHROPIC_API_KEY` (so existing deployments keep working), `openai-default` takes `Esmbler__Assistant__OpenAIApiKey` or `OPENAI_API_KEY`, and `azure-openai-default` takes `AZURE_OPENAI_API_KEY` with `AZURE_OPENAI_ENDPOINT` (HTTPS only). More are `Esmbler__Assistant__Credentials__<name>__Provider` with `__ApiKey` or `__ApiKeyVariable` (the name of another environment variable), and `__Endpoint` for Azure. A credential is handed to a client only when it is configured and its provider matches the catalog entry's.
+- **The model catalog**: by default `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol` and `gpt-6-astra`. An operator replaces it with `Esmbler__Assistant__Catalog__N__*` entries: `Id`, `Label`, `Provider`, `Model`, `Credential`, `Effort`, `InputPerMillion` and `OutputPerMillion` (US dollars per million tokens, for estimates), `Evaluated`, `FallbackModel` (Anthropic only) and **`AllowedTenants`**. The default model is `Esmbler__Assistant__DefaultModel` (or the legacy `Esmbler__Assistant__Model` of ADR 0013 when it names a catalog entry); when it is not usable for a workspace, the first usable entry is the default.
+- **Customer-paid keys**: a catalog entry whose credential holds one customer's own key names the workspaces it is for (`Esmbler__Assistant__Catalog__N__AllowedTenants__0=acme`, by workspace slug). Other workspaces never see it and cannot choose it (ASM-134, ASM-135, threat model T-102). Entries without `AllowedTenants` are for every workspace.
+- **The operator ceiling**: `Esmbler__Assistant__MaxDailyBudgetUsd` (default 100, ASM-150) is the highest daily budget a workspace may set.
+- **The evaluation gate**: a workspace can use an entry only when it is evaluated, its credential is configured for the right provider, and it is offered to that workspace (`AiCatalog.Usable`). An operator marks an entry evaluated (`Esmbler__Assistant__EvaluatedModels__N=<id>`, or `Evaluated` on a catalog entry) after `AssistantTests.Model_driven_planner_evaluation_runs_when_a_key_is_configured` passed for it: that test runs the 43 cases of `tests/ai-evals/builder-cases.json` once per provider whose key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) and requires at most one miss overall and none on injection or policy cases. `claude-opus-5-5` ships evaluated, grandfathered from ADR 0013 until the scored run of [KI-007](../known-issues.md) (ASM-145); the other defaults ship unevaluated.
 
-With no credential configured, `auto` still selects the scripted planner, so local development, CI and Playwright need no key.
+`Esmbler:Assistant:Provider` is now `auto` (each workspace's model when its credential is configured, otherwise the scripted planner) or `scripted` (always scripted). With no credential configured, `auto` still selects the scripted planner, so local development, CI and Playwright need no key. `GET /api/assistant/status` reports the planner, provider and model for the caller's workspace, never a key.
 
 ### Tenant AI settings
 
-A new tenant-scoped table, `kernel.ai_settings` (G2-M20d, FORCE RLS on `tenant_id`, one row per tenant), holds:
+A tenant-scoped table, `kernel.ai_settings` (migration `0019_ai_settings.sql`, FORCE RLS on `tenant_id`, one row per tenant), holds:
 
 | Setting | Meaning | Default |
 | --- | --- | --- |
-| Catalog entry | Provider and model, chosen only from evaluated catalog entries | The operator's default entry (ASM-132) |
-| Effort | Within what the entry allows | The entry's effort |
-| Credential | The name of an operator-provisioned named credential the tenant may use; never a key | The entry's credential (platform-paid) |
-| Daily spend budget | USD per tenant per UTC day; `0` turns the model planner off | ASM-136 |
-| Record access | Whether the assistant may ever be delegated `records:read` | Off |
+| Model (`model_id`) | A catalog entry, accepted only if it is offered to this workspace, evaluated and has a configured credential (`not_found`, `not_evaluated`, `not_configured` errors) | The operator's default (ASM-132) |
+| Effort | `low`, `medium`, `high` or `max` | The entry's effort |
+| Daily budget (`daily_budget_usd`) | US dollars per workspace per UTC day, from 0 to the operator ceiling; `0` turns the model planner off | 20 (ASM-136) |
+| Record access (`allow_records_read`) | Whether external assistants may ever be granted `records:read` (the in-app assistant never asks for it, ASM-146) | Off |
+| External assistants | `off`, `non_production` or `all` ([ADR 0025](0025-oauth-for-external-mcp-clients.md)) | `off` |
 
-Changing a setting needs `permissions.admin` with fresh facts, is audited (`assistant.settings_change` with old and new values; the credential by name only), and is refused to agents. The Admin Center panel arrives with G2-M12; until then the REST endpoint is the interface.
+There is no credential setting: the catalog entry decides which key pays, so a tenant-paid key is an operator-provisioned entry with `AllowedTenants`. **Stored choices are re-validated** on every turn and every read: a model that is no longer evaluated, configured or offered to the workspace falls back to the default, so an operator change takes effect without touching tenant rows.
 
-**Tenant keys (BYOK)** are references only. Until the G2-M12 vault exists, a tenant selects one of the named credentials the operator provisioned for it (ASM-134). After G2-M12 a tenant administrator can paste a key: it goes to the vault, and only the `secretref:` is stored. Keys are never returned by the API or MCP, never written to audit details, and never exported in packages. Both models are allowed: platform-paid credentials and credentials that belong to the tenant (ASM-135).
+`GET` and `PUT /api/admin/ai` read and save the settings, with optimistic concurrency on `version`. Only permission administrators (`permissions.admin`, fresh facts for saves) may read or change them; agents are refused. A save locks the row (`FOR UPDATE`), so a concurrent consent sees either the old or the new policy, and it revokes the external connections a narrower policy no longer allows (ADR 0025). It is audited as **`ai.settings_save`** with the previous and new values (models by ID, never keys) and the number of revoked connections. The **AI assistant** admin page (`/admin/ai`) shipped with this milestone, not with G2-M12: it lists the operator's models with availability, evaluation and prices, and edits the effort, the budget (with today's spend), record access and the external assistants policy.
+
+**Tenant keys (BYOK)** are references only. Until the G2-M12 vault exists, the operator provisions a customer's key as a named credential and a catalog entry for that workspace (ASM-134). After G2-M12 a tenant administrator can paste a key: it goes to the vault, and only the `secretref:` is stored. Keys are never returned by the API or MCP, never written to audit details, and never exported in packages. Both commercial models are allowed: platform-paid credentials and credentials that belong to the tenant (ASM-135).
 
 ### Metering and the daily spend budget
 
-Every model request records a usage row in `kernel.ai_usage` (FORCE RLS): tenant, environment, person, agent, conversation, provider, model, input, cached and output tokens, and the estimated cost from the catalog prices at the time of the request. Before each model request `ToolLoopPlanner` asks the budget whether the tenant's spend today is below its budget; if not, the turn ends with "This workspace has reached today's AI budget. An administrator can raise it." and no request is sent. The check runs before every request, so one turn can overshoot by at most one request. This closes [KI-002](../known-issues.md).
+Every model request records a row in `kernel.ai_usage` (FORCE RLS; the runtime role may only insert and read): tenant, environment, person, conversation, provider, model, uncached input, output and cache-read tokens, and the estimated cost. Usage is normalized across providers: uncached input at the input price, cache reads at a tenth of it, cache writes at 1.25 times it, and output at the output price. The request is priced with the **catalog model the assistant resolved** for the turn, not the model name the provider reports; a model the catalog does not know is priced at the highest catalog prices, so unknown usage never counts as free (ASM-151).
+
+Before each model request `AiUsageMeter` checks that the budget is above zero and that the workspace's spend today, across all its environments and per UTC day (ASM-151), is below it. If not, the turn ends with "This workspace has used today's AI budget. An administrator can raise it under AI assistant settings; it resets at midnight UTC." and no request is sent. The check runs before every request, so one turn can overshoot by at most one request. This closes [KI-002](../known-issues.md).
 
 ### Subscriptions inside Esmbler
 
@@ -165,8 +181,8 @@ Every model request records a usage row in `kernel.ai_usage` (FORCE RLS): tenant
 - Good: the OpenAI client has no SDK dependency or experimental API surface, and its translation is tested against recorded JSON.
 - Bad: we maintain the Responses request and response mapping ourselves, including streaming events if we add them, and must follow API changes without an SDK.
 - Bad: cross-turn history is plain text, so reasoning from earlier turns is not replayed; long multi-turn tasks may cost more tokens than with provider-held state.
-- Bad: cost figures are estimates from catalog prices, not the provider's invoice; an operator must keep prices current.
-- Bad: before the vault, a tenant's own key needs the operator to set an environment variable and restart.
+- Bad: cost figures are estimates from catalog prices (with fixed ratios for cache reads and writes), not the provider's invoice; an operator must keep prices current.
+- Bad: before the vault, a tenant's own key needs the operator to set an environment variable and a catalog entry with `AllowedTenants`, and restart.
 - Neutral: Anthropic remains the default when only `ANTHROPIC_API_KEY` is set, so existing deployments behave as before.
 
 ## Pros and cons of the options
@@ -182,7 +198,7 @@ Every model request records a usage row in `kernel.ai_usage` (FORCE RLS): tenant
 
 - Deviation: execution brief section 2, product decisions, row "AI" ("Claude via the Anthropic API"), approved by the product owner on 2026-10-10 ([progress](../progress.md)). ADR 0013 stays in force for the loop, tools, bounds and evaluation; this ADR supersedes its single-provider configuration (`Provider`, `AnthropicApiKey`) and its `ClaudePlanner` structure.
 - Related: [ADR 0013](0013-ai-assistant-model-adapter.md), [ADR 0025](0025-oauth-for-external-mcp-clients.md), [ADR 0007](0007-mcp-server-design.md), [ADR 0021](0021-notification-routing-and-delivery.md) (secret references), [research](../research/ai-providers-and-subscriptions.md).
-- Assumptions: ASM-132 to ASM-138 in [assumptions](../decisions/assumptions.md). Human actions: OpenAI key, Azure, Bedrock and compatible endpoints, the Sign in with ChatGPT interest form ([human actions](../human-actions.md)).
-- Phases: G2-M20b (abstraction, Anthropic refactor, fake), G2-M20c (OpenAI and Azure), G2-M20d (tenant settings, catalog, metering, budget).
-- Planned verification: unit tests for `ToolLoopPlanner` with `FakeModelClient` (bounds, cancellation, refusal, untrusted wrapping, budget stop); translation tests per client against recorded request and response JSON through a fake `HttpMessageHandler`; a redaction test that keys and provider bodies never reach logs or exceptions; all 43 scripted evaluation cases still pass; the evaluation suite against each configured credential; an integration test with tenant A on OpenAI and tenant B on Anthropic in one deployment, keys absent from API, MCP, logs and audit; the architecture test.
+- Assumptions: ASM-132 to ASM-138 and ASM-145 to ASM-151 in [assumptions](../decisions/assumptions.md). Known issues: [KI-007](../known-issues.md) (no scored run yet), KI-065 (no OpenAI streaming), KI-066 (compatible client and cloud variants deferred). Human actions: OpenAI key, Azure, Bedrock and compatible endpoints, customer keys with `AllowedTenants`, the budget ceiling, the Sign in with ChatGPT interest form ([human actions](../human-actions.md)).
+- Phases (all shipped 2026-10-11): G2-M20b (abstraction, Anthropic refactor, fake), G2-M20c (OpenAI and Azure), G2-M20d (tenant settings, catalog, metering, budget, the `/admin/ai` page). Migration `0019_ai_settings.sql`.
+- Verification: `UnitTests/Assistant/ModelProviderTests` (`The_loop_runs_tool_calls_returns_results_to_the_model_and_finishes_with_its_answer`, `Refusals_budgets_and_bad_arguments_end_or_correct_the_turn_the_same_way_for_every_provider`, `OpenAI_requests_keep_no_state_at_the_provider_and_replay_reasoning_within_the_turn`, `OpenAI_answers_become_tool_calls_text_refusals_and_usage`, `Provider_errors_never_show_the_providers_answer_the_endpoint_or_the_key`, `Claude_transcripts_group_into_alternating_messages_with_thinking_replayed`, `Costs_are_estimated_from_catalog_prices_and_only_usable_models_are_defaults`); `IntegrationTests/Assistant/AiSettingsTests` (`Two_workspaces_use_different_providers_and_never_see_each_others_settings_or_spend`, `Only_permission_administrators_choose_evaluated_configured_models`); `AssistantTests.Model_driven_planner_evaluation_runs_when_a_key_is_configured` (per provider, needs keys) and the 43 scripted cases; e2e `ai.spec.ts` `@REQ-AI-006`; the architecture test.
 - Revisit triggers: OpenAI ships a stable typed SDK surface that covers `store: false` and reasoning replay; a customer needs regional inference (Bedrock, Vertex, Foundry or Azure regions, ASM-137); OpenAI accepts Esmbler into the Sign in with ChatGPT trial; evaluation shows provider-held state is needed for quality.

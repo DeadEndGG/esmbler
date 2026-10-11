@@ -2,8 +2,8 @@
 title: AI providers and bring-your-own subscription
 status: reference
 owner: platform-architecture
-last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-005, REQ-AI-006, REQ-AI-007, REQ-AISAFE-001, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AISAFE-005, REQ-AUTHZ-007, REQ-ADM-002]
+last_reviewed: 2026-10-11
+requirements: [REQ-AI-003, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AISAFE-005, REQ-AUTHZ-007, REQ-ADM-002]
 ---
 
 # AI providers and bring-your-own subscription
@@ -25,7 +25,7 @@ Research for G2-M20 ([progress](../progress.md)): how the AI builder can use mod
 | Piece | Today | Source |
 |---|---|---|
 | Planner contract | `IPlanner.RunAsync(request, IToolGateway, IAssistantSink, AssistantBudget, ct)`; `ScriptedPlanner` and `ClaudePlanner` | [Abstractions.cs](../../packages/Esmbler.Assistant/Abstractions.cs) |
-| Claude loop | Manual tool-use loop over the Anthropic Messages beta surface (`Anthropic` NuGet 12.55.0). Prompt caching on the system block, effort, a server-side refusal fallback model, a 60 s request timeout, 16k max tokens and the last 12 turns of history. A refusal ends the turn. Provider errors become `AssistantUnavailableException` with no provider details | [ClaudePlanner.cs](../../packages/Esmbler.Assistant/Models/AnthropicModelClient.cs), [ADR 0013](../adr/0013-ai-assistant-model-adapter.md) |
+| Claude loop | Manual tool-use loop over the Anthropic Messages beta surface (`Anthropic` NuGet 12.55.0). Prompt caching on the system block, effort, a server-side refusal fallback model, a 60 s request timeout, 16k max tokens and the last 12 turns of history. A refusal ends the turn. Provider errors become `AssistantUnavailableException` with no provider details | `ClaudePlanner.cs` (now [AnthropicModelClient.cs](../../packages/Esmbler.Assistant/Models/AnthropicModelClient.cs) and [ToolLoopPlanner.cs](../../packages/Esmbler.Assistant/Models/ToolLoopPlanner.cs)), [ADR 0013](../adr/0013-ai-assistant-model-adapter.md) |
 | Tools | MCP client (`ModelContextProtocol` 2.2.0, Streamable HTTP) to `apps/Esmbler.Mcp`. `McpToolGateway` counts tool calls against the turn budget. Tool `readOnlyHint` is read | [McpToolGateway.cs](../../packages/Esmbler.Assistant/McpToolGateway.cs) |
 | Key | `Esmbler:Assistant:AnthropicApiKey` or `ANTHROPIC_API_KEY`. Compose maps the env var. One key for the whole deployment | [ADR 0013](../adr/0013-ai-assistant-model-adapter.md) |
 | Provider selection | `Esmbler:Assistant:Provider` = `auto`, `anthropic` or `scripted`. Global, not per tenant | [ADR 0013](../adr/0013-ai-assistant-model-adapter.md) |
@@ -313,13 +313,15 @@ sequenceDiagram
 
 | Milestone | Scope | Exit evidence |
 |---|---|---|
-| **G2-M20a Decisions** | ADR 0019 "Multiple model providers". It records the deviation from the execution brief's "Claude via the Anthropic API", approved by the product owner on 2026-10-10. ADR 0020 "OAuth for external MCP clients" supersedes ADR 0007's revisit trigger. Assumptions: default OpenAI model, refresh lifetime, consent defaults | ADRs accepted. Assumptions logged |
+| **G2-M20a Decisions** | [ADR 0024](../adr/0024-multiple-model-providers.md) "Multiple model providers". It records the deviation from the execution brief's "Claude via the Anthropic API", approved by the product owner on 2026-10-10. [ADR 0025](../adr/0025-oauth-for-external-mcp-clients.md) "OAuth for external MCP clients" supersedes ADR 0007's revisit trigger. Assumptions: default OpenAI model, refresh lifetime, consent defaults | ADRs accepted. Assumptions logged |
 | **G2-M20b Provider abstraction** | `IModelClient`, `ToolLoopPlanner`, `AnthropicModelClient` (behavior-preserving refactor), `FakeModelClient`. Provider errors and redaction tests | Unit tests for the loop (budgets, cancellation, refusal, untrusted wrapping unchanged). All 43 scripted evaluation cases still pass. Architecture test still passes |
 | **G2-M20c OpenAI** | `OpenAIResponsesModelClient` (`OpenAI` 2.14.0): function tools, `store: false`, encrypted reasoning replay, streaming aggregation. Azure variant through the endpoint. Catalog entries | Translation fixtures. The evaluation suite runs against OpenAI when `OPENAI_API_KEY` is set (human action), as the Claude run does |
 | **G2-M20d Per-tenant selection and metering** | Tenant AI settings (FORCE RLS), named credentials from the environment, catalog with an evaluation gate, usage metering, daily spend budget (closes KI-002), admin audit. Vault references follow G2-M12 | Integration tests: tenant A on OpenAI and tenant B on Anthropic in one deployment. Keys never appear in API, MCP, logs or audit. Budget stops a turn with a clear message |
 | **G2-M20e MCP authorization server** | Protected resource metadata, authorization server metadata, CIMD with allowlist and SSRF guard, PKCE, `resource`, `iss`, rotating refresh, revocation, canonical audience, consent UI, connected-assistants page, tenant policy, tool annotations, step-up | Integration tests with a fake CIMD client: full flow, reuse detection, revoked connection cut off at the next call, wrong audience rejected, production blocked by policy, `records:write` never grantable. Threat-model rows added. Security reviewer passes |
 | **G2-M20f Connect ChatGPT and Claude** | Deploy to a public host (human actions). Manual acceptance from Claude (Pro or Team) and ChatGPT (Business or Enterprise) plus Claude Code. User guide "Use Esmbler from ChatGPT or Claude". Test-guide section | Recorded manual runs: draft step appears live, `request_publish` works, a person publishes in Esmbler, revoke works |
 | **Gate 3 (partner beta)** | Directory submissions. Optional DCR for named partners. Claude Enterprise Managed Auth. OpenAI mTLS client verification. Bedrock, Vertex and Foundry variants on demand. Sign in with ChatGPT plan usage if OpenAI accepts Esmbler | As scoped then |
+
+Outcome (2026-10-11): phases a to e shipped as recorded in [progress](../progress.md). The OpenAI client calls the REST endpoint instead of the `OpenAI` SDK (ASM-133) and has no streaming aggregation yet, and step-up authorization was not built ([known issues](../known-issues.md)). Phase f waits on [human actions](../human-actions.md).
 
 ## 5. Open questions
 
