@@ -13,6 +13,8 @@ public sealed class PlatformOptions
 
     public NotificationSettings Notifications { get; set; } = new();
 
+    public McpSettings Mcp { get; set; } = new();
+
     /// <summary>Apply migrations at startup (API host only).</summary>
     public bool MigrateOnStartup { get; set; } = true;
 
@@ -50,6 +52,19 @@ public sealed class PlatformOptions
         public List<string> AllowedImapHosts { get; set; } = [];
 
         public int MaxRecipientsPerEvent { get; set; } = 200;
+    }
+
+    /// <summary>The MCP server as a remote connector (ADR 0025).</summary>
+    public sealed class McpSettings
+    {
+        /// <summary>
+        /// Canonical MCP resource URI (for example https://mcp.example.com/mcp). When set, it is the audience of every MCP
+        /// token and OAuth for external clients is on; when empty (development, CI) the audience is esmbler-mcp and OAuth is off.
+        /// </summary>
+        public string? PublicUrl { get; set; }
+
+        /// <summary>Hosts whose Client ID Metadata Documents are accepted (Esmbler__Mcp__AllowedClientHosts__0=chatgpt.com).</summary>
+        public List<string> AllowedClientHosts { get; set; } = ["chatgpt.com", "claude.ai"];
     }
 
     public sealed class OpenFgaSettings

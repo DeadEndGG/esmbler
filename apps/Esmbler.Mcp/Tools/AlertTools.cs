@@ -61,7 +61,7 @@ public sealed class AlertTools(ToolRunner runner, DraftService drafts, PreviewSe
             };
         });
 
-    [McpServerTool(Name = "add_alert_rule"), Description("Raise alerts from an event, e.g. \"Critical escalations\": one alert per key (by default per record) that counts repeats, belongs to an owner, escalates on timers until someone acknowledges it, and resolves when a resolving event happens (e.g. the ticket is resolved). Adds the trigger subscription, the resolving subscription and the rule as one change. Alerts never send messages: use notify_when on platform.alert.opened or platform.alert.escalated (recipient alert_owner) for that.")]
+    [McpServerTool(Name = "add_alert_rule", Destructive = false), Description("Raise alerts from an event, e.g. \"Critical escalations\": one alert per key (by default per record) that counts repeats, belongs to an owner, escalates on timers until someone acknowledges it, and resolves when a resolving event happens (e.g. the ticket is resolved). Adds the trigger subscription, the resolving subscription and the rule as one change. Alerts never send messages: use notify_when on platform.alert.opened or platform.alert.escalated (recipient alert_owner) for that.")]
     public Task<CallToolResult> AddAlertRule(
         [Description("What the alert is, e.g. \"Critical escalation\".")] string label,
         [Description("Event type ID that raises it (list_event_types), e.g. core.tickets.ticket.escalated.")] string @event,
@@ -109,7 +109,7 @@ public sealed class AlertTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, ops, expected_version);
         });
 
-    [McpServerTool(Name = "update_alert_rule"), Description("Change an alert rule: label, title, minimum severity, owner, escalation steps or enabled. Module rules keep their trigger and key. Turning off a rule that a mandatory or external alert route relies on is a permission change a person publishes.")]
+    [McpServerTool(Name = "update_alert_rule", Destructive = false), Description("Change an alert rule: label, title, minimum severity, owner, escalation steps or enabled. Module rules keep their trigger and key. Turning off a rule that a mandatory or external alert route relies on is a permission change a person publishes.")]
     public Task<CallToolResult> UpdateAlertRule(
         string rule,
         int expected_version,

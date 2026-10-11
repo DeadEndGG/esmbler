@@ -220,11 +220,11 @@ public sealed class CatalogTaskInput
 [McpServerToolType]
 public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewService preview)
 {
-    [McpServerTool(Name = "open_draft"), Description("Open (or join) the draft for this workspace. Returns its version. Everyone else keeps seeing the published pages until a person publishes.")]
+    [McpServerTool(Name = "open_draft", Destructive = false), Description("Open (or join) the draft for this workspace. Returns its version. Everyone else keeps seeing the published pages until a person publishes.")]
     public Task<CallToolResult> OpenDraft() =>
         runner.RunAsync("open_draft", AgentScopes.ConfigEdit, null, async ctx => await drafts.OpenAsync(ctx, default));
 
-    [McpServerTool(Name = "add_field"), Description("Add a field to an entity and, in the same change, optionally place it on a page card, make it required under a condition, and add it to the list as a column, filter or grouping. For single_select/multi_select give choices (labels) and a choice list is created. All parts apply together or not at all, and undo together. New fields become available to metrics (describe_metric_fields) by type. Returns the new draft version and the step numbers.")]
+    [McpServerTool(Name = "add_field", Destructive = false), Description("Add a field to an entity and, in the same change, optionally place it on a page card, make it required under a condition, and add it to the list as a column, filter or grouping. For single_select/multi_select give choices (labels) and a choice list is created. All parts apply together or not at all, and undo together. New fields become available to metrics (describe_metric_fields) by type. Returns the new draft version and the step numbers.")]
     public Task<CallToolResult> AddField(
         [Description("Entity ID, e.g. core.tickets.ticket.")] string entity,
         [Description("Label people see, e.g. \"Vendor\".")] string label,
@@ -335,7 +335,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         return ops;
     }
 
-    [McpServerTool(Name = "update_field"), Description("Change a field: relabel, make required (tenants can tighten base fields but not loosen them), help text, limits, pattern, default.")]
+    [McpServerTool(Name = "update_field", Destructive = false), Description("Change a field: relabel, make required (tenants can tighten base fields but not loosen them), help text, limits, pattern, default.")]
     public Task<CallToolResult> UpdateField(
         string entity,
         [Description("Field key.")] string field,
@@ -354,17 +354,17 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new UpdateField { Entity = entity, Field = field, Set = patch }], expected_version);
         });
 
-    [McpServerTool(Name = "reset_to_default"), Description("Reset one customized element (from get_customizations) to the default module's definition. Elements this workspace added are removed; validate_draft then shows anything that still depends on them.")]
+    [McpServerTool(Name = "reset_to_default", Destructive = true), Description("Reset one customized element (from get_customizations) to the default module's definition. Elements this workspace added are removed; validate_draft then shows anything that still depends on them.")]
     public Task<CallToolResult> ResetToDefault([Description("Element key from get_customizations, e.g. core.tickets.ticket/category.")] string element, int expected_version) =>
         runner.RunAsync("reset_to_default", AgentScopes.ConfigEdit, element, async ctx =>
             await ApplyAllAsync(ctx, [new ResetElement { Target = element }], expected_version));
 
-    [McpServerTool(Name = "hide_field"), Description("Hide (or show again) a field everywhere. Data is kept. The title field and workflow state field cannot be hidden.")]
+    [McpServerTool(Name = "hide_field", Destructive = false), Description("Hide (or show again) a field everywhere. Data is kept. The title field and workflow state field cannot be hidden.")]
     public Task<CallToolResult> HideField(string entity, string field, int expected_version, bool hidden = true) =>
         runner.RunAsync("hide_field", AgentScopes.ConfigEdit, $"{entity}/{field}", async ctx =>
             await ApplyAllAsync(ctx, [new HideField { Entity = entity, Field = field, Hidden = hidden }], expected_version));
 
-    [McpServerTool(Name = "add_choice_option"), Description("Add an option to a choice list (option IDs added to base lists get the tenant__ prefix automatically).")]
+    [McpServerTool(Name = "add_choice_option", Destructive = false), Description("Add an option to a choice list (option IDs added to base lists get the tenant__ prefix automatically).")]
     public Task<CallToolResult> AddChoiceOption(string choice_list, string label, int expected_version, string? after_option = null) =>
         runner.RunAsync("add_choice_option", AgentScopes.ConfigEdit, choice_list, async ctx =>
         {
@@ -372,7 +372,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddChoiceOption { ChoiceList = choice_list, Option = new ChoiceOption { Id = id, Label = label }, Anchor = after_option is null ? null : new Anchor { After = after_option } }], expected_version);
         });
 
-    [McpServerTool(Name = "add_card"), Description("Add a titled card with fields to a page column or tab, next to an existing node. The simplest way to add a page section.")]
+    [McpServerTool(Name = "add_card", Destructive = false), Description("Add a titled card with fields to a page column or tab, next to an existing node. The simplest way to add a page section.")]
     public Task<CallToolResult> AddCard(
         [Description("View ID, e.g. core.tickets.record.")] string view,
         [Description("Parent column or tab node ID from get_view.")] string parent,
@@ -399,7 +399,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new InsertNode { View = view, Parent = parent, Node = node, Anchor = after is null ? null : new Anchor { After = after } }], expected_version);
         });
 
-    [McpServerTool(Name = "insert_node"), Description("Insert any placeable element (see list_elements) into a parent node. props must match the element's props schema. New node IDs are generated.")]
+    [McpServerTool(Name = "insert_node", Destructive = false), Description("Insert any placeable element (see list_elements) into a parent node. props must match the element's props schema. New node IDs are generated.")]
     public Task<CallToolResult> InsertNode(string view, string parent, [Description("Element type, e.g. display.callout.")] string type, [Description("Props object as JSON.")] JsonElement props, int expected_version, string? after = null, string? before = null) =>
         runner.RunAsync("insert_node", AgentScopes.ConfigEdit, parent, async ctx =>
         {
@@ -407,22 +407,22 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new InsertNode { View = view, Parent = parent, Node = node, Anchor = after is null && before is null ? null : new Anchor { After = after, Before = before } }], expected_version);
         });
 
-    [McpServerTool(Name = "update_node"), Description("Change props of a node (e.g. a card title). A null value removes the prop.")]
+    [McpServerTool(Name = "update_node", Destructive = false), Description("Change props of a node (e.g. a card title). A null value removes the prop.")]
     public Task<CallToolResult> UpdateNode(string view, string node, JsonElement props, int expected_version) =>
         runner.RunAsync("update_node", AgentScopes.ConfigEdit, node, async ctx =>
             await ApplyAllAsync(ctx, [new UpdateNode { View = view, Node = node, Props = JsonNode.Parse(props.GetRawText()) as JsonObject ?? throw new KernelException("invalid_props", "props must be a JSON object.", 400) }], expected_version));
 
-    [McpServerTool(Name = "move_node"), Description("Move a node to another parent or position.")]
+    [McpServerTool(Name = "move_node", Destructive = false), Description("Move a node to another parent or position.")]
     public Task<CallToolResult> MoveNode(string view, string node, string parent, int expected_version, string? after = null, string? before = null) =>
         runner.RunAsync("move_node", AgentScopes.ConfigEdit, node, async ctx =>
             await ApplyAllAsync(ctx, [new MoveNode { View = view, Node = node, Parent = parent, Anchor = after is null && before is null ? null : new Anchor { After = after, Before = before } }], expected_version));
 
-    [McpServerTool(Name = "remove_node"), Description("Remove a node. Nodes from the default module are hidden instead, so upgrades keep working.")]
+    [McpServerTool(Name = "remove_node", Destructive = true), Description("Remove a node. Nodes from the default module are hidden instead, so upgrades keep working.")]
     public Task<CallToolResult> RemoveNode(string view, string node, int expected_version) =>
         runner.RunAsync("remove_node", AgentScopes.ConfigEdit, node, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveNode { View = view, Node = node }], expected_version));
 
-    [McpServerTool(Name = "add_rule"), Description("Add a rule. Conditional: when <expression> then actions (require, show, hide, read_only, set_value, restrict_options, message, emit_event; emit_event publishes once each time the condition becomes true). Validation: assert <expression> with a message. Expressions use record.<field_key>, e.g. record.category == 'access'. Data-scope rules apply on every form and the API.")]
+    [McpServerTool(Name = "add_rule", Destructive = false), Description("Add a rule. Conditional: when <expression> then actions (require, show, hide, read_only, set_value, restrict_options, message, emit_event; emit_event publishes once each time the condition becomes true). Validation: assert <expression> with a message. Expressions use record.<field_key>, e.g. record.category == 'access'. Data-scope rules apply on every form and the API.")]
     public Task<CallToolResult> AddRule(
         string entity,
         [Description("Plain-English summary, e.g. \"Access requests need a justification\".")] string description,
@@ -458,17 +458,17 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddRule { Rule = rule }], expected_version);
         });
 
-    [McpServerTool(Name = "set_rule_enabled"), Description("Enable or disable a rule. Default-module rules can only be disabled, not edited.")]
+    [McpServerTool(Name = "set_rule_enabled", Destructive = false), Description("Enable or disable a rule. Default-module rules can only be disabled, not edited.")]
     public Task<CallToolResult> SetRuleEnabled(string rule, bool enabled, int expected_version) =>
         runner.RunAsync("set_rule_enabled", AgentScopes.ConfigEdit, rule, async ctx =>
             await ApplyAllAsync(ctx, [new UpdateRule { Rule = rule, Enabled = enabled }], expected_version));
 
-    [McpServerTool(Name = "remove_rule"), Description("Remove a rule this workspace added.")]
+    [McpServerTool(Name = "remove_rule", Destructive = true), Description("Remove a rule this workspace added.")]
     public Task<CallToolResult> RemoveRule(string rule, int expected_version) =>
         runner.RunAsync("remove_rule", AgentScopes.ConfigEdit, rule, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveRule { Rule = rule }], expected_version));
 
-    [McpServerTool(Name = "undo_step"), Description("Undo a step of the draft by its number. By default the whole change the step belongs to (everything one tool call did) is undone; set only_this_step to undo just that step. Refused if later steps depend on it.")]
+    [McpServerTool(Name = "undo_step", Destructive = false), Description("Undo a step of the draft by its number. By default the whole change the step belongs to (everything one tool call did) is undone; set only_this_step to undo just that step. Refused if later steps depend on it.")]
     public Task<CallToolResult> UndoStep(int step, int expected_version, [Description("Undo only this step, not the rest of its change.")] bool only_this_step = false) =>
         runner.RunAsync("undo_step", AgentScopes.ConfigEdit, step.ToString(System.Globalization.CultureInfo.InvariantCulture), async ctx =>
         {
@@ -477,7 +477,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return new { state.Version, undone = state.Steps.Where(s => s.Undone && !before.Contains(s.Seq)).Select(s => s.Seq) };
         });
 
-    [McpServerTool(Name = "add_catalog_item"), Description("Add a service catalog item: the questions (variables) requesters answer and the fulfillment tasks that run, with dependencies (dependsOn) and optional conditions (when, over variables.<key>). Tasks start when an agent starts fulfillment; dependents wait for their prerequisites.")]
+    [McpServerTool(Name = "add_catalog_item", Destructive = false), Description("Add a service catalog item: the questions (variables) requesters answer and the fulfillment tasks that run, with dependencies (dependsOn) and optional conditions (when, over variables.<key>). Tasks start when an agent starts fulfillment; dependents wait for their prerequisites.")]
     public Task<CallToolResult> AddCatalogItem(
         [Description("Name in the catalog, e.g. \"Parking permit\".")] string label,
         [Description("Questions requesters answer, in order.")] CatalogVariableInput[] variables,
@@ -529,7 +529,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, ops, expected_version);
         });
 
-    [McpServerTool(Name = "update_catalog_item"), Description("Change a catalog item's name, description, section, or whether it can be requested (active). Default-module items cannot have their questions or tasks replaced; deactivate them and add your own.")]
+    [McpServerTool(Name = "update_catalog_item", Destructive = false), Description("Change a catalog item's name, description, section, or whether it can be requested (active). Default-module items cannot have their questions or tasks replaced; deactivate them and add your own.")]
     public Task<CallToolResult> UpdateCatalogItem(
         [Description("Catalog item ID from list_catalog_items.")] string item,
         int expected_version,
@@ -541,7 +541,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("update_catalog_item", AgentScopes.ConfigEdit, item, async ctx =>
             await ApplyAllAsync(ctx, [new UpdateCatalogItem { Item = item, Set = new CatalogItemPatch { Label = label, Description = description, Category = category, Active = active, ApprovalPolicy = approval_policy } }], expected_version));
 
-    [McpServerTool(Name = "add_event_type"), Description("Declare an event the workspace publishes, e.g. \"Vendor contract expiring\". Publish it from a rule (add_rule with an emit_event action) or a transition (update_transition with publish_events). Subscribers react to it by ID.")]
+    [McpServerTool(Name = "add_event_type", Destructive = false), Description("Declare an event the workspace publishes, e.g. \"Vendor contract expiring\". Publish it from a rule (add_rule with an emit_event action) or a transition (update_transition with publish_events). Subscribers react to it by ID.")]
     public Task<CallToolResult> AddEventType(
         [Description("Event name in the past tense, e.g. \"Hardware ticket escalated\".")] string label,
         [Description("Payload field keys and types (string, number, boolean, list), e.g. {\"priority\": \"string\"}.")] Dictionary<string, string> fields,
@@ -564,7 +564,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddEventType { EventType = type }], expected_version);
         });
 
-    [McpServerTool(Name = "add_business_calendar"), Description("Add business hours in a time zone, minus holidays, for measuring SLA goals in business time, e.g. \"London office hours\".")]
+    [McpServerTool(Name = "add_business_calendar", Destructive = false), Description("Add business hours in a time zone, minus holidays, for measuring SLA goals in business time, e.g. \"London office hours\".")]
     public Task<CallToolResult> AddBusinessCalendar(
         string label,
         [Description("IANA time zone, e.g. Europe/London or America/New_York.")] string time_zone,
@@ -585,7 +585,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddBusinessCalendar { Calendar = calendar }], expected_version);
         });
 
-    [McpServerTool(Name = "update_business_calendar"), Description("Change a business calendar's time zone, hours or holidays (default or your own). Running SLA clocks keep the calendar they started with; new clocks use the change.")]
+    [McpServerTool(Name = "update_business_calendar", Destructive = false), Description("Change a business calendar's time zone, hours or holidays (default or your own). Running SLA clocks keep the calendar they started with; new clocks use the change.")]
     public Task<CallToolResult> UpdateBusinessCalendar(
         string calendar,
         int expected_version,
@@ -606,7 +606,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
                 },
             }], expected_version));
 
-    [McpServerTool(Name = "add_sla_policy"), Description("Add service-level targets on an entity's records, e.g. \"VIP resolution within 4 business hours\". Each target is a clock with start, pause and stop conditions and goals by condition (usually priority).")]
+    [McpServerTool(Name = "add_sla_policy", Destructive = false), Description("Add service-level targets on an entity's records, e.g. \"VIP resolution within 4 business hours\". Each target is a clock with start, pause and stop conditions and goals by condition (usually priority).")]
     public Task<CallToolResult> AddSlaPolicy(
         string entity,
         string label,
@@ -629,7 +629,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddSlaPolicy { Policy = policy }], expected_version);
         });
 
-    [McpServerTool(Name = "set_sla_goals"), Description("Change one SLA target's goals (and optionally its calendar or warning threshold), on a default or your own policy, e.g. P2 resolution in 8 business hours. Running clocks keep their goal; new clocks use the change.")]
+    [McpServerTool(Name = "set_sla_goals", Destructive = false), Description("Change one SLA target's goals (and optionally its calendar or warning threshold), on a default or your own policy, e.g. P2 resolution in 8 business hours. Running clocks keep their goal; new clocks use the change.")]
     public Task<CallToolResult> SetSlaGoals(
         string policy,
         [Description("Target ID, e.g. response or resolution (see list_sla_policies).")] string target,
@@ -671,7 +671,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         };
     }
 
-    [McpServerTool(Name = "add_approval_policy"), Description("Add an approval policy: stages that run in order, each with approvers (roles, groups, or fields naming a person) who decide in parallel. Point a catalog item at it with update_catalog_item (approval_policy). The requester never approves their own request, and AI agents never approve.")]
+    [McpServerTool(Name = "add_approval_policy", Destructive = false), Description("Add an approval policy: stages that run in order, each with approvers (roles, groups, or fields naming a person) who decide in parallel. Point a catalog item at it with update_catalog_item (approval_policy). The requester never approves their own request, and AI agents never approve.")]
     public Task<CallToolResult> AddApprovalPolicy(
         [Description("Policy name, e.g. \"Finance approval\".")] string label,
         [Description("Stages in order.")] ApprovalStageInput[] stages,
@@ -715,7 +715,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddApprovalPolicy { Policy = policy }], expected_version);
         });
 
-    [McpServerTool(Name = "add_metric"), Description("Define a reusable metric, e.g. \"Unassigned P1 tickets\" or \"Open tickets by team\". Dashboards, tiles and saved views use it by ID; every figure is computed for the person looking at it and opens the list of exactly those records. Use describe_metric_fields for what can be grouped, dated or summed.")]
+    [McpServerTool(Name = "add_metric", Destructive = false), Description("Define a reusable metric, e.g. \"Unassigned P1 tickets\" or \"Open tickets by team\". Dashboards, tiles and saved views use it by ID; every figure is computed for the person looking at it and opens the list of exactly those records. Use describe_metric_fields for what can be grouped, dated or summed.")]
     public Task<CallToolResult> AddMetric(
         string entity,
         string label,
@@ -740,7 +740,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new AddMetric { Metric = metric }], expected_version);
         });
 
-    [McpServerTool(Name = "update_metric"), Description("Change a metric (default or your own): label, filter, what it computes, grouping, date range, SLA condition or roles. Every tile and saved view using it follows the change.")]
+    [McpServerTool(Name = "update_metric", Destructive = false), Description("Change a metric (default or your own): label, filter, what it computes, grouping, date range, SLA condition or roles. Every tile and saved view using it follows the change.")]
     public Task<CallToolResult> UpdateMetric(
         string metric,
         int expected_version,
@@ -768,12 +768,12 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new UpdateMetric { Metric = metric, Set = set }], expected_version);
         });
 
-    [McpServerTool(Name = "remove_metric"), Description("Remove a metric this workspace added. Refused while a tile or saved view uses it (list_metrics shows usedBy); remove those first.")]
+    [McpServerTool(Name = "remove_metric", Destructive = true), Description("Remove a metric this workspace added. Refused while a tile or saved view uses it (list_metrics shows usedBy); remove those first.")]
     public Task<CallToolResult> RemoveMetric(string metric, int expected_version) =>
         runner.RunAsync("remove_metric", AgentScopes.ConfigEdit, metric, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveMetric { Metric = metric }], expected_version));
 
-    [McpServerTool(Name = "add_dashboard_tile"), Description("Show a metric on a dashboard: kpi (one number; ungrouped metrics), bar (a bar per group; grouped metrics) or table (grouped metrics). Put it in a column or card of the dashboard (list_metrics lists dashboards and their containers).")]
+    [McpServerTool(Name = "add_dashboard_tile", Destructive = false), Description("Show a metric on a dashboard: kpi (one number; ungrouped metrics), bar (a bar per group; grouped metrics) or table (grouped metrics). Put it in a column or card of the dashboard (list_metrics lists dashboards and their containers).")]
     public Task<CallToolResult> AddDashboardTile(
         string view,
         string parent,
@@ -862,7 +862,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         }
     }
 
-    [McpServerTool(Name = "add_workflow_state"), Description("Add a state to a workflow (it also becomes a status option). Category is one of new, active, pending, resolved, closed, cancelled. Add transitions into and out of it with add_transition.")]
+    [McpServerTool(Name = "add_workflow_state", Destructive = false), Description("Add a state to a workflow (it also becomes a status option). Category is one of new, active, pending, resolved, closed, cancelled. Add transitions into and out of it with add_transition.")]
     public Task<CallToolResult> AddWorkflowState(
         [Description("Workflow ID from describe_entity, e.g. core.tickets.request_lifecycle.")] string workflow,
         [Description("State name people see, e.g. \"Awaiting information\".")] string label,
@@ -871,7 +871,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("add_workflow_state", AgentScopes.ConfigEdit, workflow, async ctx =>
             await ApplyAllAsync(ctx, [new AddWorkflowState { Workflow = workflow, State = new WorkflowState { Id = Namespaces.TenantPrefix + Slug(label), Category = category }, Label = label, Tone = category switch { "pending" => "accent.amber", "resolved" => "accent.green", "cancelled" => "accent.gray", "active" => "accent.purple", _ => "accent.blue" } }], expected_version));
 
-    [McpServerTool(Name = "add_transition"), Description("Add a workflow transition (a button) from one or more states to another. Optionally limit it to roles, require fields, or guard it with an expression.")]
+    [McpServerTool(Name = "add_transition", Destructive = false), Description("Add a workflow transition (a button) from one or more states to another. Optionally limit it to roles, require fields, or guard it with an expression.")]
     public Task<CallToolResult> AddTransition(
         string workflow,
         [Description("Button label, a verb, e.g. \"Ask for information\".")] string label,
@@ -886,7 +886,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("add_transition", AgentScopes.ConfigEdit, workflow, async ctx =>
             await ApplyAllAsync(ctx, [new AddTransition { Workflow = workflow, Transition = new WorkflowTransition { Id = Namespaces.TenantPrefix + Slug(label), Label = label, From = [.. from], To = to, Roles = [.. roles ?? []], RequiredFields = [.. required_fields ?? []], Guard = guard, GuardMessage = guard_message, Tone = tone } }], expected_version));
 
-    [McpServerTool(Name = "update_transition"), Description("Change a transition. Default-module transitions accept only label, guard_message, tone, enabled (disable instead of delete) and extra events to publish; your own transitions accept everything.")]
+    [McpServerTool(Name = "update_transition", Destructive = false), Description("Change a transition. Default-module transitions accept only label, guard_message, tone, enabled (disable instead of delete) and extra events to publish; your own transitions accept everything.")]
     public Task<CallToolResult> UpdateTransition(
         string workflow,
         string transition,
@@ -912,7 +912,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             return await ApplyAllAsync(ctx, [new UpdateTransition { Workflow = workflow, Transition = transition, Set = new TransitionPatch { Label = label, Enabled = enabled, GuardMessage = guard_message, Tone = tone, From = from?.ToList(), To = to, Guard = guard, Emits = emits } }], expected_version);
         });
 
-    [McpServerTool(Name = "set_workflow_policy"), Description("Decide what happens to records already in a workflow when this draft changes it: pin (default; they finish on the version they started with), migrate (move them through state_map, old state → new state), or cancel (move active ones to cancel_state). The publish review shows how many records each choice affects.")]
+    [McpServerTool(Name = "set_workflow_policy", Destructive = false), Description("Decide what happens to records already in a workflow when this draft changes it: pin (default; they finish on the version they started with), migrate (move them through state_map, old state → new state), or cancel (move active ones to cancel_state). The publish review shows how many records each choice affects.")]
     public Task<CallToolResult> SetWorkflowPolicy(
         string workflow,
         [Description("pin, migrate, or cancel.")] string policy,

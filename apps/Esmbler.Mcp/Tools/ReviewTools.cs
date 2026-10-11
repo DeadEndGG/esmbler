@@ -71,7 +71,7 @@ public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishS
             });
         });
 
-    [McpServerTool(Name = "request_publish"), Description("Ask a person to publish the draft. You cannot publish yourself; a builder reviews the exact changes and publishes with one click.")]
+    [McpServerTool(Name = "request_publish", Destructive = false), Description("Ask a person to publish the draft. You cannot publish yourself; a builder reviews the exact changes and publishes with one click.")]
     public Task<CallToolResult> RequestPublish() =>
         runner.RunAsync("request_publish", AgentScopes.PublishRequest, null, async ctx =>
         {
@@ -79,7 +79,7 @@ public sealed class ReviewTools(ToolRunner runner, DraftService drafts, PublishS
             return new { request.Id, request.Status, request.ArtifactHash, request.Readiness, message = "A builder can now review and publish this draft in the app." };
         });
 
-    [McpServerTool(Name = "discard_draft"), Description("Discard the whole draft. The published pages are unchanged.")]
+    [McpServerTool(Name = "discard_draft", Destructive = true), Description("Discard the whole draft. The published pages are unchanged.")]
     public Task<CallToolResult> DiscardDraft() =>
         runner.RunAsync("discard_draft", AgentScopes.ConfigEdit, null, async ctx =>
         {

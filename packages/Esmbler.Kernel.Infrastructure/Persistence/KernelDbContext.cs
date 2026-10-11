@@ -71,6 +71,12 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<AiUsageRow> AiUsage => Set<AiUsageRow>();
 
+    public DbSet<McpConnectionRow> McpConnections => Set<McpConnectionRow>();
+
+    public DbSet<OAuthCodeRow> OAuthCodes => Set<OAuthCodeRow>();
+
+    public DbSet<OAuthRefreshTokenRow> OAuthRefreshTokens => Set<OAuthRefreshTokenRow>();
+
     public DbSet<NotificationDeliveryAttemptRow> NotificationDeliveryAttempts => Set<NotificationDeliveryAttemptRow>();
 
     public DbSet<NotificationPreferenceRow> NotificationPreferences => Set<NotificationPreferenceRow>();
@@ -151,6 +157,9 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<InboundMessageRow>().ToTable("inbound_messages").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<AiSettingsRow>().ToTable("ai_settings").HasKey(x => x.TenantId);
         b.Entity<AiUsageRow>().ToTable("ai_usage").HasKey(x => new { x.TenantId, x.Id });
+        b.Entity<McpConnectionRow>().ToTable("mcp_connections").HasKey(x => new { x.TenantId, x.Id });
+        b.Entity<OAuthCodeRow>().ToTable("oauth_codes").HasKey(x => new { x.TenantId, x.Id });
+        b.Entity<OAuthRefreshTokenRow>().ToTable("oauth_refresh_tokens").HasKey(x => new { x.TenantId, x.Id });
 
         string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot", "Settings", "SecretRefs"];
         foreach (var entity in b.Model.GetEntityTypes())

@@ -1234,3 +1234,79 @@ public sealed class AiUsageRow
 
     public DateTimeOffset At { get; set; }
 }
+
+/// <summary>One person's consent for an external MCP client in one workspace environment (ADR 0025).</summary>
+public sealed class McpConnectionRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid PrincipalId { get; set; }
+
+    public Guid AgentId { get; set; }
+
+    public string ClientId { get; set; } = "";
+
+    public string ClientHost { get; set; } = "";
+
+    public string ClientName { get; set; } = "";
+
+    public string Scopes { get; set; } = "";
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    public DateTimeOffset? LastUsedAt { get; set; }
+
+    public DateTimeOffset? RevokedAt { get; set; }
+
+    public Guid? RevokedBy { get; set; }
+}
+
+/// <summary>A single-use authorization code, stored hashed (ADR 0025).</summary>
+public sealed class OAuthCodeRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid ConnectionId { get; set; }
+
+    public byte[] CodeHash { get; set; } = [];
+
+    public string RequestId { get; set; } = "";
+
+    public string CodeChallenge { get; set; } = "";
+
+    public string RedirectUri { get; set; } = "";
+
+    public string ClientId { get; set; } = "";
+
+    public string Scopes { get; set; } = "";
+
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    public DateTimeOffset? UsedAt { get; set; }
+}
+
+/// <summary>A rotating refresh token of a connection, stored hashed (ADR 0025).</summary>
+public sealed class OAuthRefreshTokenRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid ConnectionId { get; set; }
+
+    public byte[] TokenHash { get; set; } = [];
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    public DateTimeOffset? RevokedAt { get; set; }
+}

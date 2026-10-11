@@ -12,6 +12,25 @@ builder.Services.AddEsmblerPlatform(builder.Configuration);
 
 // Only tokens minted for the MCP audience are accepted; API tokens are rejected and never forwarded (REQ-AISAFE-004).
 builder.Services.AddEsmblerAuth(Audiences.Mcp);
+
+// As a public remote connector (ADR 0025), a missing or invalid token points clients at the protected resource metadata.
+var publicUrl = builder.Configuration["Esmbler:Mcp:PublicUrl"];
+if (!string.IsNullOrWhiteSpace(publicUrl))
+{
+    var metadataUrl = new Uri(new Uri(publicUrl), "/.well-known/oauth-protected-resource").ToString();
+    builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, o =>
+    {
+        o.Events ??= new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents();
+        o.Events.OnChallenge = ctx =>
+        {
+            ctx.HandleResponse();
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            ctx.Response.Headers.WWWAuthenticate = $"Bearer resource_metadata=\"{metadataUrl}\", scope=\"config:read\"";
+            return Task.CompletedTask;
+        };
+    });
+}
+
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ToolRunner>();
 builder.Services
@@ -32,6 +51,21 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
+if (!string.IsNullOrWhiteSpace(publicUrl))
+{
+    // RFC 9728 protected resource metadata: the resource is the canonical URI, path included.
+    var resource = new
+    {
+        resource = publicUrl,
+        authorization_servers = new[] { builder.Configuration["Esmbler:Auth:Issuer"] ?? "esmbler" },
+        scopes_supported = OAuthService.Grantable,
+        bearer_methods_supported = new[] { "header" },
+        resource_name = "Esmbler",
+    };
+    app.MapGet("/.well-known/oauth-protected-resource", () => Results.Json(resource)).AllowAnonymous();
+    app.MapGet("/.well-known/oauth-protected-resource/mcp", () => Results.Json(resource)).AllowAnonymous();
+}
+
 app.MapMcp("/mcp").RequireAuthorization();
 
 await app.RunAsync();

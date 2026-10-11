@@ -107,7 +107,14 @@ export class LoginPage {
       const ws = this.auth.workspaces();
       if (ws.length === 1) {
         await this.auth.switchTo(ws[0].slug);
-        await this.router.navigateByUrl('/');
+        let next = '/';
+        try {
+          next = sessionStorage.getItem('esm.afterLogin') ?? '/';
+          sessionStorage.removeItem('esm.afterLogin');
+        } catch {
+          next = '/';
+        }
+        await this.router.navigateByUrl(next.startsWith('/connect?') ? next : '/');
       } else {
         await this.router.navigateByUrl('/workspaces');
       }

@@ -15,7 +15,8 @@ public static class AuthRegistration
             .Configure<TokenService>((o, tokens) =>
             {
                 o.MapInboundClaims = false;
-                o.TokenValidationParameters = tokens.Validation(audience);
+                // The MCP server accepts its canonical resource URI when it is public (ADR 0025).
+                o.TokenValidationParameters = tokens.Validation(audience == Audiences.Mcp ? tokens.McpAudience : audience);
                 o.Events = new JwtBearerEvents
                 {
                     // SignalR sends the token in the query string for WebSockets; accept it only on the hub path.

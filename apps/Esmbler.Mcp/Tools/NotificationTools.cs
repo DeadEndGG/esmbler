@@ -114,7 +114,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
             return rows.Take(50).Select(d => new { d.Id, d.EventId, d.EventType, d.Route, d.Channel, d.Recipient, d.External, d.Status, d.Reason, d.Attempts, d.CreatedAt, d.SentAt });
         });
 
-    [McpServerTool(Name = "notify_when"), Description("The simplest way to set up a notification: when an event happens (optionally under a condition), tell these recipients through a profile's channels with this text. Adds a subscription, a template and a route as one change. Example: when core.tickets.ticket.escalated, tell field:assignee and group:service_desk \"Escalated: {{record.title}}\". Placeholders: {{record.<field>}}, {{record.number}}, {{event.<field>}}, {{recipient.name}}, {{link}}; plain text only.")]
+    [McpServerTool(Name = "notify_when", Destructive = false), Description("The simplest way to set up a notification: when an event happens (optionally under a condition), tell these recipients through a profile's channels with this text. Adds a subscription, a template and a route as one change. Example: when core.tickets.ticket.escalated, tell field:assignee and group:service_desk \"Escalated: {{record.title}}\". Placeholders: {{record.<field>}}, {{record.number}}, {{event.<field>}}, {{recipient.name}}, {{link}}; plain text only.")]
     public Task<CallToolResult> NotifyWhen(
         [Description("What the notification is, e.g. \"Escalations to the assignee\".")] string label,
         [Description("Event type ID (list_event_types).")] string @event,
@@ -149,7 +149,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
             return await ApplyAllAsync(ctx, ops, expected_version);
         });
 
-    [McpServerTool(Name = "add_subscription"), Description("Listen to an event type (optionally under a condition over event and record). Routes then decide who hears about it.")]
+    [McpServerTool(Name = "add_subscription", Destructive = false), Description("Listen to an event type (optionally under a condition over event and record). Routes then decide who hears about it.")]
     public Task<CallToolResult> AddSubscription(
         string label,
         [Description("Event type ID (list_event_types).")] string @event,
@@ -159,7 +159,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
         runner.RunAsync("add_subscription", AgentScopes.ConfigEdit, @event, async ctx =>
             await ApplyAllAsync(ctx, [new AddSubscription { Subscription = new SubscriptionSpec { Id = Id(label, 56), Label = label, Description = description, Event = @event, When = when } }], expected_version));
 
-    [McpServerTool(Name = "add_notification_template"), Description("Add the text of a notification: subject and body with placeholders ({{record.<field>}}, {{record.number}}, {{event.<field>}}, {{recipient.name}}, {{link}}), plain text only, and optional shorter text per channel (e.g. sms). Each recipient sees only fields they may read.")]
+    [McpServerTool(Name = "add_notification_template", Destructive = false), Description("Add the text of a notification: subject and body with placeholders ({{record.<field>}}, {{record.number}}, {{event.<field>}}, {{recipient.name}}, {{link}}), plain text only, and optional shorter text per channel (e.g. sms). Each recipient sees only fields they may read.")]
     public Task<CallToolResult> AddNotificationTemplate(
         string label,
         string subject,
@@ -173,7 +173,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
                 Template = new NotificationTemplateSpec { Id = Id(label, 56), Label = label, Entity = entity, Subject = subject, Body = body, Variants = Variants(variants) ?? [] },
             }], expected_version));
 
-    [McpServerTool(Name = "update_notification_template"), Description("Change a template's label, subject, body, per-channel text or enabled state (module templates too; upgrades keep your text). Which fields external recipients see is a permission change people make.")]
+    [McpServerTool(Name = "update_notification_template", Destructive = false), Description("Change a template's label, subject, body, per-channel text or enabled state (module templates too; upgrades keep your text). Which fields external recipients see is a permission change people make.")]
     public Task<CallToolResult> UpdateNotificationTemplate(
         string template,
         int expected_version,
@@ -189,7 +189,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
                 Set = new NotificationTemplatePatch { Label = label, Subject = subject, Body = body, Variants = Variants(variants), Enabled = enabled },
             }], expected_version));
 
-    [McpServerTool(Name = "add_notification_profile"), Description("Add a delivery profile: channels in order (in_app, email, sms), all of them or the first that reaches the person (fallback), and an optional minimum event severity.")]
+    [McpServerTool(Name = "add_notification_profile", Destructive = false), Description("Add a delivery profile: channels in order (in_app, email, sms), all of them or the first that reaches the person (fallback), and an optional minimum event severity.")]
     public Task<CallToolResult> AddNotificationProfile(
         string label,
         string[] channels,
@@ -202,7 +202,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
                 Profile = new NotificationProfileSpec { Id = Id(label, 56), Label = label, Channels = [.. channels], Delivery = delivery ?? NotificationDelivery.All, MinSeverity = min_severity },
             }], expected_version));
 
-    [McpServerTool(Name = "add_notification_route"), Description("Route a subscription's events to recipients through a profile with a template. Mandatory routes and external addresses are permission changes only people with permission administration make; agents are refused.")]
+    [McpServerTool(Name = "add_notification_route", Destructive = false), Description("Route a subscription's events to recipients through a profile with a template. Mandatory routes and external addresses are permission changes only people with permission administration make; agents are refused.")]
     public Task<CallToolResult> AddNotificationRoute(
         string label,
         string subscription,
@@ -216,7 +216,7 @@ public sealed class NotificationTools(ToolRunner runner, DraftService drafts, Pr
                 Route = new NotificationRouteSpec { Id = Id(label, 56), Label = label, Subscription = subscription, Profile = profile, Template = template, Recipients = [.. recipients.Select(ToRecipient)] },
             }], expected_version));
 
-    [McpServerTool(Name = "update_notification_route"), Description("Change a route: label, profile, template, recipients (your routes) or enabled. Module routes accept profile, template and enabled; mandatory module routes cannot be disabled. Making a route mandatory or optional is a permission change people make.")]
+    [McpServerTool(Name = "update_notification_route", Destructive = false), Description("Change a route: label, profile, template, recipients (your routes) or enabled. Module routes accept profile, template and enabled; mandatory module routes cannot be disabled. Making a route mandatory or optional is a permission change people make.")]
     public Task<CallToolResult> UpdateNotificationRoute(
         string route,
         int expected_version,

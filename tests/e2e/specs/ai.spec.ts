@@ -33,3 +33,14 @@ test('@REQ-AI-006 an administrator sets the AI model choice and daily budget for
   await expect(page.getByText('of $12.50')).toBeVisible();
   await expect(page.getByLabel(/External assistants/)).toHaveValue('non_production');
 });
+
+/** REQ-AI-007 (ADR 0025): people see the external assistants connected to the workspace and can end them. */
+test('@REQ-AI-007 the connected assistants page lists connections and has no accessibility violations', async ({ page }) => {
+  await signIn(page, 'morgan@globex.example', 'Globex');
+  await page.getByRole('link', { name: 'Connected assistants' }).click();
+  await page.waitForURL(/\/assistants$/);
+  await expect(page.getByText('No assistants are connected.')).toBeVisible();
+  await page.getByLabel("Everyone's").check();
+  await expect(page.getByText('No assistants are connected.')).toBeVisible();
+  await audit(page, 'connected assistants');
+});

@@ -112,6 +112,10 @@ public static class ServiceRegistration
         services.AddSingleton(_ => AiCatalogFactory.From(configuration));
         services.AddSingleton<Kernel.Infrastructure.Assistant.AiSettingsService>();
 
+        // OAuth for external MCP clients (ADR 0025): client metadata documents and the authorization server.
+        services.AddSingleton<Auth.IClientMetadataSource, Auth.HttpClientMetadataSource>();
+        services.AddSingleton<Auth.OAuthService>();
+
         // Email intake (ADR 0023): mailboxes, inbound messages, the processing job and the IMAP poller (worker only).
         services.AddSingleton<Kernel.Infrastructure.Mail.MailIntakeService>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Mail.MailProcessJobHandler>();

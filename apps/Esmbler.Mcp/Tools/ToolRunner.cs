@@ -17,10 +17,13 @@ namespace Esmbler.Mcp.Tools;
 /// scope check, per-agent rate and session budgets, audit of actor/agent/tool/target/outcome, and structured errors
 /// ({code, message, target, suggestion}) so the AI can self-correct.
 /// </summary>
-public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILogger<ToolRunner> logger)
+public sealed class ToolRunner(IHttpContextAccessor http, Database database, OAuthService oauth, ILogger<ToolRunner> logger)
 {
     public const int MaxCallsPerMinute = 60;
     public const int MaxCallsPerToken = 200;
+
+    /// <summary>External clients' connections refresh their tokens: limits apply per connection and day instead (ASM-144).</summary>
+    public const int MaxCallsPerConnectionPerDay = 2000;
     public const int MaxResultChars = 64_000;
 
     public static readonly JsonSerializerOptions Json = new(SpecJson.Options) { WriteIndented = false };
@@ -57,6 +60,13 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
             return Failure(Error("scope_missing", $"This agent session lacks the '{scope}' scope needed for {tool}.", tool, "Ask the user to grant it when starting the session."));
         }
 
+        // An external client's connection may have been revoked since its token was issued (ADR 0025).
+        if (Guid.TryParse(http.HttpContext?.User.FindFirst(ClaimNames.Connection)?.Value, out var connection) && !await oauth.ConnectionActiveAsync(ctx.TenantId, connection, default))
+        {
+            await AuditAsync(ctx, tool, target, "denied", "connection revoked");
+            return Failure(Error("connection_revoked", "This assistant's connection to Esmbler was ended.", null, "Connect the assistant again from its settings."));
+        }
+
         if (Budget(ctx) is { } over)
         {
             return Failure(over);
@@ -81,14 +91,15 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
 
     private string? Budget(RequestContext ctx)
     {
-        var key = $"{ctx.AgentId}:{http.HttpContext?.User.FindFirst("jti")?.Value}";
+        var connection = http.HttpContext?.User.FindFirst(ClaimNames.Connection)?.Value;
+        var key = connection is null ? $"{ctx.AgentId}:{http.HttpContext?.User.FindFirst("jti")?.Value}" : $"connection:{connection}:{DateTimeOffset.UtcNow:yyyyMMdd}";
         var now = DateTimeOffset.UtcNow;
         if (Interlocked.Increment(ref budgetCalls) % 500 == 0)
         {
-            // Agent tokens live at most 30 minutes: forget sessions idle for longer than that.
+            // Agent tokens live at most 30 minutes, connection counters a day: forget idle entries.
             foreach (var (k, v) in Budgets)
             {
-                if (now - v.Last > TimeSpan.FromMinutes(35))
+                if (now - v.Last > (k.StartsWith("connection:", StringComparison.Ordinal) ? TimeSpan.FromHours(25) : TimeSpan.FromMinutes(35)))
                 {
                     Budgets.TryRemove(k, out _);
                 }
@@ -109,7 +120,12 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, ILo
 
             return (e.Window, e.Total + 1, now);
         });
-        if (entry.Total > MaxCallsPerToken)
+        if (connection is not null && entry.Total > MaxCallsPerConnectionPerDay)
+        {
+            return Error("budget_exhausted", $"This assistant used its {MaxCallsPerConnectionPerDay} tool calls for today.", null, "Try again tomorrow.");
+        }
+
+        if (connection is null && entry.Total > MaxCallsPerToken)
         {
             return Error("budget_exhausted", $"This agent session used its {MaxCallsPerToken} tool calls.", null, "Start a new session.");
         }

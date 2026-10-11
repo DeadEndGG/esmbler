@@ -21,6 +21,10 @@ public static class ClaimNames
     public const string Environment = "eid";
     public const string Agent = "act";
     public const string Scope = "scp";
+
+    /// <summary>The external MCP client's ID (its metadata document URL) and the connection (ADR 0025).</summary>
+    public const string Client = "client_id";
+    public const string Connection = "cid";
 }
 
 public sealed record IssuedTokens(string AccessToken, DateTimeOffset ExpiresAt, string? RefreshToken);
@@ -70,7 +74,14 @@ public sealed class TokenService(PlatformOptions options, Database database)
         return new IssuedTokens(Write(claims, Audiences.Api, expires), expires, refreshToken);
     }
 
-    public IssuedTokens IssueAgent(Guid principalId, string name, Guid tenantId, Guid environmentId, Guid agentId, IEnumerable<string> scopes)
+    /// <summary>The audience of MCP tokens: the canonical resource URI when the MCP server is public, else esmbler-mcp (ADR 0025).</summary>
+    public string McpAudience => string.IsNullOrWhiteSpace(options.Mcp.PublicUrl) ? Audiences.Mcp : options.Mcp.PublicUrl!;
+
+    public IssuedTokens IssueAgent(Guid principalId, string name, Guid tenantId, Guid environmentId, Guid agentId, IEnumerable<string> scopes) =>
+        IssueAgent(principalId, name, tenantId, environmentId, agentId, scopes, null, null, TimeSpan.FromMinutes(options.Auth.AgentTokenMinutes));
+
+    /// <summary>An MCP token; for an external client's connection it also names the client and connection (ADR 0025).</summary>
+    public IssuedTokens IssueAgent(Guid principalId, string name, Guid tenantId, Guid environmentId, Guid agentId, IEnumerable<string> scopes, string? clientId, Guid? connectionId, TimeSpan lifetime)
     {
         var claims = new List<Claim>
         {
@@ -81,8 +92,31 @@ public sealed class TokenService(PlatformOptions options, Database database)
             new(ClaimNames.Agent, agentId.ToString()),
             new(ClaimNames.Scope, string.Join(' ', scopes)),
         };
-        var expires = DateTimeOffset.UtcNow.AddMinutes(options.Auth.AgentTokenMinutes);
-        return new IssuedTokens(Write(claims, Audiences.Mcp, expires), expires, null);
+        if (clientId is not null && connectionId is { } connection)
+        {
+            claims.Add(new Claim(ClaimNames.Client, clientId));
+            claims.Add(new Claim(ClaimNames.Connection, connection.ToString()));
+        }
+
+        var expires = DateTimeOffset.UtcNow.Add(lifetime);
+        return new IssuedTokens(Write(claims, McpAudience, expires), expires, null);
+    }
+
+    /// <summary>A short-lived signed value only this platform can produce (OAuth pending requests, ADR 0025).</summary>
+    public string Sign(IEnumerable<Claim> claims, string audience, TimeSpan lifetime) => Write(claims, audience, DateTimeOffset.UtcNow.Add(lifetime));
+
+    /// <summary>Validates a value from <see cref="Sign"/>; null when it is forged, for another purpose or expired.</summary>
+    public ClaimsPrincipal? Verify(string value, string audience)
+    {
+        try
+        {
+            var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
+            return handler.ValidateToken(value, Validation(audience), out _);
+        }
+        catch (Exception ex) when (ex is SecurityTokenException or ArgumentException)
+        {
+            return null;
+        }
     }
 
     public TokenValidationParameters Validation(string audience) => new()

@@ -76,6 +76,7 @@ import { Icon, IconName } from '../ui/icon';
               <kbd>⌘I</kbd>
             </button>
             <a class="nav-item" routerLink="/admin/configuration" routerLinkActive="active"><esm-icon name="sliders" /><span class="flex-1">Configuration</span></a>
+            <a class="nav-item" routerLink="/assistants" routerLinkActive="active"><esm-icon name="sparkles" /><span class="flex-1">Connected assistants</span></a>
           }
           @if (session.isAdmin()) {
             <a class="nav-item" routerLink="/admin/people" routerLinkActive="active"><esm-icon name="users" /><span class="flex-1">People and roles</span></a>

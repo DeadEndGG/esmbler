@@ -4,11 +4,21 @@ import { Auth } from './core/auth';
 import { Session } from './core/session';
 
 /** Restores the session from the refresh cookie, then requires a selected workspace. */
-const workspaceGuard: CanActivateFn = async () => {
+const workspaceGuard: CanActivateFn = async (_route, state) => {
   const auth = inject(Auth);
   const router = inject(Router);
   const session = inject(Session);
-  if (!auth.signedIn() && !(await auth.restore())) return router.parseUrl('/login');
+  if (!auth.signedIn() && !(await auth.restore())) {
+    // Connecting an assistant (ADR 0025) resumes after sign-in.
+    if (state.url.startsWith('/connect?')) {
+      try {
+        sessionStorage.setItem('esm.afterLogin', state.url);
+      } catch {
+        // storage unavailable: the person starts again from the assistant
+      }
+    }
+    return router.parseUrl('/login');
+  }
   if (!auth.inWorkspace()) return router.parseUrl('/workspaces');
   if (!session.app()) {
     try {
@@ -55,6 +65,8 @@ export const routes: Routes = [
       { path: 'catalog/:item', loadComponent: () => import('./pages/request-form.page').then((m) => m.RequestFormPage) },
       { path: 'approvals', loadComponent: () => import('./pages/approvals.page').then((m) => m.ApprovalsPage) },
       { path: 'notifications', loadComponent: () => import('./pages/notifications.page').then((m) => m.NotificationsPage) },
+      { path: 'connect', loadComponent: () => import('./pages/connect.page').then((m) => m.ConnectPage) },
+      { path: 'assistants', loadComponent: () => import('./pages/assistants.page').then((m) => m.AssistantsPage) },
       { path: 'alerts', loadComponent: () => import('./pages/alerts.page').then((m) => m.AlertsPage) },
       { path: 'mail', loadComponent: () => import('./pages/mail.page').then((m) => m.MailPage) },
       { path: 'admin/audit', loadComponent: () => import('./admin/audit.page').then((m) => m.AuditPage) },
