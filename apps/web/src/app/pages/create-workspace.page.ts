@@ -31,6 +31,13 @@ interface Starter {
   surfaces: StarterSurface[];
 }
 
+interface Persona {
+  role: string;
+  label: string;
+  description?: string | null;
+  surfaces: StarterSurface[];
+}
+
 interface StartersResponse {
   enabled: boolean;
   starters: Starter[];
@@ -138,6 +145,27 @@ type Step = 'describe' | 'questions' | 'review';
                     </div>
                   }
                 </dl>
+                @if (personas().length) {
+                  <section class="rounded-md border border-subtle p-3" aria-labelledby="persona-t">
+                    <h2 id="persona-t" class="mb-2 text-body-sm font-semibold">Preview as</h2>
+                    <div class="mb-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Preview as">
+                      @for (p of personas(); track p.role) {
+                        <button type="button" class="btn btn-sm" role="radio" [attr.aria-checked]="persona()?.role === p.role" [class.btn-primary]="persona()?.role === p.role" (click)="personaId.set(p.role)">{{ p.label }}</button>
+                      }
+                    </div>
+                    @if (persona(); as p) {
+                      @if (p.description) { <p class="mb-2 text-body-sm text-muted">{{ p.description }}</p> }
+                      <dl class="persona grid gap-2">
+                        @for (s of p.surfaces; track s.kind) {
+                          <div>
+                            <dt class="text-caption font-semibold text-muted">{{ s.label }}</dt>
+                            <dd class="m-0"><ul class="m-0 grid gap-0.5 pl-4 text-body-sm">@for (item of s.items; track item) { <li>{{ item }}</li> }</ul></dd>
+                          </div>
+                        }
+                      </dl>
+                    }
+                  </section>
+                }
                 <p class="text-caption text-muted">The workspace starts empty. Its dashboard shows clearly labeled preview figures until the first records arrive.</p>
                 <div class="flex justify-between gap-2">
                   <button class="btn btn-ghost" type="button" (click)="step.set(starter()?.questions?.length ? 'questions' : 'describe')" [disabled]="creating()">Back</button>
@@ -183,6 +211,10 @@ export class CreateWorkspacePage {
   protected readonly answers = signal<Record<string, string>>({});
 
   protected readonly starter = computed(() => this.starters().find((s) => s.id === this.starterId()) ?? null);
+  /** What each of the starter's roles would see (REQ-WS-001 step 5), computed by the server. */
+  protected readonly personas = signal<Persona[]>([]);
+  protected readonly personaId = signal<string | null>(null);
+  protected readonly persona = computed(() => this.personas().find((p) => p.role === this.personaId()) ?? this.personas()[0] ?? null);
   /** The starter whose keywords best match the description (a suggestion; the person chooses). */
   protected readonly suggested = computed(() => {
     const text = this.goal().toLowerCase();
@@ -228,6 +260,22 @@ export class CreateWorkspacePage {
       this.step.set(this.starter()?.questions.length ? 'questions' : 'review');
     } else if (this.step() === 'questions' && this.answered()) {
       this.step.set('review');
+    }
+    if (this.step() === 'review') void this.loadPersonas();
+  }
+
+  private async loadPersonas(): Promise<void> {
+    const id = this.starterId();
+    if (!id) return;
+    try {
+      const personas = await this.api.get<Persona[]>(`/api/starters/${encodeURIComponent(id)}/personas`);
+      if (this.starterId() !== id) return;
+      this.personas.set(personas);
+      // Agents and requesters first: the two views the creator most needs to check.
+      const preferred = personas.find((p) => p.role.endsWith('.agent')) ?? personas[0];
+      this.personaId.set(preferred?.role ?? null);
+    } catch {
+      this.personas.set([]);
     }
   }
 

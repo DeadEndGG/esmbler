@@ -25,7 +25,7 @@ public class WorkspaceCreationTests(PlatformFixture f)
     // Self-service creation is off by default (ADR 0020); these tests turn it on explicitly.
     private WorkspaceService Workspaces => Service(enabled: true, limit: 5);
 
-    private WorkspaceService Service(bool enabled, int limit) => new(f.Get<ModuleCatalog>(), f.Get<ProvisioningService>(), f.Get<Database>(), new WorkspaceCreationPolicy(enabled, limit));
+    private WorkspaceService Service(bool enabled, int limit) => new(f.Get<ModuleCatalog>(), f.Get<ProvisioningService>(), f.Get<Database>(), new WorkspaceCreationPolicy(enabled, limit), f.Get<Kernel.Configuration.ConfigCompiler>());
 
     private async Task<RequestContext> EnterAsync(Guid principal, Guid tenantId)
     {
@@ -41,6 +41,28 @@ public class WorkspaceCreationTests(PlatformFixture f)
         Assert.Equal("service_desk", question.Id);
         Assert.Equal(["forms", "explorer", "dashboard", "navigation", "permissions", "catalog"], ticketing.Surfaces.Select(s => s.Kind));
         Assert.Contains(ticketing.Surfaces.Single(s => s.Kind == "dashboard").Items, i => i.StartsWith("Overview: Open, Unassigned, SLA breached", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Persona_preview_shows_what_each_role_would_see_before_anything_is_created()
+    {
+        // REQ-WS-001 step 5: "preview as an agent or a requester", from the same configuration and permission model.
+        var personas = Workspaces.Personas("ticketing");
+        var agent = personas.Single(p => p.Role == "core.tickets.agent");
+        var requester = personas.Single(p => p.Role == "core.tickets.requester");
+        IReadOnlyList<string> Items(PersonaPreview p, string kind) => p.Surfaces.FirstOrDefault(s => s.Kind == kind)?.Items ?? [];
+
+        Assert.Contains(Items(agent, "records"), r => r.StartsWith("Tickets: sees all tickets, creates them, edits all", StringComparison.Ordinal));
+        Assert.Contains(Items(requester, "records"), r => r.StartsWith("Tickets: sees their own tickets, creates them", StringComparison.Ordinal));
+
+        // Team figures are for agents; fields hidden from requesters are listed; requesters get no extra rights.
+        Assert.Contains(Items(agent, "dashboard"), d => d.Contains("Workload by team", StringComparison.Ordinal) && d.Contains("Time to acknowledge", StringComparison.Ordinal));
+        Assert.DoesNotContain(Items(requester, "dashboard"), d => d.Contains("Workload by team", StringComparison.Ordinal));
+        Assert.Contains("Ticket: Labels", Items(requester, "hidden"));
+        Assert.Empty(Items(agent, "hidden"));
+        Assert.Empty(Items(requester, "rights"));
+        Assert.Contains("Export lists and figures", Items(personas.Single(p => p.Role == "core.tickets.admin"), "rights"));
+        Assert.Throws<KernelException>(() => Workspaces.Personas("nope"));
     }
 
     [Fact]

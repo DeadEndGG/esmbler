@@ -14,6 +14,8 @@ public static class WorkspaceEndpoints
         // Needs only a signed-in person, not a selected workspace: this is how a new admin gets their first one.
         app.MapGet("/api/starters", (WorkspaceService workspaces) =>
             Results.Ok(new { enabled = workspaces.Policy.Enabled, starters = workspaces.Starters() })).WithTags("Workspaces").RequireAuthorization();
+        // Persona preview (REQ-WS-001 step 5): what each of the starter's roles would see; computed, nothing created.
+        app.MapGet("/api/starters/{id}/personas", (string id, WorkspaceService workspaces) => workspaces.Personas(id)).WithTags("Workspaces").RequireAuthorization();
 
         app.MapPost("/api/workspaces", async (CreateWorkspaceRequest body, ClaimsPrincipal user, WorkspaceService workspaces, IdentityService identity, CancellationToken ct) =>
         {
