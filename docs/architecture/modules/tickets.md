@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-11
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004, REQ-ALR-001, REQ-BIZ-003]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004, REQ-ALR-001, REQ-BIZ-003, REQ-MIG-004]
 ---
 
 # Tickets module architecture
@@ -422,6 +422,21 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/AlertSpecTests.cs` (`Tickets_al
 The `[NUMBER]` in subjects is the threading fallback; replies also thread by Message-ID. Only the requester's own email becomes a public reply; an agent who answers a ticket email adds an internal note. The reply's author is never notified of their own reply, so a requester who answers by email is not emailed back their own words, and agents' internal work notes never reach the requester.
 
 Evidence: `tests/Esmbler.IntegrationTests/Mail/MailIntakeTests.cs` (`A_message_opens_a_ticket_for_its_sender_and_replies_go_both_ways_without_internal_notes`, `Replies_reopen_resolved_tickets_closed_ones_start_a_follow_up_and_nobody_replies_into_someone_elses_ticket`), `tests/Esmbler.UnitTests/Configuration/MailIntakeSpecTests.cs` (`A_ticket_intake_validates_and_shows_in_the_dependency_graph`), `TicketsReleaseTests` and `DesignTokenTests` for 1.9.0, Playwright `mail.spec.ts`.
+
+## Release 1.10.0: service level figures and a changed policy
+
+1.10.0 adds three figures to the Overview and changes the ticket SLA policy and the service desk calendar ([ADR 0019](../../adr/0019-metrics-dashboards-and-connected-explorer.md), [ADR 0018](../../adr/0018-sla-and-business-hours.md), REQ-OPS-004, REQ-MIG-004). There are no data migrations and no permission-set changes. Clocks that started before the upgrade keep the goal, due time and calendar they started with; clocks started after it use the new policy (ASM-158).
+
+| Element | IDs and detail |
+| --- | --- |
+| Metric `core.tickets.metric.sla_at_risk` | "SLA at risk": open tickets with a ticket SLA timer at risk (warning recorded, not breached; ASM-152); everyone who reads tickets |
+| Metric `core.tickets.metric.alert_mtta` | "Time to acknowledge": average minutes from an SLA alert (`core.tickets.alert.sla_breached`, `core.tickets.alert.sla_at_risk`) opening to its acknowledgment, alerts opened in the last 30 days (service desk calendar); agents and administrators (ASM-159) |
+| Metric `core.tickets.metric.alert_mttr` | "Time to resolve alerts": average hours from those alerts opening to their resolution, alerts resolved in the last 30 days; agents and administrators |
+| Dashboard row `core.tickets.dashboard.r_service` | Three KPI tiles (span 4 each) after the first KPI row: at risk (warning tone), time to acknowledge, time to resolve; alert tiles open the Alerts page |
+| SLA policy `core.tickets.sla.ticket` | Resolution goal for P2 drops from 600 to 480 service desk minutes |
+| Calendar `core.tickets.calendar.business_hours` | Adds the day after Thanksgiving (2026-11-27, 2027-11-26) as holidays |
+
+Evidence: `tests/Esmbler.IntegrationTests/Configuration/UpgradeTests.cs` (`Upgrading_to_a_changed_sla_policy_and_calendar_keeps_running_clocks_on_their_snapshot`), `tests/Esmbler.UnitTests/Configuration/MetricSpecTests.cs` (`Release_1_10_0_adds_service_level_figures_and_changes_a_policy_and_its_calendar`), `TicketsReleaseTests` and `DesignTokenTests` for 1.10.0.
 
 ## Starter: IT ticketing
 

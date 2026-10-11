@@ -2,8 +2,8 @@
 title: "ADR 0019: Metrics, dashboards and the connected explorer"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
-requirements: [REQ-OPS-004, REQ-WS-002, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-BIZ-005, REQ-LIVE-003]
+last_reviewed: 2026-10-11
+requirements: [REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-BIZ-005, REQ-LIVE-003, REQ-MIG-004]
 ---
 
 # ADR 0019: Metrics, dashboards and the connected explorer
@@ -85,6 +85,15 @@ The list page keeps its state in the URL: `view`, `filter[]`, `sla[]`, `label` (
 
 Metrics `open`, `unassigned`, `sla_breached`, `avg_resolution`, `workload_by_team`, `resolved_trend` and `open_by_category` (the last four for agents and admins), the `core.tickets.dashboard` Overview, metric-backed saved views and table grouping options. See the [Tickets module](../architecture/modules/tickets.md#release-160-overview-dashboard).
 
+### Follow-ups (G2-M9c)
+
+- **At-risk SLAs.** An SLA condition takes the state `at_risk` (`policy[/target]:at_risk` in URLs): a running or paused timer with a recorded warning and no breach (ASM-152). Like breaches it compiles to `EXISTS` over `kernel.sla_timers`, so the figure and its list agree.
+- **"Other".** A grouped metric with more groups than its limit adds an "Other" bucket that sums the rest. Its drill is an explorer filter (`!(record.f in [...])`, and `record.f != null` when empty values are not counted or have their own group), evaluated by the same compiler, so it agrees with its list like any bar; when that filter would exceed the explorer's 1,000-character limit the figure shows its groups without "Other" (ASM-061).
+- **Alert metrics.** `MetricSpec.Alerts` (rules, minimum severity) makes a metric count alerts about the entity's records: `kernel.alerts` joined to `kernel.records` under `QueryCompiler.Where` for the viewer, so an alert counts only if its record is readable, plus the Alerts page's visibility (responders see all, others their own, their groups' or assigned; agents only theirs). Measures are count or duration between `opened_at`, `acknowledged_at` and `resolved_at` (time to acknowledge, time to resolve); groups are severity, rule or date buckets. Alert figures carry `source: alerts` and no drill; their tiles open the Alerts page (ASM-153, [KI-067](../known-issues.md)). This closes [KI-041](../known-issues.md).
+- **CSV export.** `GET /api/records/{entity}/export` writes the explorer's result for the person (same WHERE clause and order, at most 10,000 rows, visible fields with labels) and `GET /api/metrics/{id}/export` a figure's rows. Both need the `records.export` action, are audited before the first byte (`records.export`, `metric.export`), escape formula cells (`CsvText`) and are limited to ten a minute per person (ASM-154, T-103).
+- **Dashboards as configuration.** Overlay operations `view.add` (a tenant dashboard: `tenant__` IDs, layout and display nodes only) and `view.remove` (tenant dashboards only); the SDK now has 39 operations. `Kernel/Configuration/DashboardLayout` keeps rows on the 12-unit grid as tiles come and go (at most four a row, re-spanned evenly, ASM-155). `DashboardBuilderService` and `/api/drafts/current/dashboards` (options, create, add tile, remove tile, remove dashboard) back the dashboard page's Edit mode, where builders add tiles from existing metrics or a new count over any groupable field they can see, tenant fields included (ASM-156); every action is one draft batch, published through review. MCP adds `add_dashboard`, and `add_dashboard_tile` accepts a row or no parent.
+- **Tickets 1.10.0.** Metrics `sla_at_risk`, `alert_mtta` and `alert_mttr` on the Overview, a tighter P2 resolution goal and new holidays (ASM-158, ASM-159); clocks started before the upgrade keep their snapshot.
+
 ### Flow
 
 ```mermaid
@@ -115,7 +124,7 @@ sequenceDiagram
 - Good: drill links are plain explorer URLs that can be shared and bookmarked.
 - Bad: every dashboard load runs up to 12 live queries; there is no cache yet, so a large tenant pays per view (an open dashboard refreshes every 60 s while its tab is visible).
 - Bad: rolling windows are evaluated at request time, so two viewers in different time zones can see different daily buckets for the same metric unless it names a calendar or time zone.
-- Bad: totals and figures stop at 10,000 ("10,000+"); explorer group headers stop at 50 groups, and metrics at 25; there is no "Other" bucket yet (G2-M9c).
+- Bad: totals and figures stop at 10,000 ("10,000+"); explorer group headers stop at 50 groups, and metrics at 25 plus an "Other" bucket (which is left out when its filter would be too long, ASM-061).
 - Neutral: heavy analytics (history over years, cross-entity joins) belong to an analytics store (G4-M6), which can reuse the same metric specs.
 
 ## Pros and cons of the options
@@ -143,9 +152,10 @@ sequenceDiagram
 - Related: [ADR 0002](0002-storage-and-query-model.md) (query model), [ADR 0003](0003-configuration-artifact-and-overlay-format.md) (overlay operations), [ADR 0007](0007-mcp-server-design.md) (MCP tools), [ADR 0018](0018-sla-and-business-hours.md) (SLA timers), [connected workspace](../spec/connected-workspace.md).
 - Assumptions: ASM-058 to ASM-068 in [assumptions](../decisions/assumptions.md) (ASM-065 revised in G2-M9b).
 - Guided workspace creation and labeled preview data on empty workspaces shipped with G2-M9b ([ADR 0020](0020-self-service-workspace-creation.md)): when the viewer can see no records of the dashboard's entity, `DashboardData.Empty` is set and every figure is a preview (`MetricResult.Preview`) with sample values and no drill.
-- Deferred to G2-M9c: a dashboard builder UI and new dashboard views (there is no `view.add` operation yet; dashboards are edited through the AI builder's metric and tile tools), an "Other" bucket, an at-risk SLA state and CSV export.
+- Shipped in G2-M9c (see Follow-ups above): the dashboard builder and `view.add`, the "Other" bucket, the at-risk SLA state, alert metrics and CSV export. Still open: drill-down for alert figures ([KI-067](../known-issues.md)) and drag and drop in the dashboard builder ([KI-068](../known-issues.md)).
 - Verification:
   - Unit: `Configuration.MetricSpecTests`, `Metrics.DateBucketsTests`, `Metrics.QueryFilterSupportTests`.
   - Integration: `Records.MetricTests` (`Every_figure_equals_the_explorer_total_it_drills_into_for_every_persona`, `Reports_group_and_filter_by_a_custom_field_and_drill_into_it`, `Requesters_count_only_their_tickets_and_team_figures_are_restricted_for_them`, `Figures_and_group_counts_over_a_hidden_field_are_refused_and_left_out`, `Changing_who_sees_a_metric_or_undoing_a_permission_change_needs_permission_administration`, `Workload_groups_match_the_explorer_group_counts`, `Sla_breaches_count_recorded_breaches_and_drill_into_them`, `Figures_never_include_another_workspace`, `Averages_and_trends_cover_exactly_the_records_they_drill_into`), `Configuration.UpgradeTests.Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`, `Configuration.ConfigLifecycleTests.A_batch_is_one_change_applied_whole_and_undone_together` (one step alone, then the whole change), `Mcp.McpServerTests.Agent_defines_a_metric_and_puts_it_on_the_dashboard` (also updates and removes a metric), `Api.SecurityHardeningTests.Figure_requests_are_rate_limited_per_person_and_lists_take_at_most_twenty_filters`.
+  - G2-M9c: `Records.MetricTests` (`Groups_past_the_limit_sum_into_an_other_bucket_that_drills_like_any_bar`, `At_risk_counts_open_timers_with_a_recorded_warning_until_they_breach`, `Time_to_acknowledge_and_resolve_alerts_counts_only_alerts_the_viewer_sees_about_records_they_read`), `Configuration.DashboardBuilderTests`, `Configuration.UpgradeTests.Upgrading_to_a_changed_sla_policy_and_calendar_keeps_running_clocks_on_their_snapshot`, `Api.ExportTests`, `Mcp.McpServerTests.Agent_creates_a_dashboard_and_lays_tiles_out_in_rows`, unit `Configuration.MetricSpecTests` (dashboards, alert and at-risk validation, Tickets 1.10.0), Playwright `reporting.spec.ts`.
   - Web unit: `core/drill.spec.ts` (including per-bar caps).
   - Playwright: `dashboard.spec.ts`, dashboard audits in `a11y.spec.ts` (light and dark).

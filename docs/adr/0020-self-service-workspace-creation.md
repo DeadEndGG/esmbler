@@ -2,7 +2,7 @@
 title: "ADR 0020: Self-service workspace creation"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-WS-001, REQ-WS-002, REQ-WS-006, REQ-ACC-15, REQ-TEN-001, REQ-TEN-006]
 ---
 
@@ -48,6 +48,8 @@ A starter adds no configuration of its own. Creating a workspace installs the mo
 
 `WorkspaceService.Starters()` lists each starter with the surfaces its module's latest release generates: forms and detail pages, explorers, dashboards (with their metric labels), navigation, permissions (roles with descriptions) and, when present, the service catalog. The web review step shows this list. It is derived from the release on every call, so it cannot drift from what is installed.
 
+Since G2-M9c the review also previews the workspace as each of the starter's roles (REQ-WS-001 step 5, "preview as an agent or a requester"). `WorkspaceService.Personas(starter)` compiles the platform and the starter's latest release in memory, builds `EffectivePermissions` for a principal holding only that role, and lists its navigation, record access (all, their own or none, and create and edit), the dashboard figures `MetricVisibility.Restricted` lets it see, the fields hidden from it and its other rights. It assumes no groups or relationships, reads no records and creates nothing (ASM-157).
+
 ### Creating a workspace
 
 `WorkspaceService.CreateAsync`:
@@ -79,11 +81,12 @@ The limit is `Esmbler:MaxWorkspacesPerPerson` (default 5). For local development
 ### API
 
 - `GET /api/starters`: signed in, no workspace needed (a new admin may have none). Returns `enabled` and the starters with their questions and surfaces.
+- `GET /api/starters/{id}/personas`: signed in; the persona preview for each role of the starter (404 for an unknown starter).
 - `POST /api/workspaces` `{name, starter, answers}`: signed in; tokens with an agent claim are refused (403); `403` when creation is off; rate limited per person by its own policy `LoginThrottle.WorkspacePolicy` (`workspaces`, 3 a minute; `429 rate_limited` beyond). Returns `201` with the tenant ID, slug and name in the body and no `Location` header.
 
 ### Web flow
 
-`/workspaces/new` (`apps/web/src/app/pages/create-workspace.page.ts`) has three steps: describe (name, an optional description, the starter), questions (only those without defaults) and review (the generated surfaces and the answers), then create. The description suggests a starter by keyword match ("Matches your description"); the person still chooses (ASM-069). The workspaces page offers "Create a workspace".
+`/workspaces/new` (`apps/web/src/app/pages/create-workspace.page.ts`) has three steps: describe (name, an optional description, the starter), questions (only those without defaults) and review (the generated surfaces, the answers and "Preview as" with one button per role, the agent role selected first), then create. The description suggests a starter by keyword match ("Matches your description"); the person still chooses (ASM-069). The workspaces page offers "Create a workspace".
 
 ### Honest empty states
 
@@ -121,7 +124,7 @@ sequenceDiagram
 - Good: starters are module data, so a future module offers its own without kernel changes; the review cannot drift from what is installed.
 - Good: the limit holds under concurrency because the database checks and inserts in one locked step.
 - Good: empty workspaces never show real-looking numbers or fake records.
-- Bad: the configuration is published at creation rather than left as a draft (ASM-074), and there is no persona preview inside the flow yet (G2-M9c).
+- Bad: the configuration is published at creation rather than left as a draft (ASM-074); the persona preview (G2-M9c) describes each role in words rather than rendering its pages.
 - Bad: provisioning is several transactions. A failure after the tenant row is written leaves a partly provisioned workspace in `provisioning`. It is hidden from the switcher and stops counting toward the creator's limit after 15 minutes, but nothing removes it yet (KI-023).
 - Bad: there is no self-service deletion yet, so the limit counts every workspace a person ever created.
 - Neutral: self-service creation is off by default; an operator turns it on with `Esmbler:AllowWorkspaceCreation`. The creation endpoint has its own per-person rate limit (3 a minute); the per-person workspace limit is the real bound.
@@ -150,7 +153,7 @@ sequenceDiagram
 
 - Related: [ADR 0010](0010-database-migrations-and-roles.md) (roles, privileged functions, migrations 0012 and 0013), [ADR 0011](0011-identity-and-development-authentication.md) (identity, explicit workspace switch), [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md) (metrics and dashboards), [connected workspace](../spec/connected-workspace.md).
 - Assumptions: ASM-069 to ASM-075 in [assumptions](../decisions/assumptions.md).
-- Deferred to G2-M9c: persona preview inside the creation flow ("preview as an agent or a requester"); see [progress](../progress.md).
+- Shipped in G2-M9c: persona preview inside the creation flow ("preview as an agent or a requester", ASM-157), verified by `Configuration.WorkspaceCreationTests.Persona_preview_shows_what_each_role_would_see_before_anything_is_created` and Playwright `workspace.spec.ts`.
 - Verification:
   - Integration: `Configuration.WorkspaceCreationTests` (`Starters_ask_only_questions_without_defaults_and_list_the_connected_surfaces`, `A_new_admin_creates_a_ticketing_workspace_that_starts_empty_with_labeled_previews_and_drills_into_real_tickets`, `Creation_is_limited_per_person_validated_and_can_be_turned_off` (also an agent principal refused and bidi characters stripped), `Parallel_creations_never_exceed_the_per_person_limit`), `Api.SecurityHardeningTests.Workspace_creation_needs_a_signed_in_person_and_is_off_unless_an_operator_turns_it_on`, `Isolation.DatabaseIsolationTests.Only_allow_listed_security_definer_functions_exist`.
   - Playwright: `workspace.spec.ts` `@REQ-ACC-15`; the creation-flow audit in `a11y.spec.ts`.

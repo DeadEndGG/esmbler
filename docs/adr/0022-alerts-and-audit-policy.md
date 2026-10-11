@@ -252,7 +252,7 @@ Tickets 1.8.0 turns SLA risk and breaches into alerts (Zendesk research: "exact 
 - **A `platform.audit.chain_broken` event** that alert rules and routes could use; a break is an audit entry, a log warning and a banner today ([KI-033](../known-issues.md)).
 - **Recurring maintenance windows and on-call schedules** (Gate 3, with the org model; [KI-039](../known-issues.md)).
 - **Alert notes, snooze, manual alerts**, grouping alerts across rules and a per-rule cap on open alerts ([KI-040](../known-issues.md)).
-- **MTTA and MTTR metrics** on dashboards (G2-M9c, [KI-041](../known-issues.md)).
+- ~~MTTA and MTTR metrics~~ shipped in G2-M9c: alert metrics (`MetricSpec.Alerts`, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md), ASM-153) and Tickets 1.10.0's time to acknowledge and time to resolve (ASM-159); alert figures have no drill-down yet ([KI-067](../known-issues.md)).
 - **Builder, registry and Admin Center editing of alert rules** (`spec_object.alert_rule`); rules are edited through the AI builder and MCP, as notification objects are ([KI-034](../known-issues.md)).
 - **Live push** for the alert badge (the web polls every 60 seconds; [KI-042](../known-issues.md)).
 - **Per-category audit retention** and GDPR pseudonymization of actors in audit entries.

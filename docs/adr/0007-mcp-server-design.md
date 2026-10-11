@@ -112,17 +112,18 @@ SLA tools (G2-M4, [ADR 0018](0018-sla-and-business-hours.md)) edit calendars and
 | Build | `add_sla_policy` | `entity`, `label`, `targets` (each `label`, `stop`, `goals`, `start?`, `pause?`, `calendar?`, `onReopen?`, `warnAtPercent?`), `when?`, `description?`, `expected_version` | `sla_policy.add` (`tenant__` ID) | config:edit |
 | Build | `set_sla_goals` | `policy`, `target`, `goals` (each `minutes`, `when?`, `calendar?`), `calendar?`, `warn_at_percent?`, `expected_version` | `sla_policy.update` (targets) | config:edit |
 
-Metric and dashboard tools (G2-M9, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)). A metric's `options` object holds `measure`, `field`, `from`, `to`, `unit`, `groupBy`, `groupBucket`, `groupLimit`, `dateField`, `last`, `lastUnit`, `slaPolicy` and `slaTarget`.
+Metric and dashboard tools (G2-M9, [ADR 0019](0019-metrics-dashboards-and-connected-explorer.md)). A metric's `options` object holds `measure`, `field`, `from`, `to`, `unit`, `groupBy`, `groupBucket`, `groupLimit`, `dateField`, `last`, `lastUnit`, `slaPolicy`, `slaTarget` and, since G2-M9c, `slaState` (`breached` or `at_risk`) and `countAlerts`, `alertRules` and `alertMinSeverity` for alert metrics (time to acknowledge or resolve).
 
 | Family | Tool | Input (summary) | Overlay op | Scope |
 | --- | --- | --- | --- | --- |
 | Discovery | `list_metrics` | none | none; metrics in the open draft (filter, measure, grouping, date range, SLA condition, roles, `customized`, `usedBy`) and dashboards with their tiles and containers | config:read |
-| | `describe_metric_fields` | `entity` | none; groupable, date and number fields the caller can see (fields hidden from the caller are left out), SLA policies and targets, buckets and measures | config:read |
+| | `describe_metric_fields` | `entity` | none; groupable, date and number fields the caller can see (fields hidden from the caller are left out), SLA policies and targets, SLA states (`breached`, `at_risk`), buckets and measures, and what alert metrics use (rules, times, groups) | config:read |
 | | `evaluate_metric` | `metric` | none; the published metric's value, groups and drill filters for the current user, wrapped as `untrusted_data` | records:read |
 | Build | `add_metric` | `entity`, `label`, `filter?`, `options?`, `roles?`, `description?`, `expected_version` | `metric.add` (`tenant__` ID) | config:edit |
 | | `update_metric` | `metric`, `label?`, `filter?`, `options?`, `roles?`, `description?`, `expected_version` | `metric.update`; changing `roles` is a permission change, so the agent's call is refused | config:edit |
 | | `remove_metric` | `metric`, `expected_version` | `metric.remove` (tenant metrics only; refused while a tile or saved view uses it) | config:edit |
-| | `add_dashboard_tile` | `view`, `parent`, `metric`, `kind` (`kpi`, `bar`, `table`), `title?`, `tone?`, `orientation?`, `after?`, `expected_version` | `node.insert` of `display.kpi_tile`, `display.bar_chart` or `display.metric_table` | config:edit |
+| | `add_dashboard` | `label`, `entity`, `expected_version` | `view.add` of an empty tenant dashboard (`tenant__dash_…`); returns its view ID (G2-M9c) | config:edit |
+| | `add_dashboard_tile` | `view`, `metric`, `kind` (`kpi`, `bar`, `table`), `parent?`, `title?`, `tone?`, `orientation?`, `after?`, `expected_version` | no parent or a row: the tile in a new column of a new or that row, with the row re-spanned evenly (`DashboardLayout`, at most four tiles); a column or card: `node.insert` of `display.kpi_tile`, `display.bar_chart` or `display.metric_table` | config:edit |
 
 Notification tools (G2-M18, [ADR 0021](0021-notification-routing-and-delivery.md)). A recipient is `{kind, ref}` with kind `field`, `role`, `group`, `user`, `approvers`, `alert_owner` (since G2-M19, on alert events) or `address`; a template variant is `{channel, subject?, body}`. Agents cannot manage channel instances, replay or test-send (`notifications.manage` is never delegated), and have no inbox.
 
