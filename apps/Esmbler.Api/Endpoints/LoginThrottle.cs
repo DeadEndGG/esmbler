@@ -119,6 +119,8 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
                             ? "Too many audit exports or verifications in a short time. Wait a minute and try again."
                         : context.HttpContext.Request.Path.Value?.EndsWith("/export", StringComparison.Ordinal) == true
                             ? "Too many exports in a short time. Wait a minute and try again."
+                        : context.HttpContext.Request.Path.StartsWithSegments("/api/starters")
+                            ? "Too many workspace previews in a short time. Wait a minute and try again."
                             : "Too many requests for figures in a short time. Wait a minute and try again.";
                 await context.HttpContext.Response.WriteAsJsonAsync(new { status = 429, title, code = "rate_limited" }, ct);
             };

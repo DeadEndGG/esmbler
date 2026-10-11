@@ -168,10 +168,10 @@ public sealed class MetricInput
     [Description("duration: minutes, hours (default) or days.")]
     public string? Unit { get; set; }
 
-    [Description("Group by this field (choice, status, priority, user, group or toggle; see describe_metric_fields), or by a date field with group_bucket.")]
+    [Description("Group by this field (choice, status, priority, user, group or toggle; see describe_metric_fields), or by a date field with groupBucket.")]
     public string? GroupBy { get; set; }
 
-    [Description("day, week or month: group a date field into buckets (needs date_field and last).")]
+    [Description("day, week or month: group a date field into buckets (needs dateField and last).")]
     public string? GroupBucket { get; set; }
 
     [Description("At most this many groups, largest first (1-25, default 12).")]
@@ -186,7 +186,7 @@ public sealed class MetricInput
     [Description("day (default), week or month.")]
     public string? LastUnit { get; set; }
 
-    [Description("Count only records with a timer of this SLA policy in sla_state (see list_sla_policies).")]
+    [Description("Count only records with a timer of this SLA policy in slaState (see list_sla_policies).")]
     public string? SlaPolicy { get; set; }
 
     [Description("Limit the SLA condition to one target, e.g. resolution.")]
@@ -862,7 +862,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         {
             metric.GroupBy = new MetricGroupSpec
             {
-                Field = o.GroupBy ?? metric.GroupBy?.Field ?? throw new KernelException("invalid_group", "group_bucket and group_limit need group_by.", 400, "group_by", "Name the field to group by."),
+                Field = o.GroupBy ?? metric.GroupBy?.Field ?? throw new KernelException("invalid_group", "groupBucket and groupLimit need groupBy.", 400, "options.groupBy", "Name the field to group by."),
                 Bucket = o.GroupBucket ?? metric.GroupBy?.Bucket,
                 Limit = o.GroupLimit ?? metric.GroupBy?.Limit ?? 12,
             };
@@ -873,7 +873,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             metric.DateRange = new MetricDateRangeSpec
             {
                 Field = o.DateField ?? metric.DateRange?.Field ?? "created_at",
-                Last = o.Last ?? metric.DateRange?.Last ?? throw new KernelException("invalid_date_range", "A date range needs last (how many days, weeks or months).", 400, "last", "Set last, e.g. 30 with last_unit day."),
+                Last = o.Last ?? metric.DateRange?.Last ?? throw new KernelException("invalid_date_range", "A date range needs last (how many days, weeks or months).", 400, "options.last", "Set last, e.g. 30 with lastUnit day."),
                 Unit = o.LastUnit ?? metric.DateRange?.Unit ?? MetricBuckets.Day,
             };
         }
@@ -882,7 +882,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         {
             metric.Sla = new MetricSlaSpec
             {
-                Policy = o.SlaPolicy ?? metric.Sla?.Policy ?? throw new KernelException("invalid_sla", "sla_target and sla_state need sla_policy.", 400, "sla_policy", "Name the SLA policy (list_sla_policies)."),
+                Policy = o.SlaPolicy ?? metric.Sla?.Policy ?? throw new KernelException("invalid_sla", "slaTarget and slaState need slaPolicy.", 400, "options.slaPolicy", "Name the SLA policy (list_sla_policies)."),
                 Target = o.SlaTarget ?? metric.Sla?.Target,
                 State = o.SlaState ?? metric.Sla?.State ?? MetricSlaStates.Breached,
             };
@@ -890,7 +890,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
 
         if (o.CountAlerts == false)
         {
-            throw new KernelException("invalid_alerts", "An alert metric cannot become a record metric.", 400, "count_alerts", "Add a new metric that counts records instead.");
+            throw new KernelException("invalid_alerts", "An alert metric cannot become a record metric.", 400, "options.countAlerts", "Add a new metric that counts records instead.");
         }
 
         if (o.CountAlerts == true || o.AlertRules is not null || o.AlertMinSeverity is not null)
