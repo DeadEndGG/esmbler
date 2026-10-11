@@ -333,11 +333,24 @@ public static class Composer
                     throw new OverlayException("overlay.duplicate", $"View '{av.View.Id}' already exists.", av.View.Id, "Choose a new ID.");
                 }
 
+                if (av.View.Layout.Id != av.View.Id)
+                {
+                    throw new OverlayException("overlay.invalid_view", $"The page node of '{av.View.Label}' must have the view's ID '{av.View.Id}'.", av.View.Layout.Id, av.View.Id);
+                }
+
+                // Every ID is new and the workspace's own: an ID the configuration already knows (a module rule, field,
+                // route or node) would otherwise be marked as tenant-owned and lose its base protections.
+                var seen = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var node in av.View.Layout.Descendants())
                 {
-                    if (node != av.View.Layout && !node.Id.StartsWith(Namespaces.TenantPrefix, StringComparison.Ordinal))
+                    if (!node.Id.StartsWith(Namespaces.TenantPrefix, StringComparison.Ordinal))
                     {
                         throw new OverlayException("overlay.namespace", $"New node IDs must start with '{Namespaces.TenantPrefix}'; '{node.Id}' does not.", node.Id, Namespaces.NewTenantNodeId());
+                    }
+
+                    if (!seen.Add(node.Id) || ctx.Config.Provenance.ContainsKey(node.Id) || ctx.Config.Views.Any(v => v.Layout.Find(node.Id) is not null))
+                    {
+                        throw new OverlayException("overlay.duplicate", $"'{node.Id}' is already used in this configuration.", node.Id, Namespaces.NewTenantNodeId());
                     }
                 }
 
@@ -357,10 +370,13 @@ public static class Composer
                 }
 
                 ctx.Config.Views.Remove(removedView);
-                ctx.Config.Provenance.Remove(removedView.Id);
-                foreach (var node in removedView.Layout.Descendants())
+                // Only the workspace's own keys go; a key another layer owns keeps its provenance (and protections).
+                foreach (var key in removedView.Layout.Descendants().Select(n => n.Id).Prepend(removedView.Id).Distinct(StringComparer.Ordinal))
                 {
-                    ctx.Config.Provenance.Remove(node.Id);
+                    if (ctx.Config.Provenance.TryGetValue(key, out var layer) && layer == TenantLayer)
+                    {
+                        ctx.Config.Provenance.Remove(key);
+                    }
                 }
 
                 break;

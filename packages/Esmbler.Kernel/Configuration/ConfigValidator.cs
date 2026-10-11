@@ -1343,7 +1343,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         {
             if (alerts)
             {
-                d.Add(Diagnostic.Error("config.bad_sla", $"Alert metric '{metric.Label}' cannot also have an SLA condition.", metric.Id, "Count alerts of an SLA alert rule instead, such as core.tickets.alert.sla_breached."));
+                d.Add(Diagnostic.Error("config.bad_sla", $"Alert metric '{metric.Label}' cannot also have an SLA condition.", metric.Id, "Count the alerts of a rule that an SLA breach or warning raises instead (list_alert_rules)."));
             }
             else if (config.FindSlaPolicy(sla.Policy) is not { } policy)
             {

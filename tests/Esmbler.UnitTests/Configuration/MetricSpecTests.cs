@@ -199,6 +199,25 @@ public class MetricSpecTests
     }
 
     [Fact]
+    public void Adding_and_removing_a_dashboard_never_takes_over_a_module_element()
+    {
+        // Security review G2-M9c: a page node reusing a module element's ID must not mark that element as the
+        // workspace's own, or its base protections (overlay.base_immutable, overlay.loosen_base) would be lost.
+        foreach (var reused in new[] { "core.tickets.rules.closed_read_only", "core.tickets.route.escalated", "core.tickets.dashboard.kpi_open", "tenant__n_s" })
+        {
+            var view = NewDashboard();
+            view.Layout.Children[0].Children[0].Children[0].Id = reused;
+            var result = Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = view }, new RemoveView { View = view.Id }, new RemoveRule { Rule = "core.tickets.rules.closed_read_only" });
+            Assert.Contains(result.Errors, e => e.Code is "overlay.namespace" or "overlay.duplicate" or "overlay.base_immutable");
+        }
+
+        var renamedRoot = NewDashboard();
+        renamedRoot.Layout.Id = "core.tickets.route.escalated";
+        Assert.Contains(Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = renamedRoot }).Errors, e => e.Code == "overlay.invalid_view");
+        Assert.Contains(Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = NewDashboard() }, new RemoveView { View = "tenant__dash_vendors" }, new RemoveRule { Rule = "core.tickets.rules.closed_read_only" }).Errors, e => e.Code == "overlay.base_immutable");
+    }
+
+    [Fact]
     public void Module_dashboards_cannot_be_removed()
     {
         Assert.Contains(Compile("1.10.0", new RemoveView { View = "core.tickets.dashboard" }).Errors, e => e.Code == "overlay.base_immutable");

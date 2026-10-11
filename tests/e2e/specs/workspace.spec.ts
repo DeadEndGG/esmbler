@@ -20,6 +20,12 @@ test('@REQ-ACC-15 a new admin creates a ticketing workspace, adds a field and dr
   await page.getByRole('button', { name: 'Review' }).click();
   await expect(page.getByText(/Overview: Open, Unassigned, SLA breached/)).toBeVisible();
   await expect(page.getByText('Riverside Support.', { exact: false })).toBeVisible();
+  // Preview as an agent or a requester before anything is created (REQ-WS-001 step 5).
+  const personas = page.getByRole('radiogroup', { name: 'Preview as' });
+  await expect(personas.getByRole('radio', { name: 'Agent', checked: true })).toBeVisible();
+  await expect(page.getByText(/Tickets: sees all tickets, creates them/)).toBeVisible();
+  await personas.getByRole('radio', { name: 'Requester' }).click();
+  await expect(page.getByText(/Tickets: sees their own tickets, creates them/)).toBeVisible();
   await page.getByRole('button', { name: 'Create workspace' }).click();
 
   // Empty: guidance and clearly labeled previews, no links into records.

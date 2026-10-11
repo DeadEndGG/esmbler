@@ -8,7 +8,7 @@ import { NodeComponent } from '../renderer/node';
 import { MetricsContext } from '../renderer/metrics';
 import { RenderContext } from '../renderer/render-context';
 import { Icon } from '../ui/icon';
-import { DashboardBuilder } from './dashboard-builder';
+import { DashboardBuilder } from '../builder/dashboard-builder';
 
 const REFRESH_MS = 60_000;
 

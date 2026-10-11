@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { BuilderState } from '../builder/builder-state';
+import { BuilderState } from './builder-state';
 import { Api, ApiError } from '../core/api';
 import { DraftState } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -26,6 +26,7 @@ interface DashboardOptions {
   view: string;
   label: string;
   entity: string;
+  entityPlural: string;
   added: boolean;
   rows: { id: string; tiles: TileOption[] }[];
   metrics: MetricOption[];
@@ -47,7 +48,7 @@ const KINDS: Record<string, string> = { 'display.kpi_tile': 'Number', 'display.b
     <section class="mb-5 rounded-lg border border-subtle bg-raised p-5 shadow-xs" aria-labelledby="dash-builder-t">
       <header class="mb-3 flex flex-wrap items-center gap-2">
         <h2 id="dash-builder-t" class="flex-1 text-title-sm">Edit dashboard</h2>
-        <button class="btn btn-sm" (click)="review()"><esm-icon name="check" [size]="14" /> Review and publish</button>
+        <button class="btn btn-sm" (click)="review()"><esm-icon name="check" [size]="14" /> Review changes</button>
         <button class="btn btn-ghost btn-sm" (click)="done.emit()">Done</button>
       </header>
       <p class="mb-4 text-body-sm text-muted">Changes go into your draft. Figures for new tiles appear once you publish.</p>
@@ -107,7 +108,7 @@ const KINDS: Record<string, string> = { 'display.kpi_tile': 'Number', 'display.b
                   </select>
                 </label>
               }
-              <label class="flex items-center gap-2 self-end text-body-sm"><input type="checkbox" name="openOnly" [ngModel]="openOnly()" (ngModelChange)="openOnly.set($event)" /> Open {{ o.entity === 'core.tickets.ticket' ? 'tickets' : 'records' }} only</label>
+              <label class="flex items-center gap-2 self-end text-body-sm"><input type="checkbox" name="openOnly" [ngModel]="openOnly()" (ngModelChange)="openOnly.set($event)" /> Open {{ o.entityPlural.toLowerCase() }} only</label>
             </div>
           }
           <div><button class="btn btn-primary btn-sm" type="submit" [disabled]="busy() || !canAdd()"><esm-icon name="plus" [size]="14" /> Add tile</button></div>

@@ -35,7 +35,7 @@ public class DashboardBuilderTests(PlatformFixture f)
             new AddField { Entity = Ticket, Field = new FieldSpec { Key = "tenant__vendor", Type = FieldTypes.SingleSelect, Label = "Vendor", ChoiceList = "tenant__vendor_options" } },
         ], v, "ui", default)).Version;
 
-        var (created, view) = await Builder.CreateAsync(admin, "Hardware vendors", Ticket, v, default);
+        var (created, view) = await Builder.CreateAsync(admin, "Hardware vendors", Ticket, v, "ui", default);
         v = created.Version;
         var options = await Builder.OptionsAsync(admin, view, default);
         Assert.True(options.Added);
@@ -85,12 +85,34 @@ public class DashboardBuilderTests(PlatformFixture f)
         var v = (await f.Get<DraftService>().OpenAsync(admin, default)).Version;
         foreach (var persona in new[] { "agent", "dana" })
         {
-            var refused = await Assert.ThrowsAsync<KernelException>(() => Builder.CreateAsync(f.As(t, persona), "Mine", Ticket, v, default));
+            var refused = await Assert.ThrowsAsync<KernelException>(() => Builder.CreateAsync(f.As(t, persona), "Mine", Ticket, v, "ui", default));
             Assert.Equal(403, refused.Status);
         }
 
+        // Adding and removing tiles is configuration editing too; other workspaces' dashboards do not exist here.
+        foreach (var persona in new[] { "agent", "dana" })
+        {
+            Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(f.As(t, persona), "core.tickets.dashboard", new DashboardTileRequest("kpi", "core.tickets.metric.open", null, null, null, null, false, v), default))).Status);
+            Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Builder.RemoveTileAsync(f.As(t, persona), "core.tickets.dashboard", "core.tickets.dashboard.kpi_open", v, default))).Status);
+        }
+
+        var other = await f.NewTenantAsync("dbo", "1.10.0");
+        var otherAdmin = f.As(other, "admin");
+        var (otherCreated, otherView) = await Builder.CreateAsync(otherAdmin, "Theirs", Ticket, (await f.Get<DraftService>().OpenAsync(otherAdmin, default)).Version, "ui", default);
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Builder.OptionsAsync(admin, otherView, default))).Status);
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, otherView, new DashboardTileRequest("kpi", "core.tickets.metric.open", null, null, null, null, false, v), default))).Status);
+        Assert.True(otherCreated.Version > 0);
+
+        // Bad rows, full rows, names and metrics are refused with a fix.
+        var row = (await Builder.OptionsAsync(admin, "core.tickets.dashboard", default)).Rows[0];
+        Assert.Equal("row_full", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, "core.tickets.dashboard", new DashboardTileRequest("kpi", "core.tickets.metric.open", row.Id, null, null, null, false, v), default))).Code);
+        Assert.Equal("invalid_row", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, "core.tickets.dashboard", new DashboardTileRequest("kpi", "core.tickets.metric.open", "core.tickets.dashboard.kpi_open", null, null, null, false, v), default))).Code);
+        Assert.Equal("invalid_label", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, "core.tickets.dashboard", new DashboardTileRequest("kpi", null, null, null, " ", null, false, v), default))).Code);
+        Assert.Equal("invalid_label", (await Assert.ThrowsAsync<KernelException>(() => Builder.CreateAsync(admin, "", Ticket, v, "ui", default))).Code);
+        Assert.Equal("invalid_metric", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, "core.tickets.dashboard", new DashboardTileRequest("kpi", "core.tickets.metric.nope", null, null, null, null, false, v), default))).Code);
+
         Assert.Equal("overlay.base_immutable", (await Assert.ThrowsAsync<KernelException>(() => Builder.RemoveAsync(admin, "core.tickets.dashboard", v, default))).Code);
-        var (created, view) = await Builder.CreateAsync(f.As(t, "builder"), "Team view", Ticket, v, default);
+        var (created, view) = await Builder.CreateAsync(f.As(t, "builder"), "Team view", Ticket, v, "ui", default);
         var removed = await Builder.RemoveAsync(f.As(t, "builder"), view, created.Version, default);
         var (config, _, _, _) = await f.Get<PreviewService>().WorkingConfigAsync(admin, default);
         Assert.Null(config.FindView(view));

@@ -794,7 +794,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         int expected_version) =>
         runner.RunAsync("add_dashboard", AgentScopes.ConfigEdit, entity, async ctx =>
         {
-            var (result, view) = await dashboards.CreateAsync(ctx, label, entity, expected_version, default);
+            var (result, view) = await dashboards.CreateAsync(ctx, label, entity, expected_version, "mcp", default);
             return new { view, draftVersion = result.Version, steps = result.Steps.Select(st => st.Seq) };
         });
 
@@ -812,13 +812,7 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("add_dashboard_tile", AgentScopes.ConfigEdit, view, async ctx =>
         {
             var props = new JsonObject { ["metric"] = metric };
-            var type = kind switch
-            {
-                "kpi" => "display.kpi_tile",
-                "bar" => "display.bar_chart",
-                "table" => "display.metric_table",
-                _ => throw new KernelException("invalid_kind", $"'{kind}' is not a tile kind.", 400, "kind", "Use kpi, bar or table."),
-            };
+            var type = DashboardLayout.TileType(kind);
             if (title is not null)
             {
                 props[kind == "kpi" ? "label" : "title"] = title;

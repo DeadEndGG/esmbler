@@ -51,7 +51,7 @@ public static class BuilderEndpoints
         d.MapGet("/current/dashboards/{view}/options", (string view, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.OptionsAsync(Ctx(u), view, ct));
         d.MapPost("/current/dashboards", async (NewDashboardRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) =>
         {
-            var (result, view) = await builder.CreateAsync(Ctx(u), body.Label, body.Entity, body.ExpectedVersion, ct);
+            var (result, view) = await builder.CreateAsync(Ctx(u), body.Label, body.Entity, body.ExpectedVersion, "ui", ct);
             return new { view, result.Draft, result.Version };
         });
         d.MapPost("/current/dashboards/{view}/tiles", (string view, DashboardTileRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.AddTileAsync(Ctx(u), view, body, ct));

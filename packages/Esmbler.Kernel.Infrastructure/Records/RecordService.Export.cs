@@ -52,16 +52,27 @@ public sealed partial class RecordService
             return true;
         }, ct);
 
-    /// <summary>Writes the CSV: a header of field labels, then one row per record in the explorer's order.</summary>
+    /// <summary>
+    /// Writes the CSV: a header of field labels, then one row per record in the explorer's order. The rows are read in
+    /// one tenant transaction (5 s statement timeout, at most <see cref="QueryCompiler.MaxCount"/>) and buffered, then
+    /// written after the transaction ends, so a slow download never holds the transaction open.
+    /// </summary>
     public async Task WriteExportAsync(RequestContext ctx, RecordQuery query, Stream output, CancellationToken ct)
     {
         var lines = await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            var (artifact, entity, perms) = await PrepareAsync(db, ctx, query.Entity, null, ct);
+            var (artifact, entity, _) = await PrepareAsync(db, ctx, query.Entity, null, ct);
+            // Checked again here, so writing never relies on the caller having prepared the export.
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
+            if (ctx.AgentId is not null || !perms.Can(PlatformActions.RecordsExport) || perms.Entity(entity.Id).Read == RecordScopes.None)
+            {
+                throw new KernelException("forbidden", "Exporting records needs the records.export right.", 403, null);
+            }
+
             var compiled = QueryCompiler.Compile(query, artifact.Config, entity, perms);
             var conn = db.Database.GetDbConnection();
             var tx = db.Database.CurrentTransaction!.GetDbTransaction();
-            await Exec(conn, tx, "SET LOCAL statement_timeout = '15s'", [], ct);
+            await Exec(conn, tx, "SET LOCAL statement_timeout = '5s'", [], ct);
             var rows = new List<(JsonObject Data, DateTimeOffset Created, DateTimeOffset Updated)>();
             await using (var cmd = Command(conn, tx, $"SELECT data::text, created_at, updated_at FROM kernel.records r WHERE {compiled.Where} ORDER BY {compiled.OrderBy} LIMIT {QueryCompiler.MaxCount}", compiled.Parameters))
             await using (var reader = await cmd.ExecuteReaderAsync(ct))

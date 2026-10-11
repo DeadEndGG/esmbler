@@ -331,10 +331,9 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                 }));
 
                 // Every group past the limit, summed into "Other" through an explorer filter, so it drills like any bar.
-                if (more && OtherFilter(groupField, [.. rows.Take(group.Limit).Select(r => r.Key)], group.IncludeEmpty) is { } other)
+                if (more && OtherFilter(groupField, [.. rows.Take(group.Limit).Select(r => r.Key)], group.IncludeEmpty) is { } other && OtherWhere(config, entity, perms, filters, other, sla) is { } otherQuery)
                 {
-                    var oq = new QueryCompiler.Ctx(config, entity, perms);
-                    var owhere = QueryCompiler.Where(new RecordQuery { Entity = entity.Id, Filters = [.. filters, other], Sla = sla }, config, entity, perms, oq);
+                    var (oq, owhere) = otherQuery;
                     var otherAggregate = Aggregate(metric, oq);
                     await session.LimitAsync(ct);
                     await using var cmd = session.Command($"SELECT count(*), {otherAggregate ?? "NULL"} FROM (SELECT * FROM kernel.records r WHERE {owhere} LIMIT {QueryCompiler.MaxCount + 1}) r", oq.Parameters);
@@ -386,7 +385,11 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             conditions.Add($"a.severity = ANY({q.Param(EventSeverities.All.SkipWhile(x => x != min).ToArray())})");
         }
 
-        if (!AlertService.CanRespond(perms) || perms.Context.AgentId is not null)
+        // The Alerts page's visibility (AlertService): responders see every alert, and so do AI agents acting for one
+        // (agents lose the right to act, not to read); everyone else sees their own, their groups' and assigned alerts.
+        var seesAll = AlertService.CanRespond(perms)
+            || (perms.Context.AgentId is not null && AlertService.CanRespond(await access.ForAsync(session.Db, perms.Context with { AgentId = null, Scopes = null }, config, ct)));
+        if (!seesAll)
         {
             var me = q.Param(perms.Context.PrincipalId.ToString());
             conditions.Add($"(a.assignee::text = {me} OR a.owner_principal::text = {me} OR a.owner_group::text = ANY({q.Param(perms.Facts.Groups.Select(g => g.ToString()).ToArray())}))");
@@ -520,34 +523,9 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
         return new MetricResult(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, count, false, buckets, false, null, now, revision, Preview: true, Source: metric.Alerts is null ? MetricSources.Records : MetricSources.Alerts);
     }
 
-    /// <summary>Whether the viewer may not see the figure at all (no values are computed for them).</summary>
-    public static bool Restricted(SpecCatalog config, EffectivePermissions perms, EntitySpec entity, MetricSpec metric)
-    {
-        if (perms.Entity(entity.Id).Read == RecordScopes.None || !perms.Context.HasScope(AgentScopes.RecordsRead))
-        {
-            return true;
-        }
-
-        if (metric.Roles.Count > 0 && !metric.Roles.Any(perms.Facts.Roles.ContainsKey) && !perms.Facts.Roles.ContainsKey(PlatformModule.TenantAdminRole))
-        {
-            return true;
-        }
-
-        var reads = metric.Alerts is not null ? [] : MeasuredFields(metric).Concat(new[] { metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>()).ToList();
-        if (metric.Filter is { } filter)
-        {
-            try
-            {
-                reads.AddRange(Expressions.Expression.Compile(filter).References.Where(r => r.StartsWith("record.", StringComparison.Ordinal)).Select(r => r["record.".Length..]));
-            }
-            catch (Expressions.ExpressionException)
-            {
-                return true;
-            }
-        }
-
-        return reads.Any(k => k != "id" && perms.FieldAccess(entity, k) == FieldAccessLevels.Hidden);
-    }
+    /// <summary>Whether the viewer may not see the figure at all (no values are computed for them); see <see cref="MetricVisibility"/>.</summary>
+    public static bool Restricted(SpecCatalog config, EffectivePermissions perms, EntitySpec entity, MetricSpec metric) =>
+        MetricVisibility.Restricted(config, perms, entity, metric);
 
     private static IEnumerable<string> MeasuredFields(MetricSpec metric) =>
         new[] { metric.Measure.Field, metric.Measure.From, metric.Measure.To }.OfType<string>();
@@ -583,6 +561,20 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
     }
 
     private static string RecordsFormat(DateTimeOffset instant) => Kernel.Records.FieldNormalizer.FormatInstant(instant);
+
+    /// <summary>The "Other" bucket's WHERE clause, or null when its filter does not compile (the figure then has no "Other").</summary>
+    private static (QueryCompiler.Ctx Ctx, string Where)? OtherWhere(EffectiveConfig config, EntitySpec entity, EffectivePermissions perms, List<string> filters, string other, SlaFilter[] sla)
+    {
+        try
+        {
+            var q = new QueryCompiler.Ctx(config, entity, perms);
+            return (q, QueryCompiler.Where(new RecordQuery { Entity = entity.Id, Filters = [.. filters, other], Sla = sla }, config, entity, perms, q));
+        }
+        catch (KernelException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>The key of the bucket that sums the groups past a metric's limit.</summary>
     public const string OtherKey = "__other";

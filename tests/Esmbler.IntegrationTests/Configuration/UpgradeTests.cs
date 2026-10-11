@@ -168,6 +168,14 @@ public class UpgradeTests(PlatformFixture f)
         var running = await ResolutionAsync(before.Id);
         Assert.Equal(600 * 60, running.GoalSeconds);
 
+        // A breach recorded before the upgrade stays recorded and keeps counting.
+        var breachedTicket = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Already late", ["requester"] = dana, ["priority"] = "p2" }, null, null, default);
+        var breachedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.Where(s => s.RecordId == breachedTicket.Id && s.TargetId == "response").ExecuteUpdateAsync(s => s.SetProperty(r => r.BreachedAt, breachedAt)), default);
+        var metricService = f.Get<Kernel.Infrastructure.Metrics.MetricService>();
+        var breachesBefore = (await metricService.EvaluateAsync(agent, "core.tickets.metric.sla_breached", null, default)).Count;
+        Assert.True(breachesBefore >= 1);
+
         var upgrades = f.Get<UpgradeService>();
         var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.10.0", default);
         Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
@@ -200,7 +208,12 @@ public class UpgradeTests(PlatformFixture f)
         var dashboard = await metrics.DashboardAsync(agent, "core.tickets.dashboard", "UTC", default);
         Assert.Contains(dashboard.Metrics, m => m.Id == "core.tickets.metric.sla_at_risk" && m.Status == "ok");
         Assert.Contains(dashboard.Metrics, m => m.Id == "core.tickets.metric.alert_mtta" && m.Source == Kernel.Infrastructure.Metrics.MetricSources.Alerts);
-        Assert.DoesNotContain(dashboard.Metrics, m => m.Id == "core.tickets.metric.alert_mttr" && m.Status != "ok");
+        Assert.Contains(dashboard.Metrics, m => m.Id == "core.tickets.metric.alert_mttr" && m.Status == "ok");
+        var breachedTimer = await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.AsNoTracking().SingleAsync(s => s.RecordId == breachedTicket.Id && s.TargetId == "response"), default);
+        Assert.Equal(breachedAt.ToUnixTimeMilliseconds(), breachedTimer.BreachedAt!.Value.ToUnixTimeMilliseconds());
+        var breachesAfter = await metricService.EvaluateAsync(agent, "core.tickets.metric.sla_breached", null, default);
+        Assert.Equal(breachesBefore, breachesAfter.Count);
+        Assert.Contains((await records.QueryAsync(agent, new RecordQuery { Entity = Ticket, Filters = breachesAfter.Drill!.Filters, Sla = [.. breachesAfter.Drill.Sla.Select(SlaFilter.Parse)] }, default)).Items, i => i.Id == breachedTicket.Id);
     }
 
     [Fact]

@@ -96,4 +96,27 @@ public class ExportTests(PlatformFixture platform) : IClassFixture<ApiTestsFacto
         Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => platform.Get<RecordService>().PrepareExportAsync(agentCtx, new RecordQuery { Entity = Ticket }, default))).Status);
         Assert.Contains(await platform.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AsNoTracking().Where(a => a.Operation == "metric.export").Select(a => a.TargetId).ToListAsync(), default), id => id == "core.tickets.metric.open_by_category");
     }
+
+    [Fact]
+    public async Task Exports_never_include_another_workspace_or_fields_hidden_from_the_exporter()
+    {
+        var t = await platform.NewTenantAsync("expi", "1.10.0");
+        var other = await platform.NewTenantAsync("expj", "1.10.0");
+        var records = platform.Get<RecordService>();
+        await records.CreateAsync(platform.As(other, "agent"), Ticket, new JsonObject { ["title"] = $"Other workspace {Guid.NewGuid():N}", ["requester"] = other.Users["dana"].ToString() }, null, null, default);
+
+        // Builders hold records.export through the Tickets administrators' permission set; hide a field from that set.
+        var admin = platform.As(t, "admin");
+        var drafts = platform.Get<Kernel.Infrastructure.Configuration.DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyAsync(admin, new Sdk.Overlay.SetFieldAccess { PermissionSet = "core.tickets.ps_admin", Entity = Ticket, Field = "impact", Access = "hidden" }, draft.Version, "ui", default);
+        await platform.Get<Kernel.Infrastructure.Configuration.PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+
+        var builder = await Factory.SignInAsync($"builder@{Slug(t)}.example", Slug(t));
+        var lines = Lines(await (await builder.GetAsync($"/api/records/{Ticket}/export")).Content.ReadAsStringAsync());
+        Assert.DoesNotContain("Impact", lines[0].Split(','));
+        Assert.Equal((await records.QueryAsync(platform.As(t, "builder"), new RecordQuery { Entity = Ticket, PageSize = 1 }, default)).Total + 1, lines.Count);
+        Assert.DoesNotContain(lines, l => l.Contains("Other workspace", StringComparison.Ordinal));
+        Assert.Contains("Impact", Lines(await (await (await Factory.SignInAsync($"admin@{Slug(t)}.example", Slug(t))).GetAsync($"/api/records/{Ticket}/export")).Content.ReadAsStringAsync())[0].Split(','));
+    }
 }

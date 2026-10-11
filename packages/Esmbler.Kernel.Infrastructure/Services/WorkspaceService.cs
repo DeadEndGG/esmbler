@@ -3,7 +3,6 @@ using System.Text;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
 using Esmbler.Kernel.Infrastructure.Configuration;
-using Esmbler.Kernel.Infrastructure.Metrics;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Modules;
@@ -103,10 +102,16 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
 
     /// <summary>
     /// Previews a starter as each of its roles would see it (REQ-WS-001 step 5), from the same configuration a new
-    /// workspace gets and the same permission model (<see cref="EffectivePermissions"/>, <see cref="MetricService.Restricted"/>).
+    /// workspace gets and the same permission model (<see cref="EffectivePermissions"/>, <see cref="Kernel.Metrics.MetricVisibility"/>).
     /// Nothing is created and no records are read; the server decides what each role sees, never the page.
     /// </summary>
-    public IReadOnlyList<PersonaPreview> Personas(string starterId)
+    public IReadOnlyList<PersonaPreview> Personas(string starterId) =>
+        // Releases are immutable, so one compile per starter and process is enough.
+        personaCache.GetOrAdd(starterId, ComputePersonas);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<PersonaPreview>> personaCache = new(StringComparer.Ordinal);
+
+    private IReadOnlyList<PersonaPreview> ComputePersonas(string starterId)
     {
         var (module, _) = catalog.Modules.SelectMany(m => m.Starters.Select(s => (Module: m, Starter: s))).FirstOrDefault(x => x.Starter.Id == starterId);
         if (module is null)
@@ -136,7 +141,7 @@ public sealed class WorkspaceService(ModuleCatalog catalog, ProvisioningService 
         var dashboards = config.Views.Where(v => v.Kind == ViewKinds.Dashboard && perms.Entity(v.Entity).Read != RecordScopes.None)
             .Select(v => (View: v, Figures: v.Layout.Descendants().Where(n => !n.Hidden).Select(n => n.StringProp("metric")).OfType<string>().Distinct(StringComparer.Ordinal)
                 .Select(config.FindMetric).OfType<MetricSpec>()
-                .Where(m => config.FindEntity(m.Entity) is { } e && !MetricService.Restricted(config, perms, e, m)).Select(m => m.Label).ToList()))
+                .Where(m => config.FindEntity(m.Entity) is { } e && !Kernel.Metrics.MetricVisibility.Restricted(config, perms, e, m)).Select(m => m.Label).ToList()))
             .Where(d => d.Figures.Count > 0).ToList();
         static string Scope(string scope) => scope switch { RecordScopes.All => "all", RecordScopes.Related => "their own", _ => "no" };
         var records = readable.Select(e =>

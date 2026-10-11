@@ -15,7 +15,7 @@ public sealed record DashboardRowOption(string Id, IReadOnlyList<DashboardTileOp
 public sealed record DashboardFieldOption(string Key, string Label, string Type);
 
 /// <summary>What the dashboard builder offers for one dashboard of the open draft (or the published configuration).</summary>
-public sealed record DashboardOptions(string View, string Label, string Entity, bool Added, IReadOnlyList<DashboardRowOption> Rows, IReadOnlyList<DashboardMetricOption> Metrics, IReadOnlyList<DashboardFieldOption> Groupable, int? DraftVersion);
+public sealed record DashboardOptions(string View, string Label, string Entity, string EntityPlural, bool Added, IReadOnlyList<DashboardRowOption> Rows, IReadOnlyList<DashboardMetricOption> Metrics, IReadOnlyList<DashboardFieldOption> Groupable, int? DraftVersion);
 
 /// <summary>A tile to add: an existing metric, or a new count of the dashboard's records (optionally grouped and open only).</summary>
 public sealed record DashboardTileRequest(string Kind, string? Metric, string? Row, string? Title, string? NewLabel, string? GroupBy, bool OpenOnly, int ExpectedVersion);
@@ -23,7 +23,8 @@ public sealed record DashboardTileRequest(string Kind, string? Metric, string? R
 /// <summary>
 /// The dashboard builder outside the AI (REQ-WS-005, ADR 0019): new dashboards, tiles from existing metrics or from a
 /// new metric over any groupable field the builder can see (tenant fields included), and removing tiles. Every change
-/// is a draft change set (one batch), reviewed and published like any other; nothing here bypasses the draft.
+/// is a draft change set (one batch), reviewed and published like any other; nothing here bypasses the draft. The web
+/// builder records its changes as source <c>ui</c>; the MCP tools that reuse <see cref="CreateAsync"/> pass <c>mcp</c>.
 /// </summary>
 public sealed class DashboardBuilderService(PreviewService preview, DraftService drafts)
 {
@@ -41,10 +42,10 @@ public sealed class DashboardBuilderService(PreviewService preview, DraftService
         // Offered by type and by what the builder may see (REQ-WS-005), as describe_metric_fields does for the AI.
         var groupable = entity.Fields.Where(f => !f.Hidden && ConfigValidator.IsGroupable(f) && perms.FieldAccess(entity, f.Key) != FieldAccessLevels.Hidden)
             .Select(f => new DashboardFieldOption(f.Key, f.Label, f.Type)).ToList();
-        return new DashboardOptions(view.Id, view.Label, entity.Id, Namespaces.IsTenantOwned(view.Id), rows, metrics, groupable, draftVersion);
+        return new DashboardOptions(view.Id, view.Label, entity.Id, entity.PluralLabel, Namespaces.IsTenantOwned(view.Id), rows, metrics, groupable, draftVersion);
     }
 
-    public async Task<(BatchResult Result, string View)> CreateAsync(RequestContext ctx, string label, string entityId, int expectedVersion, CancellationToken ct)
+    public async Task<(BatchResult Result, string View)> CreateAsync(RequestContext ctx, string label, string entityId, int expectedVersion, string source, CancellationToken ct)
     {
         var name = (label ?? string.Empty).Trim();
         if (name.Length is 0 or > 60)
@@ -59,7 +60,7 @@ public sealed class DashboardBuilderService(PreviewService preview, DraftService
         }
 
         var view = DashboardLayout.NewDashboard(name, entityId);
-        return (await drafts.ApplyBatchAsync(ctx, [new AddView { View = view }], expectedVersion, "ui", ct), view.Id);
+        return (await drafts.ApplyBatchAsync(ctx, [new AddView { View = view }], expectedVersion, source, ct), view.Id);
     }
 
     public async Task<BatchResult> AddTileAsync(RequestContext ctx, string viewId, DashboardTileRequest request, CancellationToken ct)
@@ -83,9 +84,8 @@ public sealed class DashboardBuilderService(PreviewService preview, DraftService
                 throw new KernelException("invalid_group", $"{entity.Label} cannot be grouped by '{field}'.", 400, "groupBy", "Group by a choice, status, priority, user, group or toggle field you can see.");
             }
 
-            var open = config.WorkflowFor(entity.Id) is { } workflow
-                ? workflow.States.Where(s => s.Category is "resolved" or "closed" or "cancelled").Select(s => s.Id).ToList()
-                : [];
+            var workflow = config.WorkflowFor(entity.Id);
+            var closed = workflow?.States.Where(s => s.Category is "resolved" or "closed" or "cancelled").Select(s => s.Id).ToList() ?? [];
             metricId = $"{Namespaces.TenantKeyFromLabel(label)}_{Guid.NewGuid().ToString("N")[..6]}";
             ops.Add(new AddMetric
             {
@@ -94,7 +94,7 @@ public sealed class DashboardBuilderService(PreviewService preview, DraftService
                     Id = metricId,
                     Label = label,
                     Entity = entity.Id,
-                    Filter = request.OpenOnly && open.Count > 0 ? $"!(record.status in [{string.Join(", ", open.Select(s => $"'{s}'"))}])" : null,
+                    Filter = request.OpenOnly && workflow is not null && closed.Count > 0 ? $"!(record.{workflow.StateField} in [{string.Join(", ", closed.Select(s => $"'{s}'"))}])" : null,
                     GroupBy = request.GroupBy is null ? null : new MetricGroupSpec { Field = request.GroupBy },
                 },
             });
