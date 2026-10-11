@@ -390,6 +390,21 @@ public static class Composer
             case SetFieldAccess sfa:
                 ApplySetFieldAccess(ctx, sfa);
                 break;
+            case SetPermissionActions spa:
+                var actionSet = ctx.Config.PermissionSets.Find(p => p.Id == spa.PermissionSet) ?? throw Missing("permission set", spa.PermissionSet, Expression.Suggest(spa.PermissionSet, ctx.Config.PermissionSets.Select(p => p.Id)));
+                if (spa.Grant.Count + spa.Revoke.Count == 0 || spa.Grant.Intersect(spa.Revoke, StringComparer.Ordinal).Any())
+                {
+                    throw new OverlayException("overlay.invalid_value", "Name actions to grant or revoke, each once.", spa.PermissionSet);
+                }
+
+                foreach (var action in spa.Grant.Concat(spa.Revoke).Where(a => !PlatformActions.All.Contains(a)))
+                {
+                    throw new OverlayException("overlay.invalid_value", $"'{action}' is not a platform action.", spa.PermissionSet, Expression.Suggest(action, PlatformActions.All) ?? string.Join(", ", PlatformActions.All));
+                }
+
+                actionSet.Actions = [.. actionSet.Actions.Except(spa.Revoke, StringComparer.Ordinal).Concat(spa.Grant).Distinct(StringComparer.Ordinal)];
+                ctx.Mark(spa.PermissionSet, keepLayer: !IsTenant(ctx, spa.PermissionSet));
+                break;
             case AddCatalogItem aci:
                 RequireTenantId(aci.Item.Id, "catalog item");
                 if (ctx.Config.FindCatalogItem(aci.Item.Id) is not null)

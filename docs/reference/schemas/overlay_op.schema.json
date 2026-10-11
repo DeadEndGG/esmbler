@@ -967,6 +967,34 @@
     {
       "properties": {
         "op": {
+          "const": "permission.actions"
+        },
+        "permissionSet": {
+          "type": "string"
+        },
+        "grant": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revoke": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "affectsPermissions": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "permissionSet"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
           "const": "element.reset"
         },
         "target": {
@@ -1193,7 +1221,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/18/properties/item/properties/variables/items"
+                "$ref": "#/anyOf/19/properties/item/properties/variables/items"
               }
             },
             "tasks": {
@@ -1202,7 +1230,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/18/properties/item/properties/tasks/items"
+                "$ref": "#/anyOf/19/properties/item/properties/tasks/items"
               }
             },
             "approvalPolicy": {
@@ -1499,7 +1527,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/22/properties/transition/properties/emits/items"
+                "$ref": "#/anyOf/23/properties/transition/properties/emits/items"
               }
             }
           }
@@ -1624,7 +1652,7 @@
                   "escalateTo": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/anyOf/25/properties/policy/properties/stages/items/properties/approvers/items"
+                      "$ref": "#/anyOf/26/properties/policy/properties/stages/items/properties/approvers/items"
                     }
                   }
                 },
@@ -1675,7 +1703,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/25/properties/policy/properties/stages/items"
+                "$ref": "#/anyOf/26/properties/policy/properties/stages/items"
               }
             }
           }
@@ -1889,7 +1917,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/30/properties/calendar/properties/week/items"
+                "$ref": "#/anyOf/31/properties/calendar/properties/week/items"
               }
             },
             "holidays": {
@@ -1898,7 +1926,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/30/properties/calendar/properties/holidays/items"
+                "$ref": "#/anyOf/31/properties/calendar/properties/holidays/items"
               }
             }
           }
@@ -2088,7 +2116,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/33/properties/policy/properties/targets/items"
+                "$ref": "#/anyOf/34/properties/policy/properties/targets/items"
               }
             }
           }
@@ -2452,7 +2480,7 @@
               ],
               "properties": {
                 "rules": {
-                  "$ref": "#/anyOf/36/properties/metric/properties/alerts/properties/rules"
+                  "$ref": "#/anyOf/37/properties/metric/properties/alerts/properties/rules"
                 },
                 "minSeverity": {
                   "type": [
@@ -2736,7 +2764,7 @@
                 "null"
               ],
               "additionalProperties": {
-                "$ref": "#/anyOf/42/properties/template/properties/variants/additionalProperties"
+                "$ref": "#/anyOf/43/properties/template/properties/variants/additionalProperties"
               }
             },
             "externalFields": {
@@ -3003,7 +3031,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/48/properties/route/properties/recipients/items"
+                "$ref": "#/anyOf/49/properties/route/properties/recipients/items"
               }
             },
             "mandatory": {
@@ -3229,7 +3257,7 @@
                 "null"
               ],
               "items": {
-                "$ref": "#/anyOf/51/properties/rule/properties/escalation/items"
+                "$ref": "#/anyOf/52/properties/rule/properties/escalation/items"
               }
             },
             "resolveOn": {

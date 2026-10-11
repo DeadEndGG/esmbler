@@ -22,7 +22,8 @@ public sealed record UpgradeReport(
     IReadOnlyList<Diagnostic> Errors,
     IReadOnlyList<string> AffectedCustomizations,
     IReadOnlyList<ConfigChange> BaseChanges,
-    IReadOnlyList<MigrationPlan> Migrations);
+    IReadOnlyList<MigrationPlan> Migrations,
+    IReadOnlyList<SlaImpact>? SlaImpact = null);
 
 public sealed record MigrationRunView(string MigrationId, string Status, int Processed, int Converted, int Invalid, string? LastError, IReadOnlyList<MigrationIssue> Issues);
 
@@ -223,7 +224,9 @@ public sealed class UpgradeService(Database database, ConfigStore configs, Confi
         }
 
         var overlay = candidate.Composition.Outcomes;
-        return new UpgradeReport(moduleId, from.Version, toVersion, candidate.Succeeded && overlay.All(o => o.Status is OpStatus.Applied or OpStatus.Redundant or OpStatus.Reset), overlay, errors, affected, ConfigDiff.Compare(oldBase, newBase), migrations);
+        // Clocks of changed SLA policies and calendars keep their snapshot; say how many (REQ-MIG-004, ADR 0018).
+        var slaImpact = candidate.Succeeded ? await DraftService.SlaImpactAsync(db, published.Config, candidate.Config, ct) : [];
+        return new UpgradeReport(moduleId, from.Version, toVersion, candidate.Succeeded && overlay.All(o => o.Status is OpStatus.Applied or OpStatus.Redundant or OpStatus.Reset), overlay, errors, affected, ConfigDiff.Compare(oldBase, newBase), migrations, slaImpact);
     }
 
     private CompileResult Candidate(ActiveArtifact published, string moduleId, string toVersion) =>

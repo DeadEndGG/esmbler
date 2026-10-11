@@ -297,7 +297,12 @@ public sealed class DraftService(Database database, ConfigStore configs, ConfigA
             await SlaImpactAsync(db, compiled.Published.Config, compiled.Result.Config, ct));
     }
 
-    private static async Task<IReadOnlyList<SlaImpact>> SlaImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)
+    /// <summary>
+    /// Running or paused clocks per SLA policy that changes between two configurations (its own spec, or a calendar a
+    /// target or goal uses). Those clocks keep their snapshot (ADR 0018); the review says how many. Drafts and upgrade
+    /// plans both report it.
+    /// </summary>
+    internal static async Task<IReadOnlyList<SlaImpact>> SlaImpactAsync(KernelDbContext db, EffectiveConfig published, EffectiveConfig draft, CancellationToken ct)
     {
         var changedCalendars = published.BusinessCalendars.Where(c => draft.FindBusinessCalendar(c.Id) is not { } now || !JsonNode.DeepEquals(SpecJson.ToNode(now), SpecJson.ToNode(c))).Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
         var affected = published.SlaPolicies.Where(p =>

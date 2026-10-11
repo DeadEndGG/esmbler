@@ -39,6 +39,7 @@ interface UpgradeReport {
   affectedCustomizations: string[];
   baseChanges: ConfigChange[];
   migrations: { id: string; kind: string; description: string; affected: number }[];
+  slaImpact?: { policy: string; policyLabel: string; running: number }[];
 }
 
 interface UpgradeView {
@@ -104,6 +105,10 @@ interface UpgradeView {
             @if (r.baseChanges.length) {
               <h4>What the new version changes</h4>
               <ul class="changes">@for (c of r.baseChanges; track c.kind + c.id) { <li><span class="badge" [class]="c.change === 'added' ? 'tone-green' : c.change === 'removed' ? 'tone-red' : 'tone-blue'">{{ c.change }}</span> {{ c.kind }} {{ c.label }}</li> }</ul>
+            }
+            @if (r.slaImpact?.length) {
+              <h4>Running service-level clocks</h4>
+              <ul>@for (i of r.slaImpact!; track i.policy) { <li>{{ i.policyLabel }}: {{ i.running }} running clock{{ i.running === 1 ? '' : 's' }} keep the targets they started with; new clocks use the new version.</li> }</ul>
             }
             @if (r.migrations.length) {
               <h4>Data migrations</h4>

@@ -182,6 +182,9 @@ public class UpgradeTests(PlatformFixture f)
         Assert.All(plan.Overlay, o => Assert.Equal(OpStatus.Applied, o.Status));
         Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.sla.ticket");
         Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.calendar.business_hours");
+        // The plan says how many running clocks keep their old targets.
+        var impact = Assert.Single(plan.SlaImpact!, i => i.Policy == "core.tickets.sla.ticket");
+        Assert.True(impact.Running >= 3); // response and resolution of "Laptop slow", plus "Already late"
         var started = await upgrades.StartAsync(admin, "core.tickets", "1.10.0", default);
         await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
         Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);

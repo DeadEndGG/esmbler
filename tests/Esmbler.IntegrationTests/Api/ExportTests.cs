@@ -119,4 +119,34 @@ public class ExportTests(PlatformFixture platform) : IClassFixture<ApiTestsFacto
         Assert.DoesNotContain(lines, l => l.Contains("Other workspace", StringComparison.Ordinal));
         Assert.Contains("Impact", Lines(await (await (await Factory.SignInAsync($"admin@{Slug(t)}.example", Slug(t))).GetAsync($"/api/records/{Ticket}/export")).Content.ReadAsStringAsync())[0].Split(','));
     }
+
+    [Fact]
+    public async Task A_role_granted_the_export_right_exports_only_the_records_it_can_read()
+    {
+        // KI-070: an administrator grants requesters records.export; a requester's file holds only their own tickets
+        // and never the fields hidden from requesters. Only permission administrators can grant it.
+        var t = await platform.NewTenantAsync("expr", "1.10.0");
+        var records = platform.Get<RecordService>();
+        await records.CreateAsync(platform.As(t, "agent"), Ticket, new JsonObject { ["title"] = "Dana's laptop", ["requester"] = t.Users["dana"].ToString() }, null, null, default);
+        await records.CreateAsync(platform.As(t, "agent"), Ticket, new JsonObject { ["title"] = "Riley's phone", ["requester"] = t.Users["riley"].ToString() }, null, null, default);
+
+        var drafts = platform.Get<Kernel.Infrastructure.Configuration.DraftService>();
+        var grant = new Sdk.Overlay.SetPermissionActions { PermissionSet = "core.tickets.ps_requester", Grant = [Sdk.Specs.PlatformActions.RecordsExport] };
+        var builder = platform.As(t, "builder");
+        var draft = await drafts.OpenAsync(platform.As(t, "admin"), default);
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => drafts.ApplyAsync(builder, grant, draft.Version, "ui", default))).Status);
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => drafts.ApplyAsync(platform.As(t, "admin", agent: Guid.NewGuid()), grant, draft.Version, "mcp", default))).Status);
+        var applied = await drafts.ApplyAsync(platform.As(t, "admin"), grant, draft.Version, "ui", default);
+        await platform.Get<Kernel.Infrastructure.Configuration.PublishService>().PublishAsync(platform.As(t, "admin"), applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+
+        var dana = await Factory.SignInAsync($"dana@{Slug(t)}.example", Slug(t));
+        var response = await dana.GetAsync($"/api/records/{Ticket}/export");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var lines = Lines(await response.Content.ReadAsStringAsync());
+        var own = await records.QueryAsync(platform.As(t, "dana"), new RecordQuery { Entity = Ticket, PageSize = 1 }, default);
+        Assert.Equal(own.Total + 1, lines.Count);
+        Assert.Contains(lines, l => l.Contains("Dana's laptop", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l => l.Contains("Riley's phone", StringComparison.Ordinal));
+        Assert.DoesNotContain("Labels", lines[0].Split(',')); // hidden from requesters
+    }
 }

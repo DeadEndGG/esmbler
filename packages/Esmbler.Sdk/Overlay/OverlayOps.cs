@@ -27,6 +27,7 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddView), "view.add")]
 [JsonDerivedType(typeof(RemoveView), "view.remove")]
 [JsonDerivedType(typeof(SetFieldAccess), "permission.field_access")]
+[JsonDerivedType(typeof(SetPermissionActions), "permission.actions")]
 [JsonDerivedType(typeof(ResetElement), "element.reset")]
 [JsonDerivedType(typeof(AddCatalogItem), "catalog_item.add")]
 [JsonDerivedType(typeof(UpdateCatalogItem), "catalog_item.update")]
@@ -313,6 +314,25 @@ public sealed class RemoveNode : OverlayOp
     public override string Describe() => $"Remove {Node} from {View}";
 
     public override IEnumerable<string> Targets() => [Node];
+}
+
+/// <summary>
+/// Grants or revokes platform actions (<c>PlatformActions</c>, e.g. <c>records.export</c>) on a permission set, the
+/// module's or the workspace's. Authorization change: needs permissions.admin; agents can never make it.
+/// </summary>
+public sealed class SetPermissionActions : OverlayOp
+{
+    public required string PermissionSet { get; set; }
+
+    public List<string> Grant { get; set; } = [];
+
+    public List<string> Revoke { get; set; } = [];
+
+    public override bool AffectsPermissions => true;
+
+    public override string Describe() => $"Actions of {PermissionSet}: {string.Join(", ", Grant.Select(a => "+" + a).Concat(Revoke.Select(a => "-" + a)))}";
+
+    public override IEnumerable<string> Targets() => [PermissionSet];
 }
 
 /// <summary>Sets a field's access level in a permission set. Authorization change: needs permissions.admin.</summary>

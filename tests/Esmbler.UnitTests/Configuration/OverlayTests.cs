@@ -203,4 +203,28 @@ public class OverlayTests
         Assert.Equal(4, back.Length);
         Assert.IsType<InsertNode>(back[3]);
     }
+
+    [Fact]
+    public void Permission_actions_are_granted_and_revoked_as_permission_changes()
+    {
+        // REQ-AUTHZ-002: actions are a permission level of their own; changing them is a permission change.
+        var before = Compile("1.10.0").Config;
+        var grant = Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_agent", Grant = [PlatformActions.RecordsExport] });
+        Assert.True(grant.Succeeded, string.Join("\n", grant.Errors.Select(e => e.Message)));
+        Assert.Contains(PlatformActions.RecordsExport, grant.Config.PermissionSets.Single(p => p.Id == "core.tickets.ps_agent").Actions);
+        Assert.True(ConfigCompiler.PermissionDiff(before, grant.Config).Changed);
+        Assert.True(new SetPermissionActions { PermissionSet = "x", Grant = ["y"] }.AffectsPermissions);
+
+        // Revoking a module grant tightens the set; unknown actions and empty or contradictory changes are refused.
+        var revoke = Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_admin", Revoke = [PlatformActions.RecordsExport] });
+        Assert.DoesNotContain(PlatformActions.RecordsExport, revoke.Config.PermissionSets.Single(p => p.Id == "core.tickets.ps_admin").Actions);
+        Assert.Contains(Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_agent", Grant = ["records.exprt"] }).Errors, e => e.Code == "overlay.invalid_value" && e.Suggestion == PlatformActions.RecordsExport);
+        Assert.Contains(Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_agent" }).Errors, e => e.Code == "overlay.invalid_value");
+        Assert.Contains(Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_agent", Grant = ["audit.read"], Revoke = ["audit.read"] }).Errors, e => e.Code == "overlay.invalid_value");
+        Assert.Contains(Compile("1.10.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_nobody", Grant = ["audit.read"] }).Errors, e => e.Code == "overlay.not_found");
+
+        // The grant survives an upgrade of the module that owns the set.
+        var upgraded = Compiler.Compile([PlatformSpec, Tickets("1.10.0")], [new SetPermissionActions { PermissionSet = "core.tickets.ps_agent", Grant = [PlatformActions.RecordsExport] }], Compile("1.9.0", new SetPermissionActions { PermissionSet = "core.tickets.ps_agent", Grant = [PlatformActions.RecordsExport] }).Config);
+        Assert.Contains(PlatformActions.RecordsExport, upgraded.Config.PermissionSets.Single(p => p.Id == "core.tickets.ps_agent").Actions);
+    }
 }
