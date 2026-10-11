@@ -47,7 +47,9 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
     /// <summary>Scopes an external client may ask for; config:read is always granted, records:read only if the workspace allows it.</summary>
     public static readonly string[] Grantable = [AgentScopes.ConfigRead, AgentScopes.ConfigEdit, AgentScopes.PublishRequest, AgentScopes.AccessExplain, AgentScopes.RecordsRead];
 
-    public bool Enabled => !string.IsNullOrWhiteSpace(options.Mcp.PublicUrl);
+    /// <summary>On when the MCP server has a public URL and the issuer is an HTTPS URL (the clients need both).</summary>
+    public bool Enabled => !string.IsNullOrWhiteSpace(options.Mcp.PublicUrl)
+        && Uri.TryCreate(options.Auth.Issuer, UriKind.Absolute, out var issuer) && issuer.Scheme == Uri.UriSchemeHttps;
 
     public string Resource => options.Mcp.PublicUrl ?? string.Empty;
 
@@ -87,7 +89,7 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
 
         // An unregistered redirect never receives anything, not even an error.
         var redirect = q.GetValueOrDefault("redirect_uri");
-        if (redirect is null || !client.RedirectUris.Contains(redirect, StringComparer.Ordinal))
+        if (redirect is null || !client.RedirectUris.Any(r => RedirectMatches(r, redirect)))
         {
             return new AuthorizeOutcome(null, 400, "The return address does not belong to this assistant.");
         }
@@ -151,18 +153,21 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
             throw KernelException.Forbidden("This assistant is no longer allowed on this platform.");
         }
 
-        var resolved = await ai.ResolveAsync(ctx.TenantId, ctx.EnvironmentId, ct);
-        var granted = scopes.Intersect(r.Scopes).Union([AgentScopes.ConfigRead]).Where(s => s != AgentScopes.RecordsRead || resolved.AllowRecordsRead).Distinct().ToList();
         var envCtx = ctx with { EnvironmentId = environmentId };
         var code = NewSecret();
         try
         {
             await database.InTenantAsync(ctx.TenantId, environmentId, ctx.PrincipalId, async db =>
             {
+                // The workspace policy is read under a share lock: a concurrent change either comes before (and is
+                // applied here) or after (and revokes this connection).
+                var settings = (await db.AiSettings.FromSqlInterpolated($"SELECT * FROM kernel.ai_settings FOR SHARE").AsNoTracking().ToListAsync(ct)).FirstOrDefault();
+                var policy = settings?.ExternalAssistants ?? "off";
+                var granted = scopes.Intersect(r.Scopes).Union([AgentScopes.ConfigRead]).Where(s => s != AgentScopes.RecordsRead || settings?.AllowRecordsRead == true).Distinct().ToList();
                 var environment = await db.Environments.AsNoTracking().FirstOrDefaultAsync(e => e.Id == environmentId && e.TenantId == ctx.TenantId, ct) ?? throw KernelException.NotFound("Environment");
-                if (!Allows(resolved.ExternalAssistants, environment.Kind))
+                if (!Allows(policy, environment.Kind))
                 {
-                    throw KernelException.Forbidden(resolved.ExternalAssistants == "off"
+                    throw KernelException.Forbidden(policy == "off"
                         ? "This workspace does not allow external assistants."
                         : "This workspace allows external assistants only in non-production environments.", "environment", "Choose a sandbox, or ask an administrator to change the policy under AI assistant settings.");
                 }
@@ -322,7 +327,7 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
             if (row.RevokedAt is not null)
             {
                 // A rotated token came back: it was copied. End every token of the connection (T-51).
-                await db.OAuthRefreshTokens.Where(t => t.ConnectionId == row.ConnectionId && t.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, clock.UtcNow), ct);
+                await RevokeConnectionCoreAsync(db, where.TenantId, row.ConnectionId, null, ct);
                 AuditWriter.AddSystem(db, where.TenantId, where.EnvironmentId, "mcp.refresh_reuse", "mcp_connection", row.ConnectionId.ToString(), new { client = connection.ClientHost });
                 await db.SaveChangesAsync(ct);
                 return Error(400, "invalid_grant", "The refresh token was already used.");
@@ -353,7 +358,8 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
         var agent = await db.Principals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == connection.AgentId && !p.Disabled, ct);
         var member = await db.Memberships.AnyAsync(m => m.PrincipalId == connection.PrincipalId && m.TenantId == tenantId, ct);
         var environment = await db.Environments.AsNoTracking().FirstAsync(e => e.Id == connection.EnvironmentId, ct);
-        var policy = await db.AiSettings.AsNoTracking().Select(s => s.ExternalAssistants).FirstOrDefaultAsync(ct) ?? "off";
+        var settings = await db.AiSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+        var policy = settings?.ExternalAssistants ?? "off";
         if (person is null || agent is null || !member || !Allows(policy, environment.Kind) || !HttpClientMetadataSource.Acceptable(connection.ClientId, options.Mcp.AllowedClientHosts, out _))
         {
             return null;
@@ -366,7 +372,8 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
             return null;
         }
 
-        var scopes = connection.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // Record reading the workspace no longer allows is dropped, whatever was granted at consent.
+        var scopes = connection.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(s => s != AgentScopes.RecordsRead || settings?.AllowRecordsRead == true).ToArray();
         var access_ = tokens.IssueAgent(person.Id, person.DisplayName, tenantId, connection.EnvironmentId, connection.AgentId, scopes, connection.ClientId, connection.Id, AccessLifetime);
         var refresh = NewSecret();
         db.OAuthRefreshTokens.Add(new OAuthRefreshTokenRow { TenantId = tenantId, Id = Guid.NewGuid(), ConnectionId = connection.Id, TokenHash = Hash(refresh), CreatedAt = now, ExpiresAt = connection.ExpiresAt });
@@ -377,7 +384,7 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
             ["token_type"] = "Bearer",
             ["expires_in"] = (int)AccessLifetime.TotalSeconds,
             ["refresh_token"] = refresh,
-            ["scope"] = connection.Scopes,
+            ["scope"] = string.Join(' ', scopes),
         });
     }
 
@@ -392,10 +399,14 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
         var hash = Hash(token);
         if (await LookupAsync($"SELECT tenant_id AS \"TenantId\", environment_id AS \"EnvironmentId\" FROM kernel.oauth_refresh_lookup({hash})", ct) is { } where)
         {
+            // A client revoking its refresh token disconnects: the connection, its agent and its tokens end.
             await database.InTenantAsync(where.TenantId, where.EnvironmentId, null, async db =>
             {
                 var connection = await db.OAuthRefreshTokens.Where(t => t.TokenHash == hash).Select(t => t.ConnectionId).FirstAsync(ct);
-                return await db.OAuthRefreshTokens.Where(t => t.ConnectionId == connection && t.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, clock.UtcNow), ct);
+                await RevokeConnectionCoreAsync(db, where.TenantId, connection, null, ct);
+                AuditWriter.AddSystem(db, where.TenantId, where.EnvironmentId, "mcp.connection_revoke", "mcp_connection", connection.ToString(), new { by = "client" }, outcome: "success");
+                await db.SaveChangesAsync(ct);
+                return 0;
             }, ct);
         }
     }
@@ -493,6 +504,19 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
         {
             throw KernelException.Forbidden("Other people's connections are for permission administrators.");
         }
+    }
+
+    /// <summary>Exact match, except that a loopback redirect may use any port (RFC 8252 section 7.3, native clients).</summary>
+    private static bool RedirectMatches(string registered, string requested)
+    {
+        if (string.Equals(registered, requested, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return Uri.TryCreate(registered, UriKind.Absolute, out var r) && Uri.TryCreate(requested, UriKind.Absolute, out var q)
+            && r.Scheme == Uri.UriSchemeHttp && q.Scheme == Uri.UriSchemeHttp && r.IsLoopback && q.IsLoopback && r.Host == q.Host
+            && r.AbsolutePath == q.AbsolutePath && r.Query == q.Query && q.Fragment.Length == 0 && q.UserInfo.Length == 0;
     }
 
     private static bool Allows(string policy, string environmentKind) => policy == "all" || (policy == "non_production" && environmentKind != "production");

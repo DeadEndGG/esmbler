@@ -83,6 +83,24 @@ public class BoundaryTests
     }
 
     [Fact]
+    public void Every_mcp_tool_says_whether_it_only_reads_or_may_destroy()
+    {
+        // ADR 0025: external hosts ask for confirmation by these hints. Unannotated tools would count as destructive.
+        var tools = Assembly.Load("Esmbler.Mcp").GetTypes().SelectMany(t => t.GetMethods())
+            .SelectMany(m => m.CustomAttributes.Where(a => a.AttributeType.Name == "McpServerToolAttribute"))
+            .ToList();
+        Assert.NotEmpty(tools);
+        var unannotated = tools
+            .Where(a => !a.NamedArguments.Any(n => (n.MemberName == "ReadOnly" && n.TypedValue.Value is true) || n.MemberName == "Destructive"))
+            .Select(a => a.NamedArguments.FirstOrDefault(n => n.MemberName == "Name").TypedValue.Value)
+            .ToList();
+        Assert.Empty(unannotated);
+        var destructive = tools.Where(a => a.NamedArguments.Any(n => n.MemberName == "Destructive" && n.TypedValue.Value is true))
+            .Select(a => (string)a.NamedArguments.First(n => n.MemberName == "Name").TypedValue.Value!).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(["discard_draft", "remove_metric", "remove_node", "remove_rule", "reset_to_default"], destructive);
+    }
+
+    [Fact]
     public void Platform_does_not_depend_on_modules_or_infrastructure()
     {
         var result = Types.InAssembly(Assembly.Load("Esmbler.Platform"))

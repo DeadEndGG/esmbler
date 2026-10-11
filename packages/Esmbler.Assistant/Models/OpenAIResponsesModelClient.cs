@@ -164,12 +164,15 @@ public sealed class OpenAIResponsesModelClient(ModelSettings settings, OpenAIEnd
             throw new AssistantUnavailableException("The AI service could not finish this request.");
         }
 
+        // OpenAI's input_tokens include cached tokens; normalize to uncached input plus cache reads. The model recorded is
+        // the one configured (for Azure, the deployment name), which is what the catalog prices.
         var usage = json["usage"];
+        var cached = usage?["input_tokens_details"]?["cached_tokens"]?.GetValue<int>() ?? 0;
         return new ModelResponse(stop, output, new ModelUsage(
-            usage?["input_tokens"]?.GetValue<int>() ?? 0,
+            Math.Max(0, (usage?["input_tokens"]?.GetValue<int>() ?? 0) - cached),
             usage?["output_tokens"]?.GetValue<int>() ?? 0,
-            usage?["input_tokens_details"]?["cached_tokens"]?.GetValue<int>() ?? 0,
-            json["model"]?.GetValue<string>() ?? model));
+            cached,
+            model));
     }
 
     private static JsonObject Tool(ToolDefinition d) => new()

@@ -28,6 +28,8 @@ public sealed partial class HttpClientMetadataSource(PlatformOptions options) : 
     private static readonly HttpClient Http = new(new SocketsHttpHandler
     {
         AllowAutoRedirect = false,
+        // A proxy would be the address checked at connect time, not the metadata host.
+        UseProxy = false,
         ConnectTimeout = TimeSpan.FromSeconds(5),
         ConnectCallback = ConnectPublicOnlyAsync,
     })
@@ -48,7 +50,7 @@ public sealed partial class HttpClientMetadataSource(PlatformOptions options) : 
         try
         {
             using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseContentRead, ct);
-            if (response.StatusCode != HttpStatusCode.OK)
+            if (response.StatusCode != HttpStatusCode.OK || response.Content.Headers.ContentType?.MediaType is not ("application/json" or "application/client-metadata+json"))
             {
                 return null;
             }
@@ -152,12 +154,17 @@ public sealed partial class HttpClientMetadataSource(PlatformOptions options) : 
 
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            return !(address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast || address.IsIPv6UniqueLocal);
+            var v6 = address.GetAddressBytes();
+
+            // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) can reach IPv4 addresses inside: not public for this purpose.
+            var nat64 = v6[0] == 0 && v6[1] == 0x64 && v6[2] == 0xff && v6[3] == 0x9b;
+            var sixToFour = v6[0] == 0x20 && v6[1] == 0x02;
+            return !(address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast || address.IsIPv6UniqueLocal || nat64 || sixToFour);
         }
 
         var b = address.GetAddressBytes();
         return !(b[0] == 10 || b[0] == 0 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254)
-            || (b[0] == 100 && b[1] is >= 64 and <= 127) || b[0] >= 224);
+            || (b[0] == 100 && b[1] is >= 64 and <= 127) || (b[0] == 198 && b[1] is 18 or 19) || b[0] >= 224);
     }
 
     [GeneratedRegex(@"[\p{Cc}\p{Cf}]")]

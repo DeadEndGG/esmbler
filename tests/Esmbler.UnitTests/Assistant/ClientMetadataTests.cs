@@ -3,7 +3,7 @@ using Esmbler.Hosting.Auth;
 
 namespace Esmbler.UnitTests.Assistant;
 
-/// <summary>REQ-AI-007, REQ-AISAFE-004 (ADR 0025, T-41): which external MCP clients are accepted and where Esmbler may fetch from.</summary>
+/// <summary>REQ-AISAFE-004, REQ-AUTHZ-007 (ADR 0025, T-41): which external MCP clients are accepted and where Esmbler may fetch from.</summary>
 public class ClientMetadataTests
 {
     private static readonly string[] Allowed = ["chatgpt.com", "claude.ai"];
@@ -47,6 +47,9 @@ public class ClientMetadataTests
     [InlineData("fd00::1", false)]
     [InlineData("fe80::1", false)]
     [InlineData("::ffff:10.0.0.1", false)]
+    [InlineData("64:ff9b::a00:1", false)]
+    [InlineData("2002:a00:1::1", false)]
+    [InlineData("198.18.0.1", false)]
     public void Metadata_is_fetched_only_from_public_addresses(string address, bool isPublic) =>
         Assert.Equal(isPublic, HttpClientMetadataSource.IsPublic(IPAddress.Parse(address)));
 }

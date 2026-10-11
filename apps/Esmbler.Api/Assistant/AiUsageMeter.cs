@@ -9,7 +9,7 @@ namespace Esmbler.Api.Assistant;
 /// Meters the assistant's model requests for one turn (ADR 0024, KI-002): checks the workspace's daily spend budget
 /// before each request and records what each request used.
 /// </summary>
-public sealed class AiUsageMeter(AiSettingsService ai, RequestContext ctx, string conversationId) : IModelUsageMeter
+public sealed class AiUsageMeter(AiSettingsService ai, RequestContext ctx, string conversationId, string modelOptionId) : IModelUsageMeter
 {
     public async Task EnsureWithinBudgetAsync(CancellationToken ct)
     {
@@ -20,5 +20,5 @@ public sealed class AiUsageMeter(AiSettingsService ai, RequestContext ctx, strin
     }
 
     public Task RecordAsync(string provider, ModelUsage usage, CancellationToken ct) =>
-        ai.RecordUsageAsync(ctx, conversationId, provider, usage.Model, usage.InputTokens, usage.OutputTokens, usage.CachedInputTokens, ct);
+        ai.RecordUsageAsync(ctx, conversationId, modelOptionId, provider, usage.Model, usage.InputTokens, usage.OutputTokens, usage.CachedInputTokens, usage.CacheWriteTokens, ct);
 }

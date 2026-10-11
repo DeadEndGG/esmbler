@@ -15,7 +15,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Esmbler.IntegrationTests.Assistant;
 
 /// <summary>
-/// REQ-AI-007, REQ-AUTHZ-007, REQ-AISAFE-004 (ADR 0025): OAuth for external MCP clients. Only allowlisted clients with an
+/// REQ-AUTHZ-007, REQ-AISAFE-004, REQ-AI-006 (ADR 0025): OAuth for external MCP clients. Only allowlisted clients with an
 /// exact redirect, PKCE S256 and this server as resource get anywhere; a signed-in person consents for an environment
 /// the workspace policy allows, with scopes it allows; codes are single use; refresh tokens rotate and reuse ends the
 /// family; connections are listed, revoked and isolated per workspace; tokens are bound to the MCP server's audience.
@@ -37,7 +37,8 @@ public class McpOAuthTests(PlatformFixture f)
     private (OAuthService OAuth, TokenService Tokens) Services()
     {
         var platform = f.Get<PlatformOptions>();
-        var options = new PlatformOptions { Auth = platform.Auth, Mcp = new PlatformOptions.McpSettings { PublicUrl = PublicUrl } };
+        var auth = new PlatformOptions.AuthSettings { SigningKey = platform.Auth.SigningKey, AllowDevelopmentKey = platform.Auth.AllowDevelopmentKey, Issuer = "https://app.esmbler.test" };
+        var options = new PlatformOptions { Auth = auth, Mcp = new PlatformOptions.McpSettings { PublicUrl = PublicUrl } };
         var tokens = new TokenService(options, f.Get<Database>());
         return (new OAuthService(options, f.Get<Database>(), tokens, new FakeClients(), f.Get<ConfigStore>(), f.Get<AccessService>(), f.Get<AiSettingsService>(), f.Get<IClock>()), tokens);
     }
@@ -131,17 +132,27 @@ public class McpOAuthTests(PlatformFixture f)
         Assert.Equal("invalid_grant", Field(await oauth.TokenAsync(RefreshForm(Field(issued, "refresh_token")), default), "error"));
         Assert.Equal("invalid_grant", Field(await oauth.TokenAsync(RefreshForm(Field(rotated, "refresh_token")), default), "error"));
 
-        // The connection is the person's, attributable to its own agent.
+        // The connection is the person's, attributable to its own agent; the reuse ended it.
         var mine = Assert.Single(await oauth.ConnectionsAsync(admin, false, default));
         Assert.Equal(("ChatGPT", "chatgpt.com"), (mine.ClientName, mine.ClientHost));
         Assert.Empty(await oauth.ConnectionsAsync(f.As(t, "agent"), false, default));
-        Assert.True(await oauth.ConnectionActiveAsync(t.TenantId, mine.Id, default));
+        Assert.NotNull(mine.RevokedAt);
+        Assert.False(await oauth.ConnectionActiveAsync(t.TenantId, mine.Id, default));
     }
 
     [Fact]
     public async Task Codes_are_single_use_and_revoked_or_disallowed_connections_stop_working()
     {
         var (oauth, _) = Services();
+
+        // A live connection is active until its client revokes its refresh token (RFC 7009), which disconnects it.
+        var (t0, code0) = await ConnectAsync(oauth, "oa0");
+        var live = await oauth.TokenAsync(CodeForm(code0), default);
+        var liveConnection = Assert.Single(await oauth.ConnectionsAsync(f.As(t0, "admin"), false, default));
+        Assert.True(await oauth.ConnectionActiveAsync(t0.TenantId, liveConnection.Id, default));
+        await oauth.RevokeTokenAsync(Field(live, "refresh_token"), default);
+        Assert.False(await oauth.ConnectionActiveAsync(t0.TenantId, liveConnection.Id, default));
+        await oauth.RevokeTokenAsync("not-a-token", default); // unknown tokens are not an error
 
         // A code redeemed twice was intercepted: the connection ends.
         var (t, code) = await ConnectAsync(oauth, "ob");
@@ -162,6 +173,8 @@ public class McpOAuthTests(PlatformFixture f)
         await f.Get<AiSettingsService>().SaveAsync(f.As(t3, "admin"), new AiSettingsRequest(null, null, 20, false, "off", 1), default);
         Assert.Equal("invalid_grant", Field(await oauth.TokenAsync(RefreshForm(Field(issued, "refresh_token")), default), "error"));
         var connection = Assert.Single(await oauth.ConnectionsAsync(f.As(t3, "admin"), true, default));
+        Assert.NotNull(connection.RevokedAt); // narrowing the policy ended it
+        Assert.False(await oauth.ConnectionActiveAsync(t3.TenantId, connection.Id, default));
         await Assert.ThrowsAsync<KernelException>(() => oauth.RevokeConnectionAsync(f.As(t2, "admin"), connection.Id, default)); // another workspace
         Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => oauth.ConnectionsAsync(f.As(t3, "builder"), true, default))).Status);
         await oauth.RevokeConnectionAsync(f.As(t3, "admin"), connection.Id, default);

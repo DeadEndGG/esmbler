@@ -178,7 +178,7 @@ public sealed class AssistantService(
             "anthropic" => new AnthropicModelClient(settings, credential.ApiKey),
             _ => throw new AssistantUnavailableException("The AI model for this workspace is not configured correctly."),
         };
-        return new ToolLoopPlanner(client, new AiUsageMeter(ai, ctx, conversationId));
+        return new ToolLoopPlanner(client, new AiUsageMeter(ai, ctx, conversationId, model.Id));
     }
 
     private async Task RunAsync(Conversation conversation, IPlanner planner, AssistantRequest request, string token)

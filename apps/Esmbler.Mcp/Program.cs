@@ -25,7 +25,9 @@ if (!string.IsNullOrWhiteSpace(publicUrl))
         {
             ctx.HandleResponse();
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            ctx.Response.Headers.WWWAuthenticate = $"Bearer resource_metadata=\"{metadataUrl}\", scope=\"config:read\"";
+            // RFC 6750: error="invalid_token" only when a token was sent and failed.
+            var error = ctx.AuthenticateFailure is null ? string.Empty : ", error=\"invalid_token\"";
+            ctx.Response.Headers.WWWAuthenticate = $"Bearer resource_metadata=\"{metadataUrl}\", scope=\"config:read\"{error}";
             return Task.CompletedTask;
         };
     });

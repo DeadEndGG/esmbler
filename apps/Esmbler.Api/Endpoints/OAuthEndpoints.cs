@@ -28,7 +28,7 @@ public static class OAuthEndpoints
             return outcome.Redirect is { } to
                 ? Results.Redirect(to)
                 : Results.Content($"<!doctype html><title>Esmbler</title><p>{WebUtility.HtmlEncode(outcome.Error)}</p>", "text/html; charset=utf-8", statusCode: outcome.Status);
-        }).AllowAnonymous().WithTags("OAuth");
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.OAuthPolicy).WithTags("OAuth");
 
         app.MapPost("/oauth/token", async (HttpRequest request, HttpResponse response, OAuthService oauth, CancellationToken ct) =>
         {
@@ -41,7 +41,7 @@ public static class OAuthEndpoints
             var form = await request.ReadFormAsync(ct);
             var outcome = await oauth.TokenAsync(form.ToDictionary(f => f.Key, f => (string?)f.Value.ToString()), ct);
             return Results.Json(outcome.Body, statusCode: outcome.Status);
-        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.Policy).DisableAntiforgery().WithTags("OAuth");
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.OAuthPolicy).DisableAntiforgery().WithTags("OAuth");
 
         app.MapPost("/oauth/revoke", async (HttpRequest request, OAuthService oauth, CancellationToken ct) =>
         {
@@ -51,7 +51,7 @@ public static class OAuthEndpoints
             }
 
             return Results.Ok();
-        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.Policy).DisableAntiforgery().WithTags("OAuth");
+        }).AllowAnonymous().RequireRateLimiting(LoginThrottle.OAuthPolicy).DisableAntiforgery().WithTags("OAuth");
 
         var consent = app.MapGroup("/api/oauth/consent").WithTags("OAuth").RequireAuthorization();
         consent.MapGet("/", (string request, ClaimsPrincipal user, OAuthService oauth, CancellationToken ct) =>

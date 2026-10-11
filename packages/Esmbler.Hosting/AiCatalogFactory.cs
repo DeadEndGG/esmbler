@@ -9,7 +9,9 @@ namespace Esmbler.Hosting;
 /// configuration or environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY with
 /// AZURE_OPENAI_ENDPOINT), never from workspace data. Operators mark a model as evaluated after the builder evaluation
 /// suite passed against it (Esmbler__Assistant__EvaluatedModels__0=gpt-6.1-sol), or replace the catalog
-/// (Esmbler__Assistant__Catalog__0__Id=...). Prices are estimates for budgets, per million tokens in US dollars.
+/// (Esmbler__Assistant__Catalog__0__Id=...). A model paid by one customer's own key names the workspaces it is for
+/// (Esmbler__Assistant__Catalog__0__AllowedTenants__0=acme); others never see it. Esmbler__Assistant__MaxDailyBudgetUsd
+/// (default 100) caps what a workspace may set. Prices are estimates for budgets, per million tokens in US dollars.
 /// </summary>
 public static class AiCatalogFactory
 {
@@ -51,13 +53,15 @@ public static class AiCatalogFactory
                 decimal.TryParse(m["InputPerMillion"], NumberStyles.Number, CultureInfo.InvariantCulture, out var i) ? i : 0,
                 decimal.TryParse(m["OutputPerMillion"], NumberStyles.Number, CultureInfo.InvariantCulture, out var o) ? o : 0,
                 bool.TryParse(m["Evaluated"], out var ev) && ev,
-                m["FallbackModel"])).ToList();
+                m["FallbackModel"],
+                m.GetSection("AllowedTenants").GetChildren().Select(c => c.Value).OfType<string>().ToList())).ToList();
         var evaluated = section.GetSection("EvaluatedModels").GetChildren().Select(c => c.Value).OfType<string>().ToHashSet(StringComparer.Ordinal);
         models = [.. models.Select(m => evaluated.Contains(m.Id) ? m with { Evaluated = true } : m)];
 
         // The legacy single-model settings still name the default (ADR 0013).
         var legacy = section["Model"];
         var defaultModel = section["DefaultModel"] ?? (legacy is not null && models.Exists(m => m.Id == legacy) ? legacy : null);
-        return new AiCatalog(models, credentials, defaultModel);
+        var ceiling = decimal.TryParse(section["MaxDailyBudgetUsd"], NumberStyles.Number, CultureInfo.InvariantCulture, out var max) && max >= 0 ? max : 100m;
+        return new AiCatalog(models, credentials, defaultModel, ceiling);
     }
 }

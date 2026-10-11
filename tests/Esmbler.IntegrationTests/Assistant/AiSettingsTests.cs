@@ -25,12 +25,13 @@ public class AiSettingsTests(PlatformFixture f)
     private static readonly AiModelOption Sol = new("gpt-6.1-sol", "GPT-6.1 Sol", "openai", "gpt-6.1-sol", "openai-default", "medium", 2m, 10m, true);
     private static readonly AiModelOption Astra = new("gpt-6-astra", "GPT-6 Astra", "openai", "gpt-6-astra", "openai-default", "medium", 10m, 50m, false);
     private static readonly AiModelOption Gemini = new("gemini", "Gemini", "openai", "gemini", "gemini-key", "medium", 1m, 1m, true);
+    private static readonly AiModelOption OwnKey = new("claude-own", "Opus (own key)", "anthropic", "claude-opus-5-5", "anthropic-default", "medium", 5m, 25m, true, null, ["nobody-else"]);
 
     private AiSettingsService Service() => new(
         f.Get<Database>(),
         f.Get<ConfigStore>(),
         f.Get<AccessService>(),
-        new AiCatalog([Opus, Sol, Astra, Gemini], new Dictionary<string, AiCredential> { ["anthropic-default"] = new("anthropic", AnthropicKey, null), ["openai-default"] = new("openai", OpenAIKey, null) }, "claude-opus-5-5"),
+        new AiCatalog([Opus, Sol, Astra, Gemini, OwnKey], new Dictionary<string, AiCredential> { ["anthropic-default"] = new("anthropic", AnthropicKey, null), ["openai-default"] = new("openai", OpenAIKey, null) }, "claude-opus-5-5", 1000m),
         f.Get<IClock>());
 
     [Fact]
@@ -55,11 +56,11 @@ public class AiSettingsTests(PlatformFixture f)
         Assert.Equal(("anthropic", AnthropicKey), (globexResolved.Model!.Provider, globexResolved.Credential!.ApiKey));
 
         // Usage is metered per workspace; Globex's spend is not Acme's.
-        await service.RecordUsageAsync(admin, "c1", "openai", "gpt-6.1-sol-2026-09-01", 1_000_000, 100_000, 0, default);
+        await service.RecordUsageAsync(admin, "c1", "gpt-6.1-sol", "openai", "gpt-6.1-sol", 1_000_000, 100_000, 0, 0, default);
         Assert.Equal(3m, (await service.GetAsync(admin, default)).SpentTodayUsd);
         Assert.Equal(0m, (await service.GetAsync(f.As(globex, "admin"), default)).SpentTodayUsd);
         Assert.True(await service.WithinBudgetAsync(acme.TenantId, acme.Environments["prod"], default));
-        await service.RecordUsageAsync(f.As(acme, "admin", env: "sandbox"), "c2", "openai", "gpt-6.1-sol", 1_000_000, 0, 0, default);
+        await service.RecordUsageAsync(f.As(acme, "admin", env: "sandbox"), "c2", "gpt-6.1-sol", "openai", "gpt-6.1-sol", 1_000_000, 0, 0, 0, default);
         Assert.False(await service.WithinBudgetAsync(acme.TenantId, acme.Environments["prod"], default)); // one budget across environments
         Assert.True(await service.WithinBudgetAsync(globex.TenantId, globex.Environments["prod"], default));
 
@@ -90,6 +91,10 @@ public class AiSettingsTests(PlatformFixture f)
         Assert.Contains(notEvaluated.Errors, e => e.Code == "not_evaluated");
         var noKey = await Assert.ThrowsAsync<ValidationFailedException>(() => service.SaveAsync(admin, new AiSettingsRequest("gemini", null, 5, false, "off", null), default));
         Assert.Contains(noKey.Errors, e => e.Code == "not_configured");
+        // Another workspace's own-key model is neither offered nor accepted, and budgets stay under the platform's ceiling.
+        Assert.DoesNotContain((await service.GetAsync(admin, default)).Models, m => m.Id == "claude-own");
+        Assert.Contains((await Assert.ThrowsAsync<ValidationFailedException>(() => service.SaveAsync(admin, new AiSettingsRequest("claude-own", null, 5, false, "off", null), default))).Errors, e => e.Field == "modelId");
+        Assert.Contains((await Assert.ThrowsAsync<ValidationFailedException>(() => service.SaveAsync(admin, new AiSettingsRequest(null, null, 1001, false, "off", null), default))).Errors, e => e.Field == "dailyBudgetUsd");
         var bad = await Assert.ThrowsAsync<ValidationFailedException>(() => service.SaveAsync(admin, new AiSettingsRequest("nope", "turbo", -1, false, "everywhere", null), default));
         Assert.Equal(["modelId", "effort", "dailyBudgetUsd", "externalAssistants"], bad.Errors.Select(e => e.Field));
 

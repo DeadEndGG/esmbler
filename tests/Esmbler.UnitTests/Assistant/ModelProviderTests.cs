@@ -9,7 +9,7 @@ using Esmbler.Kernel.Infrastructure.Assistant;
 namespace Esmbler.UnitTests.Assistant;
 
 /// <summary>
-/// REQ-AI-005, REQ-AI-006, REQ-AI-008, REQ-AISAFE-001 (ADR 0024): the provider-neutral tool loop and its model clients.
+/// REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-003, REQ-ADM-002 (ADR 0024): the provider-neutral tool loop and its model clients.
 /// The loop keeps budgets, refusals and metering whatever the provider; clients translate exactly and never leak
 /// provider bodies or keys.
 /// </summary>
@@ -102,7 +102,7 @@ public class ModelProviderTests
         Assert.IsType<ProviderState>(calls.Output[0]);
         Assert.DoesNotContain("status", ((ProviderState)calls.Output[0]).Json, StringComparison.Ordinal);
         Assert.Equal(new ToolCall("call_9", "add_field", """{"label":"Vendor"}"""), calls.Output[1]);
-        Assert.Equal(new ModelUsage(1200, 80, 1000, "gpt-6.1-sol-2026-09-01"), calls.Usage);
+        Assert.Equal(new ModelUsage(200, 80, 1000, "gpt-6.1-sol"), calls.Usage); // uncached input, cache reads, the configured model
 
         var text = OpenAIResponsesModelClient.Parse(JsonNode.Parse("""{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}]}""")!.AsObject(), "m");
         Assert.Equal((StopKind.EndTurn, "Done."), (text.Stop, ((AssistantText)text.Output[0]).Text));
@@ -149,18 +149,29 @@ public class ModelProviderTests
     }
 
     [Fact]
-    public void Costs_are_estimated_from_catalog_prices_and_only_configured_evaluated_models_are_defaults()
+    public void Costs_are_estimated_from_catalog_prices_and_only_usable_models_are_defaults()
     {
         var sol = new AiModelOption("gpt-6.1-sol", "Sol", "openai", "gpt-6.1-sol", "openai-default", "medium", 2m, 10m, false);
         var opus = new AiModelOption("claude-opus-5-5", "Opus", "anthropic", "claude-opus-5-5", "anthropic-default", "medium", 5m, 25m, true);
-        Assert.Equal(0.0024m, AiCatalog.Cost(sol, 1000, 0, 0) + AiCatalog.Cost(sol, 0, 0, 0) + 0.0004m);
-        Assert.Equal((200 * 2m + 1000 * 0.2m + 100 * 10m) / 1_000_000m, AiCatalog.Cost(sol, 1200, 100, 1000));
+        var acmeOnly = new AiModelOption("claude-acme", "Opus (Acme's key)", "anthropic", "claude-opus-5-5", "acme-key", "medium", 5m, 25m, true, null, ["acme"]);
+        var catalog = new AiCatalog([sol, opus, acmeOnly], new Dictionary<string, AiCredential> { ["anthropic-default"] = new("anthropic", "k", null), ["acme-key"] = new("anthropic", "a", null) }, "gpt-6.1-sol", 50m);
 
-        var none = new AiCatalog([sol, opus], new Dictionary<string, AiCredential> { ["openai-default"] = new("openai", "k", null) }, null);
-        Assert.Null(none.Default); // Sol has a key but no evaluation; Opus is evaluated but has no key.
-        var both = new AiCatalog([sol, opus], new Dictionary<string, AiCredential> { ["anthropic-default"] = new("anthropic", "k", null) }, "gpt-6.1-sol");
-        Assert.Equal("claude-opus-5-5", both.Default!.Id);
-        Assert.False(both.Available(sol));
+        // Uncached input, cache reads at a tenth, cache writes at 1.25 times, output; unknown models at the highest prices.
+        Assert.Equal((200 * 2m + 1000 * 0.2m + 100 * 10m) / 1_000_000m, catalog.Cost(sol, 200, 100, 1000, 0));
+        Assert.Equal((1000 * 5m * 1.25m) / 1_000_000m, catalog.Cost(opus, 0, 0, 0, 1000));
+        Assert.Equal(catalog.Cost(opus, 1000, 1000, 0, 0), catalog.Cost(null, 1000, 1000, 0, 0));
+
+        // The configured default is not usable (no key, not evaluated): the first usable model instead. A model paid by
+        // one workspace's key is offered only to that workspace.
+        Assert.Equal("claude-opus-5-5", catalog.DefaultFor("globex")!.Id);
+        Assert.True(catalog.Usable(acmeOnly, "acme"));
+        Assert.False(catalog.Usable(acmeOnly, "globex"));
+        Assert.False(catalog.Usable(sol, "acme"));
+        Assert.Equal(50m, catalog.MaxDailyBudgetUsd);
+
+        // A credential for another provider is never handed out.
+        var crossed = new AiCatalog([sol], new Dictionary<string, AiCredential> { ["openai-default"] = new("anthropic", "k", null) }, null);
+        Assert.Null(crossed.CredentialFor(sol));
     }
 
     private sealed class Gateway(string result) : IToolGateway

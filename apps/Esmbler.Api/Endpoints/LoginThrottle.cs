@@ -26,6 +26,12 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
     /// <summary>Audit exports (ADR 0022): two a minute per person.</summary>
     public const string ExportPolicy = "exports";
 
+    /// <summary>
+    /// OAuth token and revocation endpoints (ADR 0025): ChatGPT and Claude refresh for many people from few addresses,
+    /// so the limit is per client and address and generous; tokens are 256-bit, so guessing is not the risk.
+    /// </summary>
+    public const string OAuthPolicy = "oauth";
+
     /// <summary>Inbound email webhook (ADR 0023): per sending address (the mail provider), before the token is checked.</summary>
     public const string InboundMailPolicy = "inbound-mail";
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
@@ -92,6 +98,13 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             o.OnRejected = async (context, ct) =>
             {
+                if (context.HttpContext.Request.Path.StartsWithSegments("/oauth"))
+                {
+                    // OAuth clients expect RFC 6749 errors.
+                    await context.HttpContext.Response.WriteAsJsonAsync(new { error = "temporarily_unavailable", error_description = "Too many requests. Try again in a minute." }, ct);
+                    return;
+                }
+
                 context.HttpContext.Response.ContentType = "application/problem+json";
                 var title = context.HttpContext.Request.Path.StartsWithSegments("/api/auth")
                     ? "Too many sign-in attempts from this address. Wait a minute and try again."
@@ -114,6 +127,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.AddPolicy(WorkspacePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(OAuthPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 1200, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             o.AddPolicy(InboundMailPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

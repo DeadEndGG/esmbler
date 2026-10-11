@@ -62,7 +62,11 @@ public enum StopKind
     Refusal,
 }
 
-public sealed record ModelUsage(int InputTokens, int OutputTokens, int CachedInputTokens, string Model)
+/// <summary>
+/// What one request used, normalized across providers: <see cref="InputTokens"/> is input not read from or written to
+/// the provider's cache, <see cref="CachedInputTokens"/> cache reads, <see cref="CacheWriteTokens"/> cache writes.
+/// </summary>
+public sealed record ModelUsage(int InputTokens, int OutputTokens, int CachedInputTokens, string Model, int CacheWriteTokens = 0)
 {
     public static ModelUsage None(string model) => new(0, 0, 0, model);
 }

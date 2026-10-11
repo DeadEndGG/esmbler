@@ -87,7 +87,8 @@ public sealed class AnthropicModelClient(ModelSettings settings, string? apiKey)
             : output.Exists(i => i is ToolCall) ? StopKind.ToolUse
             : response.StopReason == "max_tokens" ? StopKind.MaxTokens
             : StopKind.EndTurn;
-        var usage = new ModelUsage((int)response.Usage.InputTokens, (int)response.Usage.OutputTokens, (int)(response.Usage.CacheReadInputTokens ?? 0), settings.Model);
+        // Anthropic's input_tokens already excludes cache reads and cache writes.
+        var usage = new ModelUsage((int)response.Usage.InputTokens, (int)response.Usage.OutputTokens, (int)(response.Usage.CacheReadInputTokens ?? 0), settings.Model, (int)(response.Usage.CacheCreationInputTokens ?? 0));
         return new ModelResponse(stop, output, usage);
     }
 
