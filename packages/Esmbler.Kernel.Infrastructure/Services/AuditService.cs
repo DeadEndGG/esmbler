@@ -56,6 +56,13 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
     /// </summary>
     public async Task ExportAsync(RequestContext ctx, string format, AuditQuery query, Stream output, CancellationToken ct)
     {
+        var range = await PrepareExportAsync(ctx, format, query, ct);
+        await WriteExportAsync(ctx, format, range, output, ct);
+    }
+
+    /// <summary>Checks the right and the range and records the export; returns the query with its date range fixed.</summary>
+    public async Task<AuditQuery> PrepareExportAsync(RequestContext ctx, string format, AuditQuery query, CancellationToken ct)
+    {
         if (format is not ("csv" or "jsonl"))
         {
             throw new KernelException("invalid_format", $"'{format}' is not an export format.", 400, "format", "Use csv or jsonl.");
@@ -75,7 +82,15 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);
+        return query with { From = from, To = to, Before = null };
+    }
 
+    /// <summary>Streams a prepared export (oldest first), at most <see cref="MaxExportRows"/> entries.</summary>
+    public async Task WriteExportAsync(RequestContext ctx, string format, AuditQuery query, Stream output, CancellationToken ct)
+    {
+        var from = query.From ?? throw new ArgumentException("Prepare the export first.", nameof(query));
+        var to = query.To ?? throw new ArgumentException("Prepare the export first.", nameof(query));
+        await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db => await RequireAsync(db, ctx, PlatformActions.AuditExport, fresh: false, ct), ct);
         await using var writer = new StreamWriter(output, new UTF8Encoding(false), 64 * 1024, leaveOpen: true);
         if (format == "csv")
         {

@@ -22,6 +22,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
 
     /// <summary>Per-person limit for creating workspaces (each one is a new tenant).</summary>
     public const string WorkspacePolicy = "workspaces";
+
+    /// <summary>Audit exports (ADR 0022): two a minute per person.</summary>
+    public const string ExportPolicy = "exports";
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
     private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -104,6 +107,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.AddPolicy(WorkspacePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(ExportPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 2, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             o.AddPolicy(RefreshPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(options.Auth.LoginAttemptsPerMinute, 1) * 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

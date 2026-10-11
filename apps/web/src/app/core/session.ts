@@ -19,6 +19,7 @@ export class Session {
   /** Unread notifications of the signed-in person (navigation badge, ADR 0021). */
   readonly unreadNotifications = signal(0);
   readonly openAlerts = signal(0);
+  readonly canReadAudit = computed(() => this.app()?.actions.some((a) => a === 'audit.read' || a === 'permissions.admin') ?? false);
   readonly canManageNotifications = computed(() => this.app()?.actions.some((a) => a === 'notifications.manage' || a === 'permissions.admin') ?? false);
 
   async load(): Promise<AppBootstrap> {

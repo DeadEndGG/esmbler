@@ -78,6 +78,9 @@ import { Icon, IconName } from '../ui/icon';
             <a class="nav-item" routerLink="/admin/people" routerLinkActive="active"><esm-icon name="users" /><span class="flex-1">People and roles</span></a>
             <a class="nav-item" routerLink="/admin/operations" routerLinkActive="active"><esm-icon name="activity" /><span class="flex-1">Operations</span></a>
           }
+          @if (session.canReadAudit()) {
+            <a class="nav-item" routerLink="/admin/audit" routerLinkActive="active"><esm-icon name="scroll-text" /><span class="flex-1">Audit log</span></a>
+          }
           @if (session.canManageNotifications()) {
             <a class="nav-item" routerLink="/admin/notifications" routerLinkActive="active"><esm-icon name="send" /><span class="flex-1">Notification channels</span></a>
           }

@@ -36,6 +36,13 @@ export class Api {
     return this.run(this.http.post<T>(url, body ?? {}, { headers: new HttpHeaders(headers ?? {}) }));
   }
 
+  /** A file from the API (e.g. an export), as a Blob. */
+  download(url: string, params?: Record<string, string | undefined>): Promise<Blob> {
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined && v !== '') clean[k] = v;
+    return this.run(this.http.get(url, { params: clean, responseType: 'blob' }));
+  }
+
   put<T>(url: string, body: unknown): Promise<T> {
     return this.run(this.http.put<T>(url, body));
   }
