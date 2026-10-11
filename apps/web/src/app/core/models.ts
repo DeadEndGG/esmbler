@@ -76,6 +76,8 @@ export interface MetricBucket {
   drill?: DrillQuery | null;
   /** The bar stopped counting at the explorer's cap ("10,000+"). */
   capped?: boolean;
+  /** Sums every group past the metric's limit; drills like any bar. */
+  other?: boolean;
 }
 
 /** A metric evaluated for the signed-in person (ADR 0019). */
@@ -96,6 +98,8 @@ export interface MetricResult {
   configRevision: number;
   /** Sample figure shown while the workspace has no records (REQ-WS-006); never links to records. */
   preview?: boolean;
+  /** `alerts`: the figure counts alerts (time to acknowledge or resolve) and opens the Alerts page, not the explorer. */
+  source?: 'records' | 'alerts';
 }
 
 export interface DashboardData {

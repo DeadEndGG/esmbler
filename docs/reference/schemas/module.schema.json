@@ -1743,6 +1743,26 @@
               "policy"
             ]
           },
+          "alerts": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "minSeverity": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
           "roles": {
             "type": "array",
             "items": {

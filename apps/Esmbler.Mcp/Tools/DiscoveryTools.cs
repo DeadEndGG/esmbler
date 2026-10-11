@@ -148,7 +148,7 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
             };
         });
 
-    [McpServerTool(Name = "describe_metric_fields", ReadOnly = true), Description("What a metric on an entity can use: fields to group by (choice, status, priority, user, group, toggle), date fields for date ranges and trends, number fields to sum or average, and SLA policies whose breaches it can count.")]
+    [McpServerTool(Name = "describe_metric_fields", ReadOnly = true), Description("What a metric on an entity can use: fields to group by (choice, status, priority, user, group, toggle), date fields for date ranges and trends, number fields to sum or average, SLA policies whose breached or at-risk timers it can count, and what alert metrics (time to acknowledge or resolve) use.")]
     public Task<CallToolResult> DescribeMetricFields(string entity) =>
         runner.RunAsync("describe_metric_fields", AgentScopes.ConfigRead, entity, async ctx =>
         {
@@ -164,6 +164,14 @@ public sealed class DiscoveryTools(ToolRunner runner, IElementRegistry registry,
                 dates = visible.Where(f => f.Type is FieldTypes.Date or FieldTypes.DateTime).Select(f => new { f.Key, f.Label, f.Type }).Prepend(new { Key = "updated_at", Label = "Updated", Type = FieldTypes.DateTime }).Prepend(new { Key = "created_at", Label = "Created", Type = FieldTypes.DateTime }),
                 numbers = visible.Where(f => f.Type is FieldTypes.Integer or FieldTypes.Decimal).Select(f => new { f.Key, f.Label, f.Type }),
                 slaPolicies = config.SlaPolicies.Where(p => p.Entity == spec.Id).Select(p => new { p.Id, p.Label, targets = p.Targets.Select(t => t.Id) }),
+                slaStates = MetricSlaStates.All,
+                alerts = new
+                {
+                    rules = config.AlertRules.Select(r => new { r.Id, r.Label }),
+                    times = MetricAlertFields.Times,
+                    groups = MetricAlertFields.Groups,
+                    hint = "Set count_alerts. Time to acknowledge: measure duration from opened_at to acknowledged_at; time to resolve: to resolved_at.",
+                },
                 buckets = MetricBuckets.All,
                 measures = MetricMeasures.All,
                 hint = "Filters use the list filter language over record and user, e.g. !(record.status in ['resolved', 'closed']) && record.assignee == user.id.",

@@ -488,6 +488,7 @@ public static class Composer
                 metric.GroupBy = um.Set.GroupBy is { } group ? SpecJson.Clone(group) : metric.GroupBy;
                 metric.DateRange = um.Set.DateRange is { } range ? SpecJson.Clone(range) : metric.DateRange;
                 metric.Sla = um.Set.Sla is { } metricSla ? SpecJson.Clone(metricSla) : metric.Sla;
+                metric.Alerts = um.Set.Alerts is { } metricAlerts ? SpecJson.Clone(metricAlerts) : metric.Alerts;
                 metric.Roles = um.Set.Roles?.ToList() ?? metric.Roles;
                 metric.Format = um.Set.Format ?? metric.Format;
                 ctx.Mark(metric.Id, keepLayer: !metricTenant);

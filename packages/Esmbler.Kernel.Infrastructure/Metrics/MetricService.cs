@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Esmbler.Kernel.Authorization;
 using Esmbler.Kernel.Configuration;
+using Esmbler.Kernel.Infrastructure.Alerts;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Infrastructure.Persistence;
@@ -19,8 +20,11 @@ namespace Esmbler.Kernel.Infrastructure.Metrics;
 /// <summary>The explorer query a figure counts: open <c>/records/{Entity}</c> with these filters and SLA conditions.</summary>
 public sealed record DrillQuery(string Entity, IReadOnlyList<string> Filters, IReadOnlyList<string> Sla, string Label);
 
-/// <summary>One bar or row. <see cref="Drill"/> is null only for preview figures, which count no records.</summary>
-public sealed record MetricBucketView(string Key, string Label, double? Value, long Count, DrillQuery? Drill, bool Capped = false);
+/// <summary>
+/// One bar or row. <see cref="Drill"/> is null for preview figures, which count no records, and for alert metrics,
+/// which open the Alerts page. <see cref="Other"/> marks the bucket that sums every group past the metric's limit.
+/// </summary>
+public sealed record MetricBucketView(string Key, string Label, double? Value, long Count, DrillQuery? Drill, bool Capped = false, bool Other = false);
 
 /// <summary>
 /// A metric evaluated for one viewer. <see cref="Status"/> is <c>ok</c>, <c>restricted</c> (the viewer may not see it;
@@ -42,7 +46,15 @@ public sealed record MetricResult(
     DrillQuery? Drill,
     DateTimeOffset AsOf,
     int ConfigRevision,
-    bool Preview = false);
+    bool Preview = false,
+    string Source = MetricSources.Records);
+
+/// <summary>What a figure counts: records (the default, with a drill into the explorer) or alerts about them.</summary>
+public static class MetricSources
+{
+    public const string Records = "records";
+    public const string Alerts = "alerts";
+}
 
 /// <summary>
 /// Figures of a dashboard. <see cref="Empty"/> means the viewer can see no records of the dashboard's entity yet; the
@@ -171,6 +183,11 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             return Empty("restricted");
         }
 
+        if (metric.Alerts is not null)
+        {
+            return await EvaluateAlertsAsync(session, config, revision, perms, entity, metric, timeZone, now, ct);
+        }
+
         // The records the figure covers, as explorer filters: the metric filter, the resolved date window (absolute
         // instants, so a drill opened later lists the same records), and has() for measured fields.
         var filters = new List<string>();
@@ -267,6 +284,25 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
                     var value = metric.Measure.Kind == MetricMeasures.Count ? shown : r.Value;
                     return new MetricBucketView(r.Key ?? string.Empty, label, value, shown, drill with { Filters = [.. filters, GroupFilter(groupField, r.Key)], Label = $"{metric.Label}: {label}" }, r.Count > QueryCompiler.MaxCount);
                 }));
+
+                // Every group past the limit, summed into "Other" through an explorer filter, so it drills like any bar.
+                if (more && OtherFilter(groupField, [.. rows.Take(group.Limit).Select(r => r.Key)], group.IncludeEmpty) is { } other)
+                {
+                    var oq = new QueryCompiler.Ctx(config, entity, perms);
+                    var owhere = QueryCompiler.Where(new RecordQuery { Entity = entity.Id, Filters = [.. filters, other], Sla = sla }, config, entity, perms, oq);
+                    var otherAggregate = Aggregate(metric, oq);
+                    await session.LimitAsync(ct);
+                    await using var cmd = session.Command($"SELECT count(*), {otherAggregate ?? "NULL"} FROM (SELECT * FROM kernel.records r WHERE {owhere} LIMIT {QueryCompiler.MaxCount + 1}) r", oq.Parameters);
+                    await using var reader = await cmd.ExecuteReaderAsync(ct);
+                    await reader.ReadAsync(ct);
+                    var n = reader.GetInt64(0);
+                    var shown = Math.Min(n, QueryCompiler.MaxCount);
+                    var otherValue = metric.Measure.Kind == MetricMeasures.Count ? shown : reader.IsDBNull(1) ? (double?)null : Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
+                    if (n > 0)
+                    {
+                        buckets.Add(new MetricBucketView(OtherKey, "Other", otherValue, shown, drill with { Filters = [.. filters, other], Label = $"{metric.Label}: Other" }, n > QueryCompiler.MaxCount, Other: true));
+                    }
+                }
             }
 
             await session.ReleaseAsync(ct);
@@ -276,6 +312,131 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
         {
             await session.RollbackAsync(ct);
             return Empty("timeout");
+        }
+    }
+
+    /// <summary>
+    /// An alert metric (time to acknowledge, time to resolve, alert counts): alerts about records of the entity that the
+    /// viewer can read (the explorer's WHERE clause over the joined record) and whose alerts they see (responders see
+    /// every alert, everyone else the alerts their groups own, they own, or are assigned), never suppressed ones.
+    /// Alerts not about a record are not counted. Figures open the Alerts page instead of the explorer.
+    /// </summary>
+    private async Task<MetricResult> EvaluateAlertsAsync(Session session, EffectiveConfig config, int revision, EffectivePermissions perms, EntitySpec entity, MetricSpec metric, string? timeZone, DateTimeOffset now, CancellationToken ct)
+    {
+        var spec = metric.Alerts!;
+        var q = new QueryCompiler.Ctx(config, entity, perms);
+        var conditions = new List<string>
+        {
+            QueryCompiler.Where(new RecordQuery { Entity = entity.Id, Filters = string.IsNullOrWhiteSpace(metric.Filter) ? [] : [metric.Filter] }, config, entity, perms, q),
+            $"a.entity_id = {q.Param(entity.Id)}",
+            "a.status <> 'suppressed'",
+        };
+        if (spec.Rules.Count > 0)
+        {
+            conditions.Add($"a.rule_id = ANY({q.Param(spec.Rules.ToArray())})");
+        }
+
+        if (spec.MinSeverity is { } min)
+        {
+            conditions.Add($"a.severity = ANY({q.Param(EventSeverities.All.SkipWhile(x => x != min).ToArray())})");
+        }
+
+        if (!AlertService.CanRespond(perms) || perms.Context.AgentId is not null)
+        {
+            var me = q.Param(perms.Context.PrincipalId.ToString());
+            conditions.Add($"(a.assignee::text = {me} OR a.owner_principal::text = {me} OR a.owner_group::text = ANY({q.Param(perms.Facts.Groups.Select(g => g.ToString()).ToArray())}))");
+        }
+
+        string Time(string field) => $"a.{field switch { MetricAlertFields.AcknowledgedAt => "acknowledged_at", MetricAlertFields.ResolvedAt => "resolved_at", _ => "opened_at" }}";
+        string Instant(DateTimeOffset i) => $"{q.Param(i.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture))}::timestamptz";
+        TimeZoneInfo? zone = null;
+        if (metric.DateRange is { } range)
+        {
+            zone = DateBuckets.Zone(range, config, timeZone);
+            var (start, end) = DateBuckets.Window(range, zone, now);
+            conditions.Add($"{Time(range.Field)} >= {Instant(start)} AND {Time(range.Field)} < {Instant(end)}");
+        }
+
+        string? aggregate = null;
+        if (metric.Measure.Kind == MetricMeasures.Duration)
+        {
+            var divisor = metric.Measure.Unit switch { "minutes" => 60, "days" => 86_400, _ => 3600 };
+            conditions.Add($"{Time(metric.Measure.From!)} IS NOT NULL AND {Time(metric.Measure.To!)} IS NOT NULL");
+            aggregate = $"avg(extract(epoch from ({Time(metric.Measure.To!)} - {Time(metric.Measure.From!)})) / {divisor})";
+        }
+
+        var from = "kernel.alerts a JOIN kernel.records r ON r.tenant_id = a.tenant_id AND r.environment_id = a.environment_id AND r.id = a.record_id";
+        var where = string.Join(" AND ", conditions);
+        MetricResult Done(double? value, long count, IReadOnlyList<MetricBucketView> buckets, bool more) =>
+            new(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, Math.Min(count, QueryCompiler.MaxCount), count > QueryCompiler.MaxCount, buckets, more, null, now, revision, Source: MetricSources.Alerts);
+
+        await session.SavepointAsync(ct);
+        try
+        {
+            long count;
+            double? value;
+            await session.LimitAsync(ct);
+            await using (var cmd = session.Command($"SELECT count(*), {aggregate ?? "NULL"} FROM (SELECT a.* FROM {from} WHERE {where} LIMIT {QueryCompiler.MaxCount + 1}) a", q.Parameters))
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                await reader.ReadAsync(ct);
+                count = reader.GetInt64(0);
+                value = aggregate is null ? Math.Min(count, QueryCompiler.MaxCount) : reader.IsDBNull(1) ? null : Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
+            }
+
+            var buckets = new List<MetricBucketView>();
+            var more = false;
+            if (metric.GroupBy is { Bucket: { } size } group && metric.DateRange is { } bucketRange && zone is not null)
+            {
+                var parts = DateBuckets.Split(bucketRange, size, zone, now);
+                var columns = parts.SelectMany(p =>
+                {
+                    var inBucket = $"{Time(group.Field)} >= {Instant(p.Start)} AND {Time(group.Field)} < {Instant(p.End)}";
+                    return new[] { $"count(*) FILTER (WHERE {inBucket})", aggregate is null ? "NULL" : $"{aggregate} FILTER (WHERE {inBucket})" };
+                }).ToList();
+                await session.LimitAsync(ct);
+                await using var cmd = session.Command($"SELECT {string.Join(", ", columns)} FROM {from} WHERE {where}", q.Parameters);
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                await reader.ReadAsync(ct);
+                for (var i = 0; i < parts.Count; i++)
+                {
+                    var n = Math.Min(reader.GetInt64(i * 2), QueryCompiler.MaxCount);
+                    double? v = aggregate is null ? n : reader.IsDBNull((i * 2) + 1) ? null : Convert.ToDouble(reader.GetValue((i * 2) + 1), CultureInfo.InvariantCulture);
+                    buckets.Add(new MetricBucketView(parts[i].Key, parts[i].Label, v, n, null));
+                }
+            }
+            else if (metric.GroupBy is { } byField)
+            {
+                var key = byField.Field == MetricAlertFields.Rule ? "a.rule_id" : "a.severity";
+                var rows = new List<(string Key, long Count, double? Value)>();
+                await session.LimitAsync(ct);
+                await using (var cmd = session.Command($"SELECT {key}, count(*) AS n, {aggregate ?? "NULL"} FROM {from} WHERE {where} GROUP BY 1 ORDER BY n DESC, 1 LIMIT {byField.Limit + 1}", q.Parameters))
+                await using (var reader = await cmd.ExecuteReaderAsync(ct))
+                {
+                    while (await reader.ReadAsync(ct))
+                    {
+                        var n = reader.GetInt64(1);
+                        rows.Add((reader.GetString(0), n, aggregate is null ? Math.Min(n, QueryCompiler.MaxCount) : reader.IsDBNull(2) ? null : Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture)));
+                    }
+                }
+
+                more = rows.Count > byField.Limit;
+                buckets.AddRange(rows.Take(byField.Limit).Select(r => new MetricBucketView(
+                    r.Key,
+                    byField.Field == MetricAlertFields.Rule ? config.FindAlertRule(r.Key)?.Label ?? r.Key : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(r.Key),
+                    r.Value,
+                    Math.Min(r.Count, QueryCompiler.MaxCount),
+                    null,
+                    r.Count > QueryCompiler.MaxCount)));
+            }
+
+            await session.ReleaseAsync(ct);
+            return Done(value, count, buckets, more);
+        }
+        catch (Exception ex) when (ex is BudgetExceededException or PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
+        {
+            await session.RollbackAsync(ct);
+            return new MetricResult(metric.Id, metric.Label, "timeout", metric.Measure.Kind, metric.Format, Unit(metric), null, 0, false, [], false, null, now, revision, Source: MetricSources.Alerts);
         }
     }
 
@@ -311,7 +472,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 
         var count = buckets.Count > 0 ? (long)buckets.Sum(b => b.Count) : (long)Sample(0) + 3;
         double? value = metric.Measure.Kind == MetricMeasures.Count ? count : metric.Measure.Kind == MetricMeasures.Duration ? 4 + (seed / 2.0) : Sample(1);
-        return new MetricResult(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, count, false, buckets, false, null, now, revision, Preview: true);
+        return new MetricResult(metric.Id, metric.Label, "ok", metric.Measure.Kind, metric.Format, Unit(metric), value, count, false, buckets, false, null, now, revision, Preview: true, Source: metric.Alerts is null ? MetricSources.Records : MetricSources.Alerts);
     }
 
     /// <summary>Whether the viewer may not see the figure at all (no values are computed for them).</summary>
@@ -327,7 +488,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             return true;
         }
 
-        var reads = MeasuredFields(metric).Concat(new[] { metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>()).ToList();
+        var reads = metric.Alerts is not null ? [] : MeasuredFields(metric).Concat(new[] { metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>()).ToList();
         if (metric.Filter is { } filter)
         {
             try
@@ -378,12 +539,44 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 
     private static string RecordsFormat(DateTimeOffset instant) => Kernel.Records.FieldNormalizer.FormatInstant(instant);
 
+    /// <summary>The key of the bucket that sums the groups past a metric's limit.</summary>
+    public const string OtherKey = "__other";
+
+    /// <summary>
+    /// The explorer filter for every value not shown as its own group (and no value, unless records without one are not
+    /// counted or already have their group). Null when it would not fit the explorer's filter limits (1,000 characters,
+    /// such as 25 people or teams): the figure then shows its groups without an "Other" bucket.
+    /// </summary>
+    public static string? OtherFilter(FieldSpec field, IReadOnlyList<string?> shown, bool includeEmpty)
+    {
+        var keys = shown.OfType<string>().ToList();
+        var parts = new List<string>();
+        if (field.Type == FieldTypes.Toggle)
+        {
+            parts.AddRange(keys.Select(k => $"!({GroupFilter(field, k)})"));
+        }
+        else if (keys.Count > 0)
+        {
+            parts.Add($"!(record.{field.Key} in [{string.Join(", ", keys.Select(Quote))}])");
+        }
+
+        if (!includeEmpty || shown.Contains(null))
+        {
+            parts.Add($"record.{field.Key} != null");
+        }
+
+        var filter = string.Join(" && ", parts);
+        return parts.Count > 0 && filter.Length <= 1000 ? filter : null;
+    }
+
+    private static string Quote(string key) => $"'{key.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal)}'";
+
     /// <summary>The explorer filter for one group value; it compiles to the same SQL value the group key uses.</summary>
     public static string GroupFilter(FieldSpec field, string? key) => key switch
     {
         null => $"record.{field.Key} == null",
         _ when field.Type == FieldTypes.Toggle => $"record.{field.Key} == {(key is "true" or "True" ? "true" : "false")}",
-        _ => $"record.{field.Key} == '{key.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal)}'",
+        _ => $"record.{field.Key} == {Quote(key)}",
     };
 
     private static string GroupLabel(SpecCatalog config, FieldSpec field, string? key, IReadOnlyDictionary<string, string> names)

@@ -2187,6 +2187,26 @@
                 "policy"
               ]
             },
+            "alerts": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "minSeverity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
             "roles": {
               "type": "array",
               "items": {
@@ -2353,6 +2373,23 @@
               "required": [
                 "policy"
               ]
+            },
+            "alerts": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "rules": {
+                  "$ref": "#/anyOf/34/properties/metric/properties/alerts/properties/rules"
+                },
+                "minSeverity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
             },
             "roles": {
               "type": [

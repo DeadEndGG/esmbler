@@ -744,6 +744,9 @@ public sealed class MetricPatch
 
     public MetricSlaSpec? Sla { get; set; }
 
+    /// <summary>Makes it an alert metric, or changes which alerts it counts.</summary>
+    public MetricAlertSpec? Alerts { get; set; }
+
     public List<string>? Roles { get; set; }
 
     public string? Format { get; set; }

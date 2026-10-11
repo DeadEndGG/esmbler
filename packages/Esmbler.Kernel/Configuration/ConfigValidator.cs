@@ -1220,8 +1220,16 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         }
 
         var measure = metric.Measure;
-        switch (measure.Kind)
+        var alerts = metric.Alerts is not null;
+        if (alerts)
         {
+            ValidateAlertMetric(config, metric, d);
+        }
+
+        switch (alerts ? null : measure.Kind)
+        {
+            case null:
+                break;
             case MetricMeasures.Count:
                 break;
             case MetricMeasures.Sum or MetricMeasures.Avg or MetricMeasures.Min or MetricMeasures.Max:
@@ -1261,7 +1269,14 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
 
         if (metric.DateRange is { } range)
         {
-            if (Field(range.Field, "limits dates by") is { } dateField && !DateTypes.Contains(dateField.Type))
+            if (alerts)
+            {
+                if (!MetricAlertFields.Times.Contains(range.Field))
+                {
+                    d.Add(Diagnostic.Error("config.bad_date_range", $"Alert metric '{metric.Label}' limits dates by '{range.Field}'.", metric.Id, string.Join(", ", MetricAlertFields.Times)));
+                }
+            }
+            else if (Field(range.Field, "limits dates by") is { } dateField && !DateTypes.Contains(dateField.Type))
             {
                 d.Add(Diagnostic.Error("config.bad_date_range", $"Metric '{metric.Label}' limits dates by '{dateField.Key}', which is a {dateField.Type} field.", metric.Id, "Use a date or date and time field."));
             }
@@ -1282,7 +1297,24 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
             }
         }
 
-        if (metric.GroupBy is { } group && Field(group.Field, "groups by") is { } groupField)
+        if (alerts && metric.GroupBy is { } alertGroup)
+        {
+            var isTime = MetricAlertFields.Times.Contains(alertGroup.Field);
+            if (alertGroup.Bucket is null ? !MetricAlertFields.Groups.Contains(alertGroup.Field) : !isTime || !MetricBuckets.All.Contains(alertGroup.Bucket) || metric.DateRange is null)
+            {
+                d.Add(Diagnostic.Error("config.bad_group", $"Alert metric '{metric.Label}' groups by '{alertGroup.Field}'{(alertGroup.Bucket is null ? string.Empty : $" in {alertGroup.Bucket} buckets")}.", metric.Id, "Group alerts by severity or rule, or bucket opened_at, acknowledged_at or resolved_at by day, week or month with a date range."));
+            }
+            else if (alertGroup.Bucket is { } alertBucket && Buckets(metric.DateRange!, alertBucket) > 52)
+            {
+                d.Add(Diagnostic.Error("config.too_large", $"Metric '{metric.Label}' would draw {Buckets(metric.DateRange!, alertBucket)} {alertBucket} buckets; at most 52.", metric.Id, "Use a coarser bucket or a shorter range."));
+            }
+
+            if (alertGroup.Limit is < 1 or > 25)
+            {
+                d.Add(Diagnostic.Error("config.too_large", $"Metric '{metric.Label}' shows {alertGroup.Limit} groups; use 1–25.", metric.Id));
+            }
+        }
+        else if (metric.GroupBy is { } group && Field(group.Field, "groups by") is { } groupField)
         {
             if (group.Bucket is null && !IsGroupable(groupField))
             {
@@ -1309,7 +1341,11 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
 
         if (metric.Sla is { } sla)
         {
-            if (config.FindSlaPolicy(sla.Policy) is not { } policy)
+            if (alerts)
+            {
+                d.Add(Diagnostic.Error("config.bad_sla", $"Alert metric '{metric.Label}' cannot also have an SLA condition.", metric.Id, "Count alerts of an SLA alert rule instead, such as core.tickets.alert.sla_breached."));
+            }
+            else if (config.FindSlaPolicy(sla.Policy) is not { } policy)
             {
                 d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' counts breaches of unknown SLA policy '{sla.Policy}'.", metric.Id, Expression.Suggest(sla.Policy, config.SlaPolicies.Select(p => p.Id))));
             }
@@ -1322,9 +1358,9 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                 d.Add(Diagnostic.Error("config.not_found", $"SLA policy '{policy.Label}' has no target '{target}'.", metric.Id, Expression.Suggest(target, policy.Targets.Select(t => t.Id))));
             }
 
-            if (sla.State != "breached")
+            if (!MetricSlaStates.All.Contains(sla.State))
             {
-                d.Add(Diagnostic.Error("config.bad_sla", $"Metric '{metric.Label}' counts SLA state '{sla.State}'; only 'breached' is supported.", metric.Id));
+                d.Add(Diagnostic.Error("config.bad_sla", $"Metric '{metric.Label}' counts SLA state '{sla.State}'.", metric.Id, Expression.Suggest(sla.State, MetricSlaStates.All) ?? string.Join(", ", MetricSlaStates.All)));
             }
         }
 
@@ -1339,7 +1375,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         }
 
         // Fields some people may not see make the figure restricted for them (it is never shown with their data).
-        var reads = new[] { measure.Field, measure.From, measure.To, metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>().ToList();
+        var reads = alerts ? [] : new[] { measure.Field, measure.From, measure.To, metric.GroupBy?.Field, metric.DateRange?.Field }.OfType<string>().ToList();
         if (metric.Filter is not null)
         {
             try
@@ -1356,6 +1392,43 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         if (hiddenFor.Count > 0)
         {
             d.Add(Diagnostic.Warning("metric.restricted_field", $"Metric '{metric.Label}' reads fields that {string.Join(", ", hiddenFor)} cannot see; they see the figure as restricted.", metric.Id));
+        }
+    }
+
+    /// <summary>An alert metric: rules, severity and its measure over alert fields (time to acknowledge or to resolve).</summary>
+    private static void ValidateAlertMetric(SpecCatalog config, MetricSpec metric, List<Diagnostic> d)
+    {
+        var spec = metric.Alerts!;
+        foreach (var rule in spec.Rules.Where(r => config.AlertRules.All(x => x.Id != r)))
+        {
+            d.Add(Diagnostic.Error("config.not_found", $"Metric '{metric.Label}' counts alerts of unknown rule '{rule}'.", metric.Id, Expression.Suggest(rule, config.AlertRules.Select(r => r.Id))));
+        }
+
+        if (spec.MinSeverity is { } min && !EventSeverities.All.Contains(min))
+        {
+            d.Add(Diagnostic.Error("config.bad_severity", $"Metric '{metric.Label}' minimum severity '{min}' is unknown.", metric.Id, string.Join(", ", EventSeverities.All)));
+        }
+
+        var measure = metric.Measure;
+        switch (measure.Kind)
+        {
+            case MetricMeasures.Count:
+                break;
+            case MetricMeasures.Duration:
+                if (measure.From is null || measure.To is null || !MetricAlertFields.Times.Contains(measure.From) || !MetricAlertFields.Times.Contains(measure.To) || measure.From == measure.To)
+                {
+                    d.Add(Diagnostic.Error("config.bad_measure", $"Alert metric '{metric.Label}' measures from '{measure.From}' to '{measure.To}'.", metric.Id, "Measure from opened_at to acknowledged_at (time to acknowledge) or to resolved_at (time to resolve)."));
+                }
+
+                if (measure.Unit is not ("minutes" or "hours" or "days"))
+                {
+                    d.Add(Diagnostic.Error("config.bad_measure", $"Metric '{metric.Label}' has duration unit '{measure.Unit}'.", metric.Id, "minutes, hours or days"));
+                }
+
+                break;
+            default:
+                d.Add(Diagnostic.Error("config.bad_measure", $"Alert metric '{metric.Label}' has measure '{measure.Kind}'.", metric.Id, "count or duration"));
+                break;
         }
     }
 

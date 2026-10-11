@@ -33,6 +33,12 @@ const TONES: Record<string, string> = { info: 'blue', success: 'green', warning:
         <span class="value">{{ value() }}</span>
         <span class="hint"><esm-icon name="arrow-up-right" [size]="13" /> View records</span>
       </a>
+    } @else if (m?.status === 'ok' && m?.source === 'alerts' && !m?.preview && node().props['drill'] !== false) {
+      <a class="tile" [class]="'tone-' + tone()" routerLink="/alerts" [attr.aria-label]="label + ': ' + value() + '. Open alerts'">
+        <span class="label">{{ label }}</span>
+        <span class="value">{{ value() }}</span>
+        <span class="hint"><esm-icon name="arrow-up-right" [size]="13" /> View alerts</span>
+      </a>
     } @else {
       <div class="tile" [class]="'tone-' + tone()" [attr.aria-busy]="!m && ctx?.loading()">
         <span class="label">{{ label }}</span>
@@ -150,7 +156,7 @@ export class MetricBucketTable {
                   <span class="col-fill" [style.height.%]="pct(b)"></span>
                 </a>
               } @else {
-                <span class="col-bar" [attr.aria-label]="b.label + ': ' + display(m, b) + ' (sample)'" role="img">
+                <span class="col-bar" [attr.aria-label]="b.label + ': ' + display(m, b) + (m.preview ? ' (sample)' : '')" role="img">
                   <span class="col-value">{{ display(m, b) }}</span>
                   <span class="col-fill" [style.height.%]="pct(b)"></span>
                 </span>
@@ -179,7 +185,9 @@ export class MetricBucketTable {
             </li>
           }
         </ul>
-        @if (m.moreGroups) { <p class="muted more">Showing the {{ m.buckets.length }} largest groups.</p> }
+        @if (m.moreGroups) {
+          <p class="muted more">@if (m.buckets[m.buckets.length - 1]?.other) { Smaller groups are added up in Other. } @else { Showing the {{ m.buckets.length }} largest groups. }</p>
+        }
       }
       @if (m?.status === 'ok' && table()) { <esm-metric-buckets [metric]="m!" /> }
     </section>

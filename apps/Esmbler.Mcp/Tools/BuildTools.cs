@@ -185,11 +185,23 @@ public sealed class MetricInput
     [Description("day (default), week or month.")]
     public string? LastUnit { get; set; }
 
-    [Description("Count only records with a recorded breach of this SLA policy (see list_sla_policies).")]
+    [Description("Count only records with a timer of this SLA policy in sla_state (see list_sla_policies).")]
     public string? SlaPolicy { get; set; }
 
     [Description("Limit the SLA condition to one target, e.g. resolution.")]
     public string? SlaTarget { get; set; }
+
+    [Description("breached (default: a breach was recorded) or at_risk (warned, still running, not breached).")]
+    public string? SlaState { get; set; }
+
+    [Description("Count alerts about these records instead of the records, e.g. for time to acknowledge (measure duration from opened_at to acknowledged_at) or time to resolve (to resolved_at). Alert metrics date and group by opened_at, acknowledged_at, resolved_at, severity or rule.")]
+    public bool? CountAlerts { get; set; }
+
+    [Description("Alert metrics: only alerts of these rules (see list_alert_rules); omit for every rule.")]
+    public List<string>? AlertRules { get; set; }
+
+    [Description("Alert metrics: only alerts at least this severe (info, low, medium, high, critical).")]
+    public string? AlertMinSeverity { get; set; }
 }
 
 public sealed class CatalogTaskInput
@@ -763,7 +775,8 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
                 Measure = options is null ? null : current.Measure,
                 GroupBy = options?.GroupBy is null && options?.GroupBucket is null && options?.GroupLimit is null ? null : current.GroupBy,
                 DateRange = options?.DateField is null && options?.Last is null && options?.LastUnit is null ? null : current.DateRange,
-                Sla = options?.SlaPolicy is null && options?.SlaTarget is null ? null : current.Sla,
+                Sla = options?.SlaPolicy is null && options?.SlaTarget is null && options?.SlaState is null ? null : current.Sla,
+                Alerts = options?.CountAlerts is null && options?.AlertRules is null && options?.AlertMinSeverity is null ? null : current.Alerts,
             };
             return await ApplyAllAsync(ctx, [new UpdateMetric { Metric = metric, Set = set }], expected_version);
         });
@@ -852,12 +865,27 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             };
         }
 
-        if (o.SlaPolicy is not null || o.SlaTarget is not null)
+        if (o.SlaPolicy is not null || o.SlaTarget is not null || o.SlaState is not null)
         {
             metric.Sla = new MetricSlaSpec
             {
-                Policy = o.SlaPolicy ?? metric.Sla?.Policy ?? throw new KernelException("invalid_sla", "sla_target needs sla_policy.", 400, "sla_policy", "Name the SLA policy (list_sla_policies)."),
+                Policy = o.SlaPolicy ?? metric.Sla?.Policy ?? throw new KernelException("invalid_sla", "sla_target and sla_state need sla_policy.", 400, "sla_policy", "Name the SLA policy (list_sla_policies)."),
                 Target = o.SlaTarget ?? metric.Sla?.Target,
+                State = o.SlaState ?? metric.Sla?.State ?? MetricSlaStates.Breached,
+            };
+        }
+
+        if (o.CountAlerts == false)
+        {
+            throw new KernelException("invalid_alerts", "An alert metric cannot become a record metric.", 400, "count_alerts", "Add a new metric that counts records instead.");
+        }
+
+        if (o.CountAlerts == true || o.AlertRules is not null || o.AlertMinSeverity is not null)
+        {
+            metric.Alerts = new MetricAlertSpec
+            {
+                Rules = o.AlertRules ?? metric.Alerts?.Rules ?? [],
+                MinSeverity = o.AlertMinSeverity ?? metric.Alerts?.MinSeverity,
             };
         }
     }

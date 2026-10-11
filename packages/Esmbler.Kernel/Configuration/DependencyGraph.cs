@@ -164,19 +164,30 @@ public sealed partial class DependencyGraph
         {
             g.Add(metric.Id, metric.Entity, "metric_entity");
             g.AddExpression(metric.Id, metric.Entity, metric.Filter, "metric_filter");
-            foreach (var key in new[] { metric.Measure.Field, metric.Measure.From, metric.Measure.To }.OfType<string>())
+            foreach (var rule in metric.Alerts?.Rules ?? [])
+            {
+                g.Add(metric.Id, rule, "metric_alert_rule");
+            }
+
+            // An alert metric measures, groups and dates by alert fields, not the entity's fields.
+            var fields = metric.Alerts is null;
+            foreach (var key in new[] { metric.Measure.Field, metric.Measure.From, metric.Measure.To }.OfType<string>().Where(_ => fields))
             {
                 g.Add(metric.Id, $"{metric.Entity}/{key}", "metric_measure");
             }
 
-            if (metric.GroupBy is { } group)
+            if (metric.GroupBy is { } group && fields)
             {
                 g.Add(metric.Id, $"{metric.Entity}/{group.Field}", "metric_group");
             }
 
             if (metric.DateRange is { } range)
             {
-                g.Add(metric.Id, $"{metric.Entity}/{range.Field}", "metric_date");
+                if (fields)
+                {
+                    g.Add(metric.Id, $"{metric.Entity}/{range.Field}", "metric_date");
+                }
+
                 if (range.Calendar is { } calendar)
                 {
                     g.Add(metric.Id, calendar, "metric_calendar");

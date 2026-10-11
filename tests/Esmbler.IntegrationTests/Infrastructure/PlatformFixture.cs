@@ -45,7 +45,7 @@ public sealed class PlatformFixture : IAsyncLifetime
         string Email(string user) => $"{user}@{slug}.example";
 
         // Approvers (ADR 0016) exist from Tickets 1.3.0; on older releases they are plain members.
-        string[] Approver(params string[] roles) => string.CompareOrdinal(ticketsVersion, "1.3.0") >= 0 ? [.. roles, "core.tickets.approver"] : roles;
+        string[] Approver(params string[] roles) => Esmbler.Sdk.Modules.SemVer.Parse(ticketsVersion) >= Esmbler.Sdk.Modules.SemVer.Parse("1.3.0") ? [.. roles, "core.tickets.approver"] : roles;
         var tenant = await Get<ProvisioningService>().ProvisionAsync(new TenantSeed(
             slug,
             slug,

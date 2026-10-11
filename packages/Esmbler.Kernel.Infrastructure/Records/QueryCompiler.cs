@@ -25,17 +25,20 @@ public sealed class RecordQuery
 
     public int PageSize { get; init; } = 25;
 
-    /// <summary>Only records with a recorded SLA breach (drill-down from SLA metrics, ADR 0019).</summary>
+    /// <summary>Only records with an SLA timer in a state: breached or at risk (drill-down from SLA metrics, ADR 0019).</summary>
     public IReadOnlyList<SlaFilter> Sla { get; init; } = [];
 
     /// <summary>Group rows by this field: the group key is sorted first, in choice order (explorer grouping).</summary>
     public string? GroupBy { get; init; }
 }
 
-/// <summary>An SLA condition in a query: records whose timer of <see cref="Policy"/> (and <see cref="Target"/>) recorded a breach.</summary>
+/// <summary>
+/// An SLA condition in a query: records whose timer of <see cref="Policy"/> (and <see cref="Target"/>) recorded a breach
+/// (<c>breached</c>), or is open with a recorded warning and no breach (<c>at_risk</c>).
+/// </summary>
 public sealed record SlaFilter(string Policy, string? Target, string State = "breached")
 {
-    /// <summary>Parses <c>policy[/target]:breached</c>, the form used in explorer URLs.</summary>
+    /// <summary>Parses <c>policy[/target]:state</c>, the form used in explorer URLs.</summary>
     public static SlaFilter Parse(string value)
     {
         var colon = value.LastIndexOf(':');
@@ -108,17 +111,24 @@ public sealed class QueryCompiler
         return string.Join(" AND ", where);
     }
 
-    /// <summary>Records of the entity whose timer of the policy (and target) recorded a breach; RLS scopes the timers.</summary>
+    /// <summary>
+    /// Records of the entity whose timer of the policy (and target) is in the state; RLS scopes the timers. A breach
+    /// counts once recorded, even after the clock stops (ADR 0018). At risk means a recorded warning on a running or
+    /// paused timer that has not breached: the same moment the at-risk alert is raised, never a guess from the clock.
+    /// </summary>
     private static string SlaPredicate(SlaFilter sla, SpecCatalog config, EntitySpec entity, Ctx ctx)
     {
         var policy = config.FindSlaPolicy(sla.Policy);
-        if (policy is null || policy.Entity != entity.Id || (sla.Target is { } target && policy.FindTarget(target) is null) || sla.State != "breached")
+        if (policy is null || policy.Entity != entity.Id || (sla.Target is { } target && policy.FindTarget(target) is null) || !MetricSlaStates.All.Contains(sla.State))
         {
-            throw new KernelException("invalid_filter", $"'{sla}' is not an SLA condition of {entity.Label}.", 400, sla.ToString(), "Use <policy>[/<target>]:breached.");
+            throw new KernelException("invalid_filter", $"'{sla}' is not an SLA condition of {entity.Label}.", 400, sla.ToString(), "Use <policy>[/<target>]:breached or :at_risk.");
         }
 
         var targetSql = sla.Target is null ? string.Empty : $" AND t.target_id = {ctx.Param(sla.Target)}";
-        return $"EXISTS (SELECT 1 FROM kernel.sla_timers t WHERE t.tenant_id = r.tenant_id AND t.environment_id = r.environment_id AND t.record_id = r.id AND t.policy_id = {ctx.Param(sla.Policy)}{targetSql} AND t.status <> 'cancelled' AND t.breached_at IS NOT NULL)";
+        var stateSql = sla.State == MetricSlaStates.AtRisk
+            ? "t.status IN ('running', 'paused') AND t.warned_at IS NOT NULL AND t.breached_at IS NULL"
+            : "t.status <> 'cancelled' AND t.breached_at IS NOT NULL";
+        return $"EXISTS (SELECT 1 FROM kernel.sla_timers t WHERE t.tenant_id = r.tenant_id AND t.environment_id = r.environment_id AND t.record_id = r.id AND t.policy_id = {ctx.Param(sla.Policy)}{targetSql} AND {stateSql})";
     }
 
     /// <summary>

@@ -25,8 +25,15 @@ public sealed class MetricSpec
 
     public MetricDateRangeSpec? DateRange { get; set; }
 
-    /// <summary>Only records with an SLA breach of this policy (and target).</summary>
+    /// <summary>Only records with an SLA timer of this policy (and target) in a state: breached or at risk.</summary>
     public MetricSlaSpec? Sla { get; set; }
+
+    /// <summary>
+    /// Counts alerts about the entity's records instead of the records (time to acknowledge, time to resolve). The
+    /// filter still applies to the record each alert is about; measures, date ranges and groups use alert fields
+    /// (<see cref="MetricAlertFields"/>).
+    /// </summary>
+    public MetricAlertSpec? Alerts { get; set; }
 
     /// <summary>Roles that see the figure; empty means everyone who can read the entity. Never widens record access.</summary>
     public List<string> Roles { get; set; } = [];
@@ -85,7 +92,7 @@ public sealed class MetricDateRangeSpec
     public string? TimeZone { get; set; }
 }
 
-/// <summary>Restricts a metric to records with an SLA breach.</summary>
+/// <summary>Restricts a metric to records whose SLA timer is in a state.</summary>
 public sealed class MetricSlaSpec
 {
     public required string Policy { get; set; }
@@ -93,8 +100,45 @@ public sealed class MetricSlaSpec
     /// <summary>A target of the policy; null means any target.</summary>
     public string? Target { get; set; }
 
-    /// <summary><c>breached</c>: a breach was recorded (and stays recorded).</summary>
-    public string State { get; set; } = "breached";
+    /// <summary>
+    /// <c>breached</c>: a breach was recorded (and stays recorded). <c>at_risk</c>: the timer is still running or paused,
+    /// its warning was recorded and it has not breached (see <see cref="MetricSlaStates"/>).
+    /// </summary>
+    public string State { get; set; } = MetricSlaStates.Breached;
+}
+
+public static class MetricSlaStates
+{
+    public const string Breached = "breached";
+    public const string AtRisk = "at_risk";
+
+    public static IReadOnlyList<string> All { get; } = [Breached, AtRisk];
+}
+
+/// <summary>Which alerts an alert metric counts: alerts about records of the metric's entity, never suppressed ones.</summary>
+public sealed class MetricAlertSpec
+{
+    /// <summary>Alert rules counted; empty means every rule.</summary>
+    public List<string> Rules { get; set; } = [];
+
+    /// <summary>Only alerts at least this severe (info, low, medium, high, critical).</summary>
+    public string? MinSeverity { get; set; }
+}
+
+/// <summary>Fields an alert metric measures, dates and groups by.</summary>
+public static class MetricAlertFields
+{
+    public const string OpenedAt = "opened_at";
+    public const string AcknowledgedAt = "acknowledged_at";
+    public const string ResolvedAt = "resolved_at";
+    public const string Severity = "severity";
+    public const string Rule = "rule";
+
+    /// <summary>Instants: duration ends, date ranges and date buckets.</summary>
+    public static IReadOnlyList<string> Times { get; } = [OpenedAt, AcknowledgedAt, ResolvedAt];
+
+    /// <summary>Groups without a bucket.</summary>
+    public static IReadOnlyList<string> Groups { get; } = [Severity, Rule];
 }
 
 public static class MetricMeasures

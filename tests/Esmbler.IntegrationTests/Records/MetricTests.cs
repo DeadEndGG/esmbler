@@ -267,4 +267,170 @@ public class MetricTests(PlatformFixture f)
         Assert.Equal(1, trend.Buckets.Sum(b => b.Count));
         Assert.Equal(1, trend.Buckets[^1].Count); // resolved this week
     }
+
+    [Fact]
+    public async Task Groups_past_the_limit_sum_into_an_other_bucket_that_drills_like_any_bar()
+    {
+        var t = await TenantWithTicketsAsync("meto");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyBatchAsync(admin,
+        [
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_top_category", Label = "Top category", Entity = Ticket, GroupBy = new MetricGroupSpec { Field = "category", Limit = 1 } } },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_top_category_set", Label = "Top category (set)", Entity = Ticket, GroupBy = new MetricGroupSpec { Field = "category", Limit = 1, IncludeEmpty = false } } },
+        ], draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+        var agent = f.As(t, "agent");
+        await Records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "No category", ["requester"] = t.Users["dana"].ToString() }, null, null, default);
+
+        // The largest category is shown; every other category and the ticket without one sum into Other.
+        var top = await Metrics.EvaluateAsync(agent, "tenant__metric_top_category", null, default);
+        Assert.True(top.MoreGroups);
+        Assert.Equal([false, true], top.Buckets.Select(b => b.Other));
+        Assert.Equal(("Other", MetricService.OtherKey), (top.Buckets[1].Label, top.Buckets[1].Key));
+        Assert.Equal(top.Count, top.Buckets.Sum(b => b.Count));
+        foreach (var bucket in top.Buckets)
+        {
+            Assert.Equal(bucket.Count, await ExplorerTotalAsync(agent, bucket.Drill!));
+        }
+
+        // Without empty values, Other leaves the uncategorized ticket out, like the bars do.
+        var set = await Metrics.EvaluateAsync(agent, "tenant__metric_top_category_set", null, default);
+        var other = Assert.Single(set.Buckets, b => b.Other);
+        Assert.Equal(top.Buckets[1].Count - 1, other.Count);
+        Assert.Equal(other.Count, await ExplorerTotalAsync(agent, other.Drill!));
+
+        // A requester's Other counts only their own tickets.
+        var dana = f.As(t, "dana");
+        foreach (var bucket in (await Metrics.EvaluateAsync(dana, "tenant__metric_top_category", null, default)).Buckets)
+        {
+            Assert.Equal(bucket.Count, await ExplorerTotalAsync(dana, bucket.Drill!));
+        }
+    }
+
+    [Fact]
+    public async Task At_risk_counts_open_timers_with_a_recorded_warning_until_they_breach()
+    {
+        var t = await TenantWithTicketsAsync("metr");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyAsync(admin, new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_at_risk", Label = "At risk", Entity = Ticket, Sla = new MetricSlaSpec { Policy = "core.tickets.sla.ticket", State = MetricSlaStates.AtRisk } } }, draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+        var agent = f.As(t, "agent");
+        Assert.Equal(0, (await Metrics.EvaluateAsync(agent, "tenant__metric_at_risk", null, default)).Count);
+
+        // The P1 ticket's response clock recorded its warning (as the sla.check job does when the warning time passes).
+        var db = f.Get<Database>();
+        var timer = await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.Where(s => s.TargetId == "response" && s.GoalSeconds == 1800).Select(s => s.Id).FirstAsync(), default);
+        await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.Where(s => s.Id == timer).ExecuteUpdateAsync(s => s.SetProperty(r => r.WarnedAt, DateTimeOffset.UtcNow)), default);
+        var atRisk = await Metrics.EvaluateAsync(agent, "tenant__metric_at_risk", null, default);
+        Assert.Equal(1, atRisk.Count);
+        Assert.Equal(["core.tickets.sla.ticket:at_risk"], atRisk.Drill!.Sla);
+        var listed = await Records.QueryAsync(agent, new RecordQuery { Entity = Ticket, Filters = atRisk.Drill.Filters, Sla = [.. atRisk.Drill.Sla.Select(SlaFilter.Parse)] }, default);
+        Assert.Equal("VPN down", Assert.Single(listed.Items).Data["title"]!.GetValue<string>());
+
+        // Once it breaches it is no longer at risk; a bad state in a URL is refused.
+        await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.Where(s => s.Id == timer).ExecuteUpdateAsync(s => s.SetProperty(r => r.BreachedAt, DateTimeOffset.UtcNow)), default);
+        Assert.Equal(0, (await Metrics.EvaluateAsync(agent, "tenant__metric_at_risk", null, default)).Count);
+        var bad = await Assert.ThrowsAsync<KernelException>(() => Records.QueryAsync(agent, new RecordQuery { Entity = Ticket, Sla = [SlaFilter.Parse("core.tickets.sla.ticket:late")] }, default));
+        Assert.Equal("invalid_filter", bad.Code);
+    }
+
+    [Fact]
+    public async Task Time_to_acknowledge_and_resolve_alerts_counts_only_alerts_the_viewer_sees_about_records_they_read()
+    {
+        // KI-041, REQ-OPS-004: MTTA and MTTR over alerts, permission-aware like every figure.
+        var t = await f.NewTenantAsync("meta2", "1.9.0");
+        var admin = f.As(t, "admin");
+        var agent = f.As(t, "agent");
+        var dana = t.Users["dana"];
+        var vpn = await Records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "VPN down", ["requester"] = dana.ToString(), ["impact"] = "high" }, null, null, default);
+        var mouse = await Records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "New mouse", ["requester"] = dana.ToString() }, null, null, default);
+        var password = await Records.CreateAsync(f.As(t, "jordan"), Ticket, new JsonObject { ["title"] = "Password reset" }, null, null, default);
+
+        var drafts = f.Get<DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyBatchAsync(admin,
+        [
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_mtta", Label = "Time to acknowledge", Entity = Ticket, Alerts = new MetricAlertSpec(), Measure = new MetricMeasureSpec { Kind = MetricMeasures.Duration, From = MetricAlertFields.OpenedAt, To = MetricAlertFields.AcknowledgedAt, Unit = "minutes" } } },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_mttr", Label = "Time to resolve breaches", Entity = Ticket, Alerts = new MetricAlertSpec { Rules = ["core.tickets.alert.sla_breached"] }, Measure = new MetricMeasureSpec { Kind = MetricMeasures.Duration, From = MetricAlertFields.OpenedAt, To = MetricAlertFields.ResolvedAt }, GroupBy = new MetricGroupSpec { Field = MetricAlertFields.Severity } } },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_alerts_by_rule", Label = "Alerts by rule", Entity = Ticket, Alerts = new MetricAlertSpec { MinSeverity = EventSeverities.Medium }, GroupBy = new MetricGroupSpec { Field = MetricAlertFields.Rule } } },
+            new AddMetric { Metric = new MetricSpec { Id = "tenant__metric_alert_trend", Label = "Alerts opened", Entity = Ticket, Alerts = new MetricAlertSpec(), DateRange = new MetricDateRangeSpec { Field = MetricAlertFields.OpenedAt, Last = 7, TimeZone = "UTC" }, GroupBy = new MetricGroupSpec { Field = MetricAlertFields.OpenedAt, Bucket = MetricBuckets.Day } } },
+        ], draft.Version, "ui", default);
+        await f.Get<PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+
+        var opened = DateTimeOffset.UtcNow.AddHours(-3);
+        AlertRow Alert(RecordView record, string rule, string severity, int? ackMinutes, int? resolveMinutes, Guid? group = null, Guid? owner = null, string status = AlertStatuses.Acknowledged) => new()
+        {
+            TenantId = t.TenantId,
+            EnvironmentId = t.Environments["prod"],
+            Id = Guid.NewGuid(),
+            RuleId = rule,
+            DedupKey = Guid.NewGuid().ToString("N"),
+            Status = resolveMinutes is null ? status : AlertStatuses.Resolved,
+            Severity = severity,
+            Title = "Alert",
+            EntityId = Ticket,
+            RecordId = record.Id,
+            OwnerGroup = group,
+            OwnerPrincipal = owner,
+            FirstEventId = Guid.NewGuid(),
+            LastEventId = Guid.NewGuid(),
+            OpenedAt = opened,
+            LastOccurredAt = opened,
+            AcknowledgedAt = ackMinutes is { } a ? opened.AddMinutes(a) : null,
+            ResolvedAt = resolveMinutes is { } r ? opened.AddMinutes(r) : null,
+            ConfigRevision = 1,
+        };
+        const string Breached = "core.tickets.alert.sla_breached", AtRisk = "core.tickets.alert.sla_at_risk";
+        var network = t.Groups["network"];
+        var desk = t.Groups["service_desk"];
+        await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, async db =>
+        {
+            db.Alerts.AddRange(
+                Alert(vpn, Breached, EventSeverities.High, 10, 120, group: network),
+                Alert(vpn, AtRisk, EventSeverities.Medium, 30, null, group: desk),
+                Alert(vpn, Breached, EventSeverities.Critical, 50, null),
+                Alert(mouse, AtRisk, EventSeverities.Low, 5, null, owner: dana),
+                Alert(password, AtRisk, EventSeverities.Medium, 25, null, owner: dana),
+                Suppressed(Alert(vpn, Breached, EventSeverities.High, 1, null, group: network)));
+            return await db.SaveChangesAsync();
+        }, default);
+
+        static AlertRow Suppressed(AlertRow row)
+        {
+            row.Status = AlertStatuses.Suppressed;
+            return row;
+        }
+
+        // Administrators see every alert; agents their groups'; Sam only the service desk's; Dana only hers about tickets
+        // she can read. Suppressed alerts never count.
+        async Task<MetricResult> Mtta(string persona) => await Metrics.EvaluateAsync(f.As(t, persona), "tenant__metric_mtta", null, default);
+        var all = await Mtta("admin");
+        Assert.Equal(("ok", MetricSources.Alerts, 5L, 24d, "minutes"), (all.Status, all.Source, all.Count, all.Value!.Value, all.Unit));
+        Assert.Null(all.Drill);
+        Assert.Equal((2L, 20d), ((await Mtta("agent")).Count, (await Mtta("agent")).Value!.Value));
+        Assert.Equal((1L, 30d), ((await Mtta("sam")).Count, (await Mtta("sam")).Value!.Value));
+        Assert.Equal((1L, 5d), ((await Mtta("dana")).Count, (await Mtta("dana")).Value!.Value));
+        var nobody = await Mtta("jordan");
+        Assert.Equal((0L, null), (nobody.Count, nobody.Value));
+
+        var mttr = await Metrics.EvaluateAsync(agent, "tenant__metric_mttr", null, default);
+        Assert.Equal((1L, 2d), (mttr.Count, mttr.Value!.Value));
+        Assert.Equal([("High", 1L, (double?)2d)], mttr.Buckets.Select(b => (b.Label, b.Count, b.Value)));
+        Assert.Equal(0, (await Metrics.EvaluateAsync(f.As(t, "sam"), "tenant__metric_mttr", null, default)).Count);
+
+        // Medium and above: the low alert is left out; rules show their labels.
+        var byRule = await Metrics.EvaluateAsync(admin, "tenant__metric_alerts_by_rule", null, default);
+        Assert.Equal(4, byRule.Count);
+        Assert.Equal([2L, 2L], byRule.Buckets.Select(b => b.Count));
+        Assert.All(byRule.Buckets, b => Assert.StartsWith("Ticket SLA", b.Label, StringComparison.Ordinal));
+
+        var trend = await Metrics.EvaluateAsync(admin, "tenant__metric_alert_trend", null, default);
+        Assert.Equal(7, trend.Buckets.Count);
+        Assert.Equal(5, trend.Buckets.Sum(b => b.Count));
+        Assert.Equal(trend.Count, trend.Buckets.Sum(b => b.Count));
+    }
 }
