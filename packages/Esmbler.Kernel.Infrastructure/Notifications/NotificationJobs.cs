@@ -44,11 +44,24 @@ public sealed class SubscriptionRouter(ConfigStore configs) : IEventConsumer
     public async Task HandleAsync(EventEnvelope envelope, KernelDbContext db, CancellationToken ct)
     {
         var artifact = await configs.GetActiveAsync(db, envelope.TenantId, envelope.EnvironmentId, ct);
-        var config = artifact.Config;
-        var matches = config.Subscriptions.Where(s => s.Enabled && s.Target == SubscriptionTargets.Notify && s.Event == envelope.Type).ToList();
-        if (matches.Count == 0)
+        foreach (var sub in await MatchAsync(db, artifact.Config, envelope, SubscriptionTargets.Notify, ct))
         {
-            return;
+            await JobScheduler.ScheduleAsync(db, envelope.TenantId, envelope.EnvironmentId, new JobRequest(ResolveKind, new JsonObject { ["event"] = envelope.EventId.ToString(), ["subscription"] = sub.Id })
+            {
+                DedupKey = $"notify:{envelope.EventId}:{sub.Id}",
+                CausationId = envelope.EventId,
+                Depth = envelope.Depth + 1,
+            }, ct);
+        }
+    }
+
+    /// <summary>The enabled subscriptions of a target whose event, entity and condition match an event.</summary>
+    internal static async Task<List<SubscriptionSpec>> MatchAsync(KernelDbContext db, EffectiveConfig config, EventEnvelope envelope, string target, CancellationToken ct)
+    {
+        var candidates = config.Subscriptions.Where(s => s.Enabled && s.Target == target && s.Event == envelope.Type).ToList();
+        if (candidates.Count == 0)
+        {
+            return [];
         }
 
         var type = config.FindEventType(envelope.Type);
@@ -59,7 +72,8 @@ public sealed class SubscriptionRouter(ConfigStore configs) : IEventConsumer
             record = row is null ? null : JsonNode.Parse(row.Data)!.AsObject();
         }
 
-        foreach (var sub in matches)
+        var matches = new List<SubscriptionSpec>();
+        foreach (var sub in candidates)
         {
             var entityId = sub.Entity ?? type?.SubjectEntity;
             if (entityId is not null && envelope.Entity != entityId)
@@ -72,13 +86,24 @@ public sealed class SubscriptionRouter(ConfigStore configs) : IEventConsumer
                 continue;
             }
 
-            await JobScheduler.ScheduleAsync(db, envelope.TenantId, envelope.EnvironmentId, new JobRequest(ResolveKind, new JsonObject { ["event"] = envelope.EventId.ToString(), ["subscription"] = sub.Id })
-            {
-                DedupKey = $"notify:{envelope.EventId}:{sub.Id}",
-                CausationId = envelope.EventId,
-                Depth = envelope.Depth + 1,
-            }, ct);
+            matches.Add(sub);
         }
+
+        return matches;
+    }
+
+    /// <summary>Expression variables for an event: <c>event</c> (its payload) and <c>record</c> (with <c>id</c>).</summary>
+    internal static Dictionary<string, object?> Variables(EventEnvelope envelope, JsonObject? record)
+    {
+        var vars = new Dictionary<string, object?>(StringComparer.Ordinal) { ["event"] = Values.MapFromJson(envelope.Payload) };
+        if (record is not null)
+        {
+            var withId = record.DeepClone().AsObject();
+            withId["id"] = envelope.RecordId?.ToString();
+            vars["record"] = Values.MapFromJson(withId);
+        }
+
+        return vars;
     }
 
     internal static bool Matches(SubscriptionSpec sub, EffectiveConfig config, string? entityId, EventTypeSpec? type, EventEnvelope envelope, JsonObject? record)
@@ -88,13 +113,7 @@ public sealed class SubscriptionRouter(ConfigStore configs) : IEventConsumer
             var entity = entityId is null ? null : config.FindEntity(entityId);
             var schema = type is null ? null : EntitySchema.ForSubscription(entity, type);
             var compiled = Expression.Compile(sub.When!, schema);
-            var vars = new Dictionary<string, object?>(StringComparer.Ordinal) { ["event"] = Values.MapFromJson(envelope.Payload) };
-            if (record is not null)
-            {
-                vars["record"] = Values.MapFromJson(record);
-            }
-
-            return compiled.Evaluate(vars) is true;
+            return compiled.Evaluate(Variables(envelope, record)) is true;
         }
         catch (ExpressionException)
         {
@@ -393,6 +412,22 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
                     break;
                 case RecipientKinds.Address:
                     addresses.Add(r.Ref);
+                    break;
+                case RecipientKinds.AlertOwner when envelope.Payload["alert"]?.GetValue<string>() is { } alertRef && Guid.TryParse(alertRef, out var alertId):
+                    // The alert's owner group, owner and assignee (ADR 0022).
+                    if (await db.Alerts.AsNoTracking().Where(a => a.Id == alertId).Select(a => new { a.OwnerGroup, a.OwnerPrincipal, a.Assignee }).FirstOrDefaultAsync(ct) is { } owners)
+                    {
+                        if (owners.OwnerGroup is { } og)
+                        {
+                            groups.Add(og);
+                        }
+
+                        foreach (var p in new[] { owners.OwnerPrincipal, owners.Assignee }.OfType<Guid>())
+                        {
+                            people.Add(p);
+                        }
+                    }
+
                     break;
                 case RecipientKinds.Approvers when envelope.RecordId is { } recordId:
                     // The pending approvers of the record's approval (people, groups or roles; ADR 0016).

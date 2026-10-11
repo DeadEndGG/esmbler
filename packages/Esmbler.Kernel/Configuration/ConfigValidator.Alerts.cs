@@ -11,7 +11,7 @@ public sealed partial class ConfigValidator
     private const int MaxEscalationMinutes = 10_080;
 
     /// <summary>The entity whose records a subscription's events are about.</summary>
-    internal static EntitySpec? SubscriptionEntity(SpecCatalog config, SubscriptionSpec sub)
+    public static EntitySpec? SubscriptionEntity(SpecCatalog config, SubscriptionSpec sub)
     {
         var entityId = sub.Entity ?? config.FindEventType(sub.Event)?.SubjectEntity;
         return entityId is null ? null : config.FindEntity(entityId);

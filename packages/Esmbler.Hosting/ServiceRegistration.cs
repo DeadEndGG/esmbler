@@ -114,6 +114,10 @@ public static class ServiceRegistration
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Notifications.NotifyResolveJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Notifications.NotifyDeliverJobHandler>();
         services.AddSingleton<Kernel.Infrastructure.Notifications.NotificationService>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IEventConsumer, Kernel.Infrastructure.Alerts.AlertRouter>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Alerts.AlertEvaluateJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Alerts.AlertEscalateJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Alerts.AlertService>();
 
         services.AddSingleton<IAuthzStoreRegistry, AuthzStoreRegistry>();
         services.AddHttpClient(nameof(OpenFgaRelationshipGraph));

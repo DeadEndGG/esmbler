@@ -67,6 +67,12 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<NotificationPreferenceRow> NotificationPreferences => Set<NotificationPreferenceRow>();
 
+    public DbSet<AlertRow> Alerts => Set<AlertRow>();
+
+    public DbSet<AlertActivityRow> AlertActivity => Set<AlertActivityRow>();
+
+    public DbSet<AlertSuppressionRow> AlertSuppressions => Set<AlertSuppressionRow>();
+
     public DbSet<RefreshTokenRow> RefreshTokens => Set<RefreshTokenRow>();
 
     public DbSet<WorkflowDefinitionRow> WorkflowDefinitions => Set<WorkflowDefinitionRow>();
@@ -120,6 +126,9 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<NotificationDeliveryRow>().ToTable("notification_deliveries").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<NotificationDeliveryAttemptRow>().ToTable("notification_delivery_attempts").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<NotificationPreferenceRow>().ToTable("notification_preferences").HasKey(x => new { x.TenantId, x.EnvironmentId, x.PrincipalId, x.RouteId, x.ChannelType });
+        b.Entity<AlertRow>().ToTable("alerts").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<AlertActivityRow>().ToTable("alert_activity").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<AlertSuppressionRow>().ToTable("alert_suppressions").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
         string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot", "Settings", "SecretRefs"];

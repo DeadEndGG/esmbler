@@ -844,6 +844,124 @@ public sealed class NotificationPreferenceRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>An alert (ADR 0022): deduplicated by rule and key while active.</summary>
+public sealed class AlertRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string RuleId { get; set; } = "";
+
+    public string DedupKey { get; set; } = "";
+
+    public string Status { get; set; } = "open";
+
+    public string Severity { get; set; } = "high";
+
+    public string Title { get; set; } = "";
+
+    public string? EntityId { get; set; }
+
+    public Guid? RecordId { get; set; }
+
+    public Guid? OwnerGroup { get; set; }
+
+    public string? OwnerGroupKey { get; set; }
+
+    public Guid? OwnerPrincipal { get; set; }
+
+    public Guid? Assignee { get; set; }
+
+    public int Level { get; set; } = 1;
+
+    public int Occurrences { get; set; } = 1;
+
+    public int ReopenedCount { get; set; }
+
+    public Guid FirstEventId { get; set; }
+
+    public Guid LastEventId { get; set; }
+
+    public Guid? SuppressionId { get; set; }
+
+    public DateTimeOffset OpenedAt { get; set; }
+
+    public DateTimeOffset LastOccurredAt { get; set; }
+
+    public DateTimeOffset? AcknowledgedAt { get; set; }
+
+    public Guid? AcknowledgedBy { get; set; }
+
+    public DateTimeOffset? ResolvedAt { get; set; }
+
+    public Guid? ResolvedBy { get; set; }
+
+    public string? Resolution { get; set; }
+
+    public int ConfigRevision { get; set; }
+
+    public int Version { get; set; } = 1;
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class AlertActivityRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid AlertId { get; set; }
+
+    public string Kind { get; set; } = "";
+
+    public Guid? Actor { get; set; }
+
+    public Guid? Agent { get; set; }
+
+    public int? Level { get; set; }
+
+    public string? Details { get; set; }
+
+    public DateTimeOffset At { get; set; }
+}
+
+public sealed class AlertSuppressionRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string Reason { get; set; } = "";
+
+    public string? RuleId { get; set; }
+
+    public string? EntityId { get; set; }
+
+    public Guid? RecordId { get; set; }
+
+    public DateTimeOffset StartsAt { get; set; }
+
+    public DateTimeOffset EndsAt { get; set; }
+
+    public Guid CreatedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? CancelledAt { get; set; }
+
+    public Guid? CancelledBy { get; set; }
+}
+
 public sealed class RefreshTokenRow
 {
     public Guid Id { get; set; }
