@@ -156,8 +156,23 @@ public class AuditPolicyTests(PlatformFixture f)
             {
                 db.NotificationDeliveries.Add(new NotificationDeliveryRow
                 {
-                    TenantId = t.TenantId, EnvironmentId = env, Id = id, EventId = Guid.NewGuid(), EventType = "x", SubscriptionId = "s", RouteId = "r", TemplateId = "t", ProfileId = "p",
-                    ChannelType = "in_app", Status = status, IdempotencyKey = $"{id}", Subject = status, Body = "b", ConfigRevision = 1, CreatedAt = now, UpdatedAt = now,
+                    TenantId = t.TenantId,
+                    EnvironmentId = env,
+                    Id = id,
+                    EventId = Guid.NewGuid(),
+                    EventType = "x",
+                    SubscriptionId = "s",
+                    RouteId = "r",
+                    TemplateId = "t",
+                    ProfileId = "p",
+                    ChannelType = "in_app",
+                    Status = status,
+                    IdempotencyKey = $"{id}",
+                    Subject = status,
+                    Body = "b",
+                    ConfigRevision = 1,
+                    CreatedAt = now,
+                    UpdatedAt = now,
                 });
             }
 
