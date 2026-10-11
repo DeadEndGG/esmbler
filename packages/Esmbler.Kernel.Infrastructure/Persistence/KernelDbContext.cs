@@ -73,6 +73,12 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<AlertSuppressionRow> AlertSuppressions => Set<AlertSuppressionRow>();
 
+    public DbSet<AuditChainHeadRow> AuditChainHeads => Set<AuditChainHeadRow>();
+
+    public DbSet<AuditPolicyRow> AuditPolicies => Set<AuditPolicyRow>();
+
+    public DbSet<LegalHoldRow> LegalHolds => Set<LegalHoldRow>();
+
     public DbSet<RefreshTokenRow> RefreshTokens => Set<RefreshTokenRow>();
 
     public DbSet<WorkflowDefinitionRow> WorkflowDefinitions => Set<WorkflowDefinitionRow>();
@@ -129,6 +135,9 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<AlertRow>().ToTable("alerts").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<AlertActivityRow>().ToTable("alert_activity").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
         b.Entity<AlertSuppressionRow>().ToTable("alert_suppressions").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<AuditChainHeadRow>().ToTable("audit_chain_heads").HasKey(x => x.TenantId);
+        b.Entity<AuditPolicyRow>().ToTable("audit_policies").HasKey(x => x.TenantId);
+        b.Entity<LegalHoldRow>().ToTable("legal_holds").HasKey(x => new { x.TenantId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
 
         string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot", "Settings", "SecretRefs"];

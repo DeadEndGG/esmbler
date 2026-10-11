@@ -962,6 +962,64 @@ public sealed class AlertSuppressionRow
     public Guid? CancelledBy { get; set; }
 }
 
+/// <summary>The head of a workspace's audit chain (ADR 0022); written only by the definer functions.</summary>
+public sealed class AuditChainHeadRow
+{
+    public Guid TenantId { get; set; }
+
+    public long LastSeq { get; set; }
+
+    public byte[] LastHash { get; set; } = [];
+
+    public long AnchorSeq { get; set; }
+
+    public byte[] AnchorHash { get; set; } = [];
+
+    public DateTimeOffset? SealedAt { get; set; }
+
+    public long? VerifyCursor { get; set; }
+
+    public byte[]? VerifyCursorHash { get; set; }
+
+    public long VerifiedThroughSeq { get; set; }
+
+    public DateTimeOffset? VerifiedAt { get; set; }
+
+    public long? BrokenAtSeq { get; set; }
+
+    public DateTimeOffset? BrokenDetectedAt { get; set; }
+}
+
+public sealed class AuditPolicyRow
+{
+    public Guid TenantId { get; set; }
+
+    public int RetentionDays { get; set; } = 2555;
+
+    public Guid? UpdatedBy { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class LegalHoldRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string Reason { get; set; } = "";
+
+    public string Scope { get; set; } = "all";
+
+    public Guid CreatedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public Guid? ReleasedBy { get; set; }
+
+    public DateTimeOffset? ReleasedAt { get; set; }
+}
+
 public sealed class RefreshTokenRow
 {
     public Guid Id { get; set; }
