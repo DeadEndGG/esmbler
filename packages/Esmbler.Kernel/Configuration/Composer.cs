@@ -114,6 +114,7 @@ public static class Composer
             config.NotificationProfiles.AddRange(copy.NotificationProfiles);
             config.NotificationRoutes.AddRange(copy.NotificationRoutes);
             config.AlertRules.AddRange(copy.AlertRules);
+            config.MailIntakes.AddRange(copy.MailIntakes);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -224,6 +225,11 @@ public static class Composer
         foreach (var r in catalog.AlertRules)
         {
             yield return r.Id;
+        }
+
+        foreach (var m in catalog.MailIntakes)
+        {
+            yield return m.Id;
         }
 
         foreach (var p in catalog.PermissionSets)

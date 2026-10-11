@@ -8,6 +8,12 @@ namespace Esmbler.Kernel.Infrastructure.Notifications;
 /// <summary>What one recipient may see while a template renders.</summary>
 public sealed record RenderScope(EffectivePermissions? Permissions, bool External, string? RecipientName)
 {
+    /// <summary>
+    /// Text of the public reply an <c>activity.added</c> event is about, for <c>{{activity.body}}</c> (ADR 0023). Set only
+    /// for public replies that are not redacted; internal work notes never get here.
+    /// </summary>
+    public string? Reply { get; init; }
+
     /// <summary>For previews: a field renders only if the person previewing may also see it.</summary>
     public EffectivePermissions? Viewer { get; init; }
 }
@@ -46,6 +52,12 @@ public static partial class NotificationRenderer
                 return scope.RecipientName ?? string.Empty;
             }
 
+            if (name == "activity.body")
+            {
+                // People outside the workspace get no conversation text.
+                return scope.External ? string.Empty : scope.Reply ?? string.Empty;
+            }
+
             if (name == "record.number")
             {
                 // External recipients see the number only if the template lists the auto-number field as external.
@@ -77,6 +89,15 @@ public static partial class NotificationRenderer
             return string.Empty;
         });
 
+    /// <summary>Plain text of sanitized rich text (paragraphs and line breaks kept, tags dropped, entities decoded).</summary>
+    public static string PlainText(string html)
+    {
+        var text = BlockEnd().Replace(html, "\n");
+        text = Tag().Replace(text, string.Empty);
+        text = System.Net.WebUtility.HtmlDecode(text);
+        return BlankLines().Replace(text.Replace("\r", string.Empty, StringComparison.Ordinal), "\n\n").Trim();
+    }
+
     private static string Text(JsonNode? node) => node switch
     {
         null => string.Empty,
@@ -91,4 +112,13 @@ public static partial class NotificationRenderer
 
     [GeneratedRegex(@"\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}")]
     private static partial Regex Placeholder();
+
+    [GeneratedRegex(@"<br\s*/?>|</(p|div|li|h[1-6]|blockquote|pre|tr)>", RegexOptions.IgnoreCase)]
+    private static partial Regex BlockEnd();
+
+    [GeneratedRegex("<[^>]*>")]
+    private static partial Regex Tag();
+
+    [GeneratedRegex(@"\n{3,}")]
+    private static partial Regex BlankLines();
 }

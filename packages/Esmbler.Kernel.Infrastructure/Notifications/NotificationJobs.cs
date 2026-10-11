@@ -185,6 +185,10 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
             var created = new List<NotificationDeliveryRow>();
             var reached = existing.Count;
 
+            // A public reply's text may be shown ({{activity.body}}); its author is not told about their own reply.
+            // Internal work notes and redacted replies never reach a template (ADR 0023, REQ-BIZ-002).
+            var (replyText, replyAuthor) = await ReplyAsync(db, envelope, ct);
+
             // Mandatory routes first, then the tenant layer before the module layer: the most specific route wins a duplicate.
             var routes = config.NotificationRoutes.Where(r => r.Enabled && r.Subscription == sub.Id)
                 .OrderByDescending(r => r.Mandatory)
@@ -214,6 +218,11 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
                 foreach (var target in targets)
                 {
                     EffectivePermissions? perms = null;
+                    if (replyAuthor is not null && target.Principal == replyAuthor)
+                    {
+                        continue;
+                    }
+
                     if (target.Principal is { } principal)
                     {
                         if (!permissionCache.TryGetValue(principal, out perms))
@@ -274,7 +283,7 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
 
                         var muted = !route.Mandatory && target.Principal is { } p && mutes.Any(m => m.PrincipalId == p && (m.ChannelType == "*" || m.ChannelType == channel));
                         var instance = channel == NotificationChannels.InApp ? null : instances.FirstOrDefault(i => i.Type == channel);
-                        var (subject, body) = NotificationRenderer.Render(template, channel, entity, record, number, envelope.Payload, sensitivity, link, new RenderScope(perms, target.External, target.Name));
+                        var (subject, body) = NotificationRenderer.Render(template, channel, entity, record, number, envelope.Payload, sensitivity, link, new RenderScope(perms, target.External, target.Name) { Reply = replyText });
                         var (status, reason) = muted ? (DeliveryStatuses.Suppressed, "muted")
                             : channel != NotificationChannels.InApp && instance is null ? (DeliveryStatuses.Suppressed, "channel_not_configured")
                             : (DeliveryStatuses.Queued, (string?)null);
@@ -481,6 +490,22 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
         }
 
         return targets;
+    }
+
+    /// <summary>The public reply an <c>activity.added</c> event is about (text and author), or nothing for anything else.</summary>
+    internal static async Task<(string? Text, Guid? Author)> ReplyAsync(KernelDbContext db, EventEnvelope envelope, CancellationToken ct)
+    {
+        if (envelope.Type != EventTypes.ActivityAdded || envelope.Payload["kind"]?.GetValue<string>() != "public_reply"
+            || envelope.Payload["activityId"]?.GetValue<string>() is not { } raw || !Guid.TryParse(raw, out var activityId))
+        {
+            return (null, null);
+        }
+
+        var reply = await db.Activity.AsNoTracking()
+            .Where(a => a.Id == activityId && a.RecordId == envelope.RecordId && a.Kind == "public_reply" && a.RedactedAt == null)
+            .Select(a => new { a.Body, a.Author })
+            .FirstOrDefaultAsync(ct);
+        return reply is null ? (null, null) : (NotificationRenderer.PlainText(reply.Body), reply.Author);
     }
 }
 

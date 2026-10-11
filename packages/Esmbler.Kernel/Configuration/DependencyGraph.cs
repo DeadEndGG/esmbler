@@ -397,6 +397,20 @@ public sealed partial class DependencyGraph
             }
         }
 
+        foreach (var intake in config.MailIntakes)
+        {
+            g.Add(intake.Id, intake.Entity, "mail_entity");
+            foreach (var key in new[] { intake.TitleField, intake.BodyField, intake.RequesterField, intake.AddressField }.OfType<string>().Concat(intake.Set.Keys))
+            {
+                g.Add(intake.Id, $"{intake.Entity}/{key}", "mail_field");
+            }
+
+            if (intake.ReopenTransition is not null && config.Workflows.Find(w => w.Entity == intake.Entity) is { } wf)
+            {
+                g.Add(intake.Id, wf.Id, "mail_workflow");
+            }
+        }
+
         return g;
     }
 

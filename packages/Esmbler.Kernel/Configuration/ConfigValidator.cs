@@ -119,6 +119,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
 
         ValidateNotifications(config, d);
         ValidateAlertRules(config, d);
+        ValidateMailIntakes(config, d);
         return d;
     }
 
@@ -141,6 +142,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         Check(config.NotificationProfiles.Select(p => p.Id), "notification profile");
         Check(config.NotificationRoutes.Select(r => r.Id), "notification route");
         Check(config.AlertRules.Select(r => r.Id), "alert rule");
+        Check(config.MailIntakes.Select(m => m.Id), "mail intake");
         Check(config.ChoiceLists.Select(c => c.Id), "choice list");
         Check(config.Rules.Select(r => r.Id), "rule");
         Check(config.Views.Select(v => v.Id), "view");
@@ -794,7 +796,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         bool Foreign(string id, out string module) =>
             (module = LayerModule(config, id)!) is not null && module != Composer.TenantLayer && module != PlatformModule.ModuleId && !id.StartsWith(module + ".", StringComparison.Ordinal);
 
-        foreach (var id in config.Subscriptions.Select(x => x.Id).Concat(config.NotificationTemplates.Select(x => x.Id)).Concat(config.NotificationProfiles.Select(x => x.Id)).Concat(config.NotificationRoutes.Select(x => x.Id)).Concat(config.AlertRules.Select(x => x.Id)))
+        foreach (var id in config.Subscriptions.Select(x => x.Id).Concat(config.NotificationTemplates.Select(x => x.Id)).Concat(config.NotificationProfiles.Select(x => x.Id)).Concat(config.NotificationRoutes.Select(x => x.Id)).Concat(config.AlertRules.Select(x => x.Id)).Concat(config.MailIntakes.Select(x => x.Id)))
         {
             if (Foreign(id, out var module))
             {
@@ -803,7 +805,8 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         }
 
         foreach (var (elementId, uses) in config.NotificationRoutes.Select(r => (r.Id, new[] { r.Subscription, r.Template, r.Profile }))
-                     .Concat(config.AlertRules.Select(r => (r.Id, new[] { r.Trigger }.Concat(r.ResolveOn).ToArray()))))
+                     .Concat(config.AlertRules.Select(r => (r.Id, new[] { r.Trigger }.Concat(r.ResolveOn).ToArray())))
+                     .Concat(config.MailIntakes.Select(m => (m.Id, new[] { m.Entity }))))
         {
             if (LayerModule(config, elementId) is not { } owner || owner == Composer.TenantLayer || owner == PlatformModule.ModuleId)
             {
@@ -1959,7 +1962,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                 foreach (Match m in AnyPlaceholder().Matches(text))
                 {
                     var name = m.Groups[1].Value;
-                    var ok = name is "recipient.name" or "link" || name.StartsWith("event.", StringComparison.Ordinal)
+                    var ok = name is "recipient.name" or "link" or "activity.body" || name.StartsWith("event.", StringComparison.Ordinal)
                         || (name.StartsWith("record.", StringComparison.Ordinal) && entity?.FindField(name["record.".Length..]) is not null)
                         || name is "record.number" or "record.id";
                     if (!ok)

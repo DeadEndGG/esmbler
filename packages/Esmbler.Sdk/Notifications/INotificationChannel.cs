@@ -3,7 +3,26 @@ using System.Text.Json.Nodes;
 namespace Esmbler.Sdk.Notifications;
 
 /// <summary>A rendered message for one recipient on one channel.</summary>
-public sealed record ChannelMessage(string To, string? Subject, string Body, string? RecipientName);
+public sealed record ChannelMessage(string To, string? Subject, string Body, string? RecipientName)
+{
+    /// <summary>
+    /// Email threading (ADR 0023): the message's own ID (without angle brackets), set by the platform so replies can be
+    /// matched to the record; adapters that cannot set it ignore it.
+    /// </summary>
+    public string? MessageId { get; init; }
+
+    /// <summary>Message IDs this message answers (In-Reply-To and References), oldest first.</summary>
+    public IReadOnlyList<string> References { get; init; } = [];
+
+    /// <summary>Where replies should go: the workspace mailbox that takes replies for the record, if any.</summary>
+    public string? ReplyTo { get; init; }
+
+    /// <summary>
+    /// Marks the message as sent by a machine (RFC 3834 <c>Auto-Submitted: auto-generated</c>), so auto-responders do not
+    /// answer it. True for every notification.
+    /// </summary>
+    public bool AutoSubmitted { get; init; } = true;
+}
 
 /// <summary>What a provider said about a send (ADR 0021): sent, a transient or permanent failure, or unknown (ambiguous).</summary>
 public sealed record ChannelResult(string Outcome, string? ProviderMessageId = null, string? Code = null)

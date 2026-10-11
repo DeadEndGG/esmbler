@@ -36,7 +36,28 @@ public sealed class SmtpEmailChannel(NotificationOptions options) : INotificatio
         mime.From.Add(new MailboxAddress(settings["fromName"]?.GetValue<string>() ?? "Esmbler", from));
         mime.To.Add(to);
         mime.Subject = message.Subject ?? string.Empty;
-        mime.MessageId = $"{idempotencyKey.Replace(':', '.')}@esmbler";
+        mime.MessageId = message.MessageId ?? $"{idempotencyKey.Replace(':', '.')}@esmbler";
+        if (message.References.Count > 0)
+        {
+            mime.InReplyTo = message.References[^1];
+            foreach (var reference in message.References)
+            {
+                mime.References.Add(reference);
+            }
+        }
+
+        if (message.ReplyTo is { } replyTo && MailboxAddress.TryParse(replyTo, out var replyAddress))
+        {
+            mime.ReplyTo.Add(replyAddress);
+        }
+
+        // Machine-sent mail (RFC 3834): auto-responders should stay quiet, which keeps reply loops from starting.
+        if (message.AutoSubmitted)
+        {
+            mime.Headers.Add("Auto-Submitted", "auto-generated");
+            mime.Headers.Add("X-Auto-Response-Suppress", "All");
+        }
+
         mime.Body = new TextPart("plain") { Text = message.Body };
 
         using var client = new SmtpClient { Timeout = 15_000 };
