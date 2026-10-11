@@ -113,12 +113,12 @@ public static partial class NotificationRenderer
     [GeneratedRegex(@"\{\{\s*([a-z][a-z0-9_.]*)\s*\}\}")]
     private static partial Regex Placeholder();
 
-    [GeneratedRegex(@"<br\s*/?>|</(p|div|li|h[1-6]|blockquote|pre|tr)>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<br\s*/?>|</(p|div|li|h[1-6]|blockquote|pre|tr)>", RegexOptions.IgnoreCase | RegexOptions.NonBacktracking)]
     private static partial Regex BlockEnd();
 
-    [GeneratedRegex("<[^>]*>")]
+    [GeneratedRegex("<[^>]*>", RegexOptions.NonBacktracking)]
     private static partial Regex Tag();
 
-    [GeneratedRegex(@"\n{3,}")]
+    [GeneratedRegex(@"\n{3,}", RegexOptions.NonBacktracking)]
     private static partial Regex BlankLines();
 }

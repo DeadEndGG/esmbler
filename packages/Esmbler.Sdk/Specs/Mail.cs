@@ -45,6 +45,16 @@ public sealed class MailIntakeSpec
     public bool Enabled { get; set; } = true;
 }
 
+/// <summary>Conventions modules use in email templates (ADR 0023).</summary>
+public static class MailConventions
+{
+    /// <summary>
+    /// Put this line at the top of an email a person may answer: when they reply, everything from this line down (the
+    /// quoted history) is dropped, so only their new text joins the record's conversation.
+    /// </summary>
+    public const string ReplyMarker = "##- Reply above this line -##";
+}
+
 /// <summary>Why an inbound message was suspended or rejected (ADR 0023). Stable codes shown to reviewers.</summary>
 public static class MailReasons
 {
@@ -81,8 +91,11 @@ public static class MailReasons
     /// <summary>The message could not be read as email.</summary>
     public const string Unreadable = "unreadable";
 
+    /// <summary>Processing kept failing until its retries ran out.</summary>
+    public const string ProcessingFailed = "processing_failed";
+
     /// <summary>A reviewer rejected the message.</summary>
     public const string Rejected = "rejected";
 
-    public static IReadOnlyList<string> All { get; } = [AutoReply, OwnMessage, TooManyFromSender, UnverifiedSender, UnknownSender, NotAllowed, BadSender, Empty, NoIntake, InvalidRecord, Unreadable, Rejected];
+    public static IReadOnlyList<string> All { get; } = [AutoReply, OwnMessage, TooManyFromSender, UnverifiedSender, UnknownSender, NotAllowed, BadSender, Empty, NoIntake, InvalidRecord, Unreadable, ProcessingFailed, Rejected];
 }

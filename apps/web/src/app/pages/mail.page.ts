@@ -64,6 +64,7 @@ const REASONS: Record<string, string> = {
   no_intake: 'Mailbox is not connected to an intake',
   invalid_record: 'The ticket would not be valid',
   unreadable: 'Not a readable email',
+  processing_failed: 'Processing kept failing',
   rejected: 'Rejected by a reviewer',
 };
 
@@ -133,7 +134,11 @@ const OUTCOMES: Record<string, string> = { created: 'opened a ticket', replied: 
             <label class="field-row">Key <input class="input mono" name="key" [(ngModel)]="form.key" required pattern="[a-z][a-z0-9_]{1,40}" [readonly]="!!form.version" /></label>
             <label class="field-row">Name <input class="input" name="label" [(ngModel)]="form.label" required maxlength="100" /></label>
             <label class="field-row">Address <input class="input" type="email" name="address" [(ngModel)]="form.address" required placeholder="support@example.com" /></label>
-            <label class="field-row">Intake <input class="input mono" name="intake" [(ngModel)]="form.intake" required /></label>
+            <label class="field-row">Intake
+              <select class="input" name="intake" [(ngModel)]="form.intake" required>
+                @for (i of intakes(); track i.id) { <option [value]="i.id">{{ i.label }}{{ i.enabled ? '' : ' (off)' }}</option> }
+              </select>
+            </label>
             <label class="field-row">How mail arrives
               <select class="input" name="mode" [(ngModel)]="form.mode">
                 <option value="webhook">Webhook (your mail provider posts each message)</option>
@@ -245,6 +250,7 @@ export class MailPage {
   protected readonly messages = signal<InboundMessage[] | null>(null);
   protected readonly mailboxes = signal<Mailbox[]>([]);
   protected readonly people = signal<Member[]>([]);
+  protected readonly intakes = signal<{ id: string; label: string; enabled: boolean }[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly openId = signal<string | null>(null);
   protected readonly detail = signal<MessageDetail | null>(null);
@@ -330,6 +336,8 @@ export class MailPage {
   private async loadMailboxes(): Promise<void> {
     try {
       this.mailboxes.set(await this.api.get<Mailbox[]>('/api/admin/mail/inboxes'));
+      this.intakes.set(await this.api.get<{ id: string; label: string; enabled: boolean }[]>('/api/admin/mail/intakes'));
+      if (!this.form.intake && this.intakes().length > 0) this.form.intake = this.intakes()[0].id;
       this.error.set(null);
     } catch (e) {
       this.error.set(e instanceof ApiError ? e.message : 'Could not load mailboxes.');
@@ -338,7 +346,7 @@ export class MailPage {
 
   private blank() {
     return {
-      key: '', label: '', address: '', intake: 'core.tickets.mail.tickets', mode: 'webhook' as Mailbox['mode'], version: 0,
+      key: '', label: '', address: '', intake: this.intakes?.()[0]?.id ?? '', mode: 'webhook' as Mailbox['mode'], version: 0,
       senderVerification: 'required', authservId: '', maxPerSenderPerHour: 20, host: '', port: 993, folder: 'INBOX', usernameRef: '', passwordRef: '',
     };
   }

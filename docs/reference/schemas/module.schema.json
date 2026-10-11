@@ -2004,6 +2004,78 @@
           "title"
         ]
       }
+    },
+    "mailIntakes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity": {
+            "type": "string"
+          },
+          "titleField": {
+            "type": "string"
+          },
+          "bodyField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requesterField": {
+            "type": "string"
+          },
+          "addressField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "set": {
+            "type": "object"
+          },
+          "reopenTransition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reopenFrom": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "followUpFrom": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "entity",
+          "titleField",
+          "requesterField"
+        ]
+      }
     }
   },
   "required": [

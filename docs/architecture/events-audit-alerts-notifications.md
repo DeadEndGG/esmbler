@@ -3,7 +3,7 @@ title: Events, audit, alerts and notifications
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-11
-requirements: [REQ-EVT-001, REQ-EVT-002, REQ-EVT-003, REQ-EVT-005, REQ-EVT-006, REQ-EVT-007, REQ-EVT-008, REQ-EVT-009, REQ-AUD-001, REQ-ALR-001, REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-TEN-001, REQ-TEN-005]
+requirements: [REQ-EVT-001, REQ-EVT-002, REQ-EVT-003, REQ-EVT-005, REQ-EVT-006, REQ-EVT-007, REQ-EVT-008, REQ-EVT-009, REQ-AUD-001, REQ-ALR-001, REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-TEN-001, REQ-TEN-005, REQ-BIZ-003]
 ---
 
 # Events, audit, alerts and notifications
@@ -24,6 +24,7 @@ This is the design for turning the platform's events, audit, alerting and notifi
 | Audit | Append-only `kernel.audit_log` (no UPDATE or DELETE for the app role), FORCE RLS, written in the same transaction as the change; actor, agent, channel, operation, target, outcome, correlation, config revision, change details | `AuditWriter`, `Migrations/0001` | Since G2-M19 ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)): per-workspace hash chain sealed by the worker with daily and on-demand verification, retention policy with legal holds, audited export, search page (`AuditService`, `AuditMaintenance`, `Migrations/0016`, `0017`). Denied writes still rely on each service; chain heads are not anchored outside the database |
 | Notifications | Templates (`NotificationTemplateSpec`) on record events, recipients from user fields, rendered per recipient with their field permissions into `kernel.notifications` (`in_app_fake`); approval notifications written directly | `NotificationConsumer`, `ApprovalService` | No channels besides a fake in-app store, no API or UI to read them, no profiles, routing, preferences, quiet hours, delivery states, retries per recipient, rate limits, or preview |
 | Alerts | Since G2-M19 ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)): alert rules on `alert` subscriptions, dedup, acknowledgment, escalation timers, auto-resolve, cool-down reopen, maintenance windows, `platform.alert.*` events, Alerts page | `AlertRouter`, `AlertEvaluateJobHandler`, `AlertEscalateJobHandler`, `AlertService`, `Migrations/0015` | Recurring windows, on-call schedules, notes, snooze and manual alerts |
+| Email intake | Since G2-M5 ([ADR 0023](../adr/0023-email-intake.md)): mail intakes as module spec objects, mailboxes (webhook or IMAP) as environment settings, messages stored once and processed by the `mail.process` job as the sender, a suspended queue at `/mail`, threading headers and `{{activity.body}}` on outbound email (section 6.7) | `MailIntakeService`, `ImapPoller`, `MailThreading`, `Migrations/0018` | Attachments (G2-M7), CCs as followers, overlay ops for intakes |
 | Configuration | Typed overlay ops, drafts, review, publish, rollback, upgrades, MCP tools | `Sdk/Overlay`, `Kernel/Configuration` | Event types (G2-M17), subscriptions, routes, profiles and templates (G2-M18) and alert rules (G2-M19) are spec objects with overlay ops; Admin Center editing of them is not built |
 | Secrets | Environment variables for platform settings | `PlatformOptions` | Per-tenant credentials as vault references come with the Admin Center (G2-M12) |
 
@@ -395,6 +396,33 @@ CREATE TABLE kernel.notification_preferences ( tenant_id, environment_id, princi
 
 A **test send** delivers to the channel instance's `testDestination` only, is labelled as a test, and needs `notifications.admin`. Sandbox environments default every instance to `capture` mode, so nothing leaves the platform unless an admin sets a test destination (master spec, environment safety).
 
+### 6.7 Email intake and replies
+
+Inbound email ([ADR 0023](../adr/0023-email-intake.md)) is the way back into the notification loop. It is not an event subscriber: mail arrives at a mailbox, and the record it writes publishes ordinary `record.created` and `activity.added` events that routes deliver.
+
+```mermaid
+flowchart LR
+    MTA[Mail server] -->|raw MIME + mailbox token| WH[POST /api/mail/inbound]
+    IMAP[IMAP mailbox] -->|ImapPoller, worker| RX
+    WH --> RX[ReceiveAsync: store once per mailbox and Message-ID]
+    RX --> JOB[mail.process job]
+    JOB -->|guards fail| Q[Suspended or rejected, reason code; /mail review]
+    JOB -->|thread found| REPLY[Requester: public reply, reopen or follow-up; others: internal note]
+    JOB -->|new message| CREATE[Record created as the sender]
+    REPLY --> EV[activity.added]
+    CREATE --> EV2[record.created]
+    EV --> ROUTES[Routes: activity.body for public replies only, author skipped]
+    EV2 --> ROUTES
+    ROUTES --> SMTP[Email: Message-ID, References, Reply-To, Auto-Submitted]
+    SMTP -->|requester replies| MTA
+```
+
+- **Guards before any write**, in order: no intake, unreadable, bad sender, own mail (a delivery's Message-ID, a mailbox or channel address), RFC 3834 automatic mail, a per-sender hourly cap, sender verification through the trusted server's `Authentication-Results`, empty, membership. Writes then run through `RecordService` as the sender; only the requester's own reply is public, other members' replies are internal notes. A message whose job runs out of retries is marked `processing_failed`.
+- **Threading** uses the Message-ID each email delivery now stores (`notification_deliveries.message_id`), earlier inbound Message-IDs, and the `[NUMBER]` tag in the subject as the fallback after deliveries are purged.
+- **Templates** may use `{{activity.body}}`: the plain text of the public reply an `activity.added` event is about, empty for internal notes, redacted replies and external recipients. The reply's author is skipped as a recipient.
+- **Loop prevention on the way out:** every notification is `Auto-Submitted: auto-generated`; on the way in, automatic mail and the platform's own mail are rejected.
+- **Retention:** inbound messages are purged after 30 days by the same hourly retention run, never during a legal hold.
+
 ## 7. Administration, configuration and MCP
 
 | Object | Kind | Managed through | Publish | AI (MCP) |
@@ -459,6 +487,7 @@ What each store holds afterwards:
 | 1 | G2-M17 Event platform v2 (done; SLA events moved to G2-M4, subscriptions to G2-M18, subject and payload schema reference as in ASM-052) | Envelope v2 (source, subject, dataSchema, traceparent, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and the `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention | Tickets 1.4.0 emits `ticket.escalated`; a poison consumer no longer blocks others; contract tests for envelope v1/v2 |
 | 2 | G2-M18 Notification service (done per [ADR 0021](../adr/0021-notification-routing-and-delivery.md); team layer, schedules and quiet hours, approvals and legacy templates onto routes, live push and Admin Center editing of routes deferred) | Subscriptions spec object and the subscription router (section 3.3); channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
 | 3 | G2-M19 Alerts and audit policy (done per [ADR 0022](../adr/0022-alerts-and-audit-policy.md); holds per record, external anchoring of chain heads, recurring windows and Admin Center editing of alert rules deferred) | Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, maintenance suppression, alerts page; SLA breach alerts; audit retention and legal hold, export, hash-chain verifier | The section 8 example runs as an acceptance test |
+| 3b | G2-M5 Email intake (done per [ADR 0023](../adr/0023-email-intake.md); attachments, CCs as followers and overlay ops for intakes deferred) | Mail intakes, webhook and IMAP mailboxes, store once, guards, threading, suspended queue, outbound threading headers and `{{activity.body}}`, Tickets 1.9.0 | Email loops, duplicates and internal-note protection pass as integration tests (REQ-ACC-13) |
 | 4 | Gate 3 | User preferences UI and team-level routes; digests; on-call schedules (with the org model); webhook, Teams, Slack and push channels; package subscribers through the extension runtime; the automation engine (trigger → condition → action) as a subscription target | Package subscriber conformance tests; automation governors enforced end to end |
 
 Recommended order: G2-M3 (approvals, closing) → G2-M17 → G2-M4 SLA (publishes breach events) → G2-M9 and G2-M9b (connected workspace, as agreed) → G2-M18 → G2-M19 → G2-M5 email intake (reuses the email channel and delivery jobs). Phase 1 is small and makes SLA and dashboards publish proper events; notifications land before email intake because both need the email adapter.

@@ -3,7 +3,7 @@ title: "ADR 0021: Notification routing and delivery"
 status: accepted
 owner: platform-architecture
 last_reviewed: 2026-10-11
-requirements: [REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-EVT-009, REQ-AUTHZ-008, REQ-AISAFE-001, REQ-TEN-001, REQ-ALR-001]
+requirements: [REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-EVT-009, REQ-AUTHZ-008, REQ-AISAFE-001, REQ-TEN-001, REQ-ALR-001, REQ-BIZ-003]
 ---
 
 # ADR 0021: Notification routing and delivery
@@ -57,7 +57,7 @@ All four objects are public SDK specs (`packages/Esmbler.Sdk/Specs/Notifications
 
 Recipient rules (`RecipientSpec`) are `field` (a user, group, principals or email field of the record), `role`, `group` (key), `user` (principal ID), `approvers` (the pending approvers of an approval event), `alert_owner` (since G2-M19: the owner group, owner and assignee of the alert a `platform.alert.*` event is about, [ADR 0022](0022-alerts-and-audit-policy.md)) and `address` (an external email address or `+` phone number). People must be enabled members of the workspace and of kind `user`; an address that belongs to a member resolves to that person.
 
-Templates are plain text with the placeholders `{{record.<field>}}`, `{{record.number}}`, `{{event.<field>}}`, `{{recipient.name}}` and `{{link}}`. The validator refuses HTML, unknown placeholders and text over 4,000 characters; rendering caps subjects at 200 characters and SMS bodies at 480.
+Templates are plain text with the placeholders `{{record.<field>}}`, `{{record.number}}`, `{{event.<field>}}`, `{{recipient.name}}`, `{{link}}` and, since G2-M5, `{{activity.body}}` (the public reply text, see Rendering). The validator refuses HTML, unknown placeholders and text over 4,000 characters; rendering caps subjects at 200 characters and SMS bodies at 480.
 
 Whether someone is told, and what the text says, must not reveal a value the recipient could not read. The validator therefore refuses:
 
@@ -78,7 +78,7 @@ A mandatory route cannot be muted (the preference API returns `409 mandatory_rou
 
 ### Channel types and channel instances
 
-A channel type is a code adapter behind the public SDK contract `INotificationChannel` (`packages/Esmbler.Sdk/Notifications/INotificationChannel.cs`). It sends one rendered message and reports `sent`, `transient`, `permanent` or `unknown`, and says whether the provider deduplicates on the idempotency key (`SupportsIdempotency`). The contract is public so that the shape is stable, but adapters are platform-only for now: modules cannot contribute channels through `IModuleDefinition`, and `Esmbler.Hosting` registers them. The first adapters are `SmtpEmailChannel` (MailKit; no provider idempotency) and `HttpSmsChannel` (a Twilio-style HTTPS API with an idempotency header). `in_app` is built in: it writes the person's inbox row in the database. MailKit and MimeKit are confined to `Esmbler.Kernel.Infrastructure` by an architecture test.
+A channel type is a code adapter behind the public SDK contract `INotificationChannel` (`packages/Esmbler.Sdk/Notifications/INotificationChannel.cs`). It sends one rendered message and reports `sent`, `transient`, `permanent` or `unknown`, and says whether the provider deduplicates on the idempotency key (`SupportsIdempotency`). The contract is public so that the shape is stable, but adapters are platform-only for now: modules cannot contribute channels through `IModuleDefinition`, and `Esmbler.Hosting` registers them. The first adapters are `SmtpEmailChannel` (MailKit; no provider idempotency) and `HttpSmsChannel` (a Twilio-style HTTPS API with an idempotency header). `in_app` is built in: it writes the person's inbox row in the database. MailKit and MimeKit are confined to `Esmbler.Kernel.Infrastructure` by an architecture test. Since G2-M5 ([ADR 0023](0023-email-intake.md)) `ChannelMessage` also carries email threading: `MessageId` (an opaque random ID per email delivery, kept on `kernel.notification_deliveries.message_id`), `References` (the record's first inbound message), `ReplyTo` (the mailbox that takes replies for the record's entity) and `AutoSubmitted` (true for every notification, so `SmtpEmailChannel` sets `Auto-Submitted: auto-generated` and `X-Auto-Response-Suppress: All`); adapters that cannot set them ignore them.
 
 A channel instance is an environment setting, not configuration (`kernel.notification_channels`, migration 0014). It is never part of an artifact and never promoted between environments. It has a key, a type (`email` or `sms`), a mode, settings, secret references and a rate per minute (default 60):
 
@@ -91,7 +91,7 @@ A channel instance is an environment setting, not configuration (`kernel.notific
 
 A message is rendered once per recipient and channel when the event is resolved, and the delivery row stores the subject and body. Retries and replays send exactly that text, even if the template or the record changes later. Who receives it is checked again before every send (see Deliver): a person who has left, been disabled or lost access to the record in between is not sent the stored text.
 
-`NotificationRenderer` renders under the recipient's own permissions. A person is skipped when they cannot read the record; each `{{record.<field>}}` renders empty when the field is hidden from them. `{{event.<field>}}` renders empty for everyone when the event type is `restricted`, and an event whose sensitivity is missing counts as restricted (ASM-053). External recipients see only the template's `ExternalFields`, `{{record.number}}` only when the entity's auto-number field is one of them, and `{{event.<field>}}` values only for events whose sensitivity is `public`.
+`NotificationRenderer` renders under the recipient's own permissions. A person is skipped when they cannot read the record; each `{{record.<field>}}` renders empty when the field is hidden from them. `{{event.<field>}}` renders empty for everyone when the event type is `restricted`, and an event whose sensitivity is missing counts as restricted (ASM-053). External recipients see only the template's `ExternalFields`, `{{record.number}}` only when the entity's auto-number field is one of them, and `{{event.<field>}}` values only for events whose sensitivity is `public`. `{{activity.body}}` (G2-M5, [ADR 0023](0023-email-intake.md)) renders the plain text of the public reply an `activity.added` event is about; it is empty for internal notes, redacted replies, other events and every external recipient, and the reply's author is not a recipient of that event's routes.
 
 External recipients are `address` rules that do not belong to a member and, for validation, every `field` recipient over an email field of the record (its value can be any address). The validator refuses routes that send non-public events to external recipients (`config.external_redaction`), and `ConfigCompiler.PermissionDiff` counts email-field recipients as external.
 

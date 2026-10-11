@@ -42,8 +42,11 @@ public static class MailThreading
         return (first is null ? [] : [first], replyTo);
     }
 
-    /// <summary>The record (of the intake's entity, not deleted) a reply belongs to, by thread headers or subject number.</summary>
-    public static async Task<Guid?> FindAsync(KernelDbContext db, EffectiveConfig config, string entityId, ParsedMail mail, CancellationToken ct)
+    /// <summary>
+    /// The record (of the intake's entity, not deleted) a reply belongs to, and how it was found: "header" (Message-ID)
+    /// or "subject" (record number).
+    /// </summary>
+    public static async Task<(Guid? Record, string? By)> FindAsync(KernelDbContext db, EffectiveConfig config, string entityId, ParsedMail mail, CancellationToken ct)
     {
         var ids = mail.ThreadIds.ToList();
         if (ids.Count > 0)
@@ -56,14 +59,14 @@ public static class MailThreading
                 .Select(m => m.RecordId).FirstOrDefaultAsync(ct);
             if (byInbound is { } threaded && await db.Records.AnyAsync(r => r.Id == threaded && r.EntityId == entityId && r.DeletedAt == null, ct))
             {
-                return threaded;
+                return (threaded, "header");
             }
         }
 
         var numberField = config.FindEntity(entityId)?.Fields.Find(f => f.Type == Sdk.Specs.FieldTypes.AutoNumber)?.Key;
         if (numberField is null)
         {
-            return null;
+            return (null, null);
         }
 
         foreach (var number in MailGuard.NumbersIn(mail.Subject).Take(3))
@@ -72,10 +75,10 @@ public static class MailThreading
                 .AsNoTracking().Select(r => (Guid?)r.Id).FirstOrDefaultAsync(ct);
             if (id is not null)
             {
-                return id;
+                return (id, "subject");
             }
         }
 
-        return null;
+        return (null, null);
     }
 }

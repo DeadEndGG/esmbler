@@ -3,7 +3,7 @@ title: Tickets module architecture
 status: accepted
 owner: tickets-module
 last_reviewed: 2026-10-11
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004, REQ-ALR-001]
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004, REQ-ALR-001, REQ-BIZ-003]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)) `1.7.0` (notification routes, see [Release 1.7.0](#release-170-notification-routes)) and `1.8.0` (SLA alerts, see [Release 1.8.0](#release-180-sla-alerts)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)) `1.7.0` (notification routes, see [Release 1.7.0](#release-170-notification-routes)), `1.8.0` (SLA alerts, see [Release 1.8.0](#release-180-sla-alerts)) and `1.9.0` (tickets by email, see [Release 1.9.0](#release-190-tickets-by-email)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -407,6 +407,21 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/NotificationSpecTests.cs` (`Tic
 Team members answer their own team's alerts on the Alerts page as owners; acknowledging a breach stops its escalation. Tenants can disable or retune the rules (owner, escalation, title, severity), but not change their trigger or key.
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/AlertSpecTests.cs` (`Tickets_alerts_on_sla_breach_and_risk_and_resolves_them_with_the_ticket`, including no permission change from 1.7.0), `tests/Esmbler.IntegrationTests/Alerts/AlertTests.cs` (`Tickets_alerts_the_owning_team_on_an_sla_breach_and_resolves_it_with_the_ticket`, upgrading from 1.7.0), `TicketsReleaseTests` and `DesignTokenTests` for 1.8.0.
+
+## Release 1.9.0: tickets by email
+
+1.9.0 takes tickets by email ([ADR 0023](../../adr/0023-email-intake.md), REQ-BIZ-003). The release is additive with no data migrations and no permission-set changes, so upgrading from 1.8.0 has no permission impact; workspace routes and rules are kept. A workspace receives mail only once an administrator creates a mailbox for the intake on `/mail`.
+
+| Element | IDs and detail |
+| --- | --- |
+| Mail intake `core.tickets.mail.tickets` | Entity `core.tickets.ticket`; subject to `title`, new text to `description`, sender to `requester` (left to its default, the sender), address to `contact_email`; sets `channel` to `email`; a reply on a `resolved` ticket runs `reopen` as the sender; a reply on a `closed` or `cancelled` ticket opens a follow-up ticket |
+| Subscriptions | `core.tickets.sub.public_reply` (`activity.added` when `event.kind == 'public_reply'`; internal notes never match) and `core.tickets.sub.created_by_email` (`record.created` when `record.channel == 'email'`) |
+| Templates | `core.tickets.template.public_reply` (subject `[{{record.number}}] Re: {{record.title}}`; body starts with the reply marker `##- Reply above this line -##`, then `{{activity.body}}` and the link; `in_app` variant with the reply text) and `core.tickets.template.received_by_email` (subject `[{{record.number}}] Received: {{record.title}}`; tells the requester the ticket number and that replying adds to it) |
+| Routes | `core.tickets.route.public_reply` ("Replies to the requester") and `core.tickets.route.received_by_email` ("Email tickets acknowledged"): recipients the `requester` field, profile `core.platform.profile.in_app_email`. Optional |
+
+The `[NUMBER]` in subjects is the threading fallback; replies also thread by Message-ID. Only the requester's own email becomes a public reply; an agent who answers a ticket email adds an internal note. The reply's author is never notified of their own reply, so a requester who answers by email is not emailed back their own words, and agents' internal work notes never reach the requester.
+
+Evidence: `tests/Esmbler.IntegrationTests/Mail/MailIntakeTests.cs` (`A_message_opens_a_ticket_for_its_sender_and_replies_go_both_ways_without_internal_notes`, `Replies_reopen_resolved_tickets_closed_ones_start_a_follow_up_and_nobody_replies_into_someone_elses_ticket`), `tests/Esmbler.UnitTests/Configuration/MailIntakeSpecTests.cs` (`A_ticket_intake_validates_and_shows_in_the_dependency_graph`), `TicketsReleaseTests` and `DesignTokenTests` for 1.9.0, Playwright `mail.spec.ts`.
 
 ## Starter: IT ticketing
 

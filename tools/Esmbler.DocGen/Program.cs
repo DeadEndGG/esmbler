@@ -17,7 +17,7 @@ var specTypes = new (string Name, Type Type)[]
     ("relationship", typeof(RelationshipSpec)), ("rule", typeof(RuleSpec)), ("workflow", typeof(WorkflowSpec)), ("view", typeof(ViewSpec)),
     ("node", typeof(NodeSpec)), ("role", typeof(RoleSpec)), ("permission_set", typeof(PermissionSetSpec)), ("assignment_rule", typeof(AssignmentRuleSpec)),
     ("notification_template", typeof(NotificationTemplateSpec)), ("extension_point", typeof(ExtensionPointSpec)), ("migration", typeof(MigrationSpec)),
-    ("catalog_item", typeof(CatalogItemSpec)), ("request_binding", typeof(RequestBindingSpec)), ("approval_policy", typeof(ApprovalPolicySpec)), ("event_type", typeof(EventTypeSpec)), ("business_calendar", typeof(BusinessCalendarSpec)), ("sla_policy", typeof(SlaPolicySpec)), ("metric", typeof(MetricSpec)), ("subscription", typeof(SubscriptionSpec)), ("notification_profile", typeof(NotificationProfileSpec)), ("notification_route", typeof(NotificationRouteSpec)), ("alert_rule", typeof(AlertRuleSpec)), ("overlay_op", typeof(OverlayOp)),
+    ("catalog_item", typeof(CatalogItemSpec)), ("request_binding", typeof(RequestBindingSpec)), ("approval_policy", typeof(ApprovalPolicySpec)), ("event_type", typeof(EventTypeSpec)), ("business_calendar", typeof(BusinessCalendarSpec)), ("sla_policy", typeof(SlaPolicySpec)), ("metric", typeof(MetricSpec)), ("subscription", typeof(SubscriptionSpec)), ("notification_profile", typeof(NotificationProfileSpec)), ("notification_route", typeof(NotificationRouteSpec)), ("alert_rule", typeof(AlertRuleSpec)), ("mail_intake", typeof(MailIntakeSpec)), ("overlay_op", typeof(OverlayOp)),
 };
 var exporterOptions = new JsonSchemaExporterOptions
 {

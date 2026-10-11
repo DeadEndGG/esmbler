@@ -2,7 +2,7 @@
 title: "ADR 0012: Repository layout and module boundaries"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-MOD-001, REQ-MOD-002, REQ-AI-001, REQ-OPS-006]
 ---
 
@@ -34,7 +34,7 @@ The master spec ("Architecture model") asks for a modular monolith with enforced
 | `packages/Esmbler.Expressions` | CEL-subset language ([ADR 0009](0009-rule-expression-language.md)) | Yes |
 | `packages/Esmbler.Sdk` | Specs, overlay ops, element registry, module API, event envelope | Yes (the public SDK) |
 | `packages/Esmbler.Kernel` | Configuration compiler, request context, record write pipeline (`RecordWriteEngine`, `IRecordWriteHook`), PDP, ports (`IRelationshipGraph`); no database or network | No |
-| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, record, draft, publish, upgrade and preview services, workflow versions, outbox dispatcher, job runner, event consumers (notifications, fulfillment, approvals), the notification service and its channel adapters (SMTP through MailKit, SMS over HTTPS), approval service, audit writer | No |
+| `packages/Esmbler.Kernel.Infrastructure` | PostgreSQL (EF Core, Npgsql, `Database` RLS unit of work, SQL migrations), OpenFGA adapter, query compiler, record, draft, publish, upgrade and preview services, workflow versions, outbox dispatcher, job runner, event consumers (notifications, fulfillment, approvals), the notification service and its channel adapters (SMTP through MailKit, SMS over HTTPS), email intake (IMAP polling with MailKit, MIME parsing with MimeKit; [ADR 0023](0023-email-intake.md)), approval service, audit writer | No |
 | `packages/Esmbler.Platform` | Write hooks: workflow (order 100), requests (150), assignment (200), rules (300) | No |
 | `packages/Esmbler.Assistant` | AI builder planners (`ScriptedPlanner`, `ClaudePlanner`) and the MCP client they act through ([ADR 0013](0013-ai-assistant-model-adapter.md)); no kernel access | No |
 | `packages/Esmbler.Hosting` | Composition root shared by hosts | No |
@@ -85,7 +85,7 @@ Implemented in [`tests/Esmbler.ArchitectureTests/BoundaryTests.cs`](../../tests/
 | `Platform_does_not_depend_on_modules_or_infrastructure` | Platform has no dependency on Modules, Infrastructure, Hosting, `Npgsql`, `OpenFga` |
 | `Assistant_changes_workspaces_only_through_mcp` | `Esmbler.Assistant` has no dependency on Kernel, Infrastructure, Platform, Hosting, hosts, Modules, Sdk, `Npgsql`, EF Core or `OpenFga`: it can act only through MCP tools |
 | `Only_the_assistant_calls_the_model_provider` | Only `Esmbler.Assistant` references the model provider SDK ([ADR 0013](0013-ai-assistant-model-adapter.md)) |
-| `Only_infrastructure_talks_to_mail_servers` | Sdk, Kernel, Platform, Hosting, Mcp, Assistant and module assemblies have no dependency on `MailKit` or `MimeKit`; only `Esmbler.Kernel.Infrastructure` (the SMTP channel adapter) does ([ADR 0021](0021-notification-routing-and-delivery.md)) |
+| `Only_infrastructure_talks_to_mail_servers` | Sdk, Kernel, Platform, Hosting, Mcp, Api, Worker, Assistant and module assemblies have no dependency on `MailKit` or `MimeKit`; only `Esmbler.Kernel.Infrastructure` does (SMTP sending, IMAP polling and MIME parsing; [ADR 0021](0021-notification-routing-and-delivery.md), [ADR 0023](0023-email-intake.md)) |
 | `Platform_code_does_not_hard_code_business_module_ids` | Kernel, Kernel.Infrastructure, Platform and the API, MCP and worker hosts contain no Tickets ID literals outside comments and description examples; module IDs come from specs, module Contracts, or `Esmbler.Hosting` |
 
 Not built yet: only `Kernel.Infrastructure` references `OpenFga.Sdk` across all assemblies ([ADR 0004](0004-authorization-engine.md); Kernel, Platform and Assistant are already covered above). That MCP tools take no tenant, environment or principal parameter ([ADR 0007](0007-mcp-server-design.md)) is checked by the integration test `Mcp.McpServerTests.No_tool_takes_tenant_environment_or_principal_arguments`.

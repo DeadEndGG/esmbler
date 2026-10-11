@@ -105,13 +105,24 @@ public sealed class ImapPoller(Database database, MailIntakeService intake, ISec
                 var uids = await folder.SearchAsync(SearchQuery.Uids(new UniqueIdRange(new UniqueId((uint)Math.Min(uint.MaxValue - 1, (lastUid ?? 0) + 1)), UniqueId.MaxValue)), ct);
                 foreach (var uid in uids.Where(u => u.Id > (lastUid ?? 0)).OrderBy(u => u.Id).Take(MaxPerPoll))
                 {
+                    // One bad message (too large, unreadable, refused) is skipped, never retried forever or allowed to
+                    // stop the rest of the mailbox.
                     var summary = (await folder.FetchAsync([uid], MessageSummaryItems.Size, ct)).FirstOrDefault();
                     if (summary?.Size is null or <= MailParser.MaxBytes)
                     {
                         using var stream = await folder.GetStreamAsync(uid, ct);
-                        using var buffer = new MemoryStream();
-                        await stream.CopyToAsync(buffer, ct);
-                        await intake.ReceiveAsync(tenantId, environmentId, inboxId, buffer.ToArray(), ct);
+                        var raw = await ReadCappedAsync(stream, ct);
+                        if (raw is not null)
+                        {
+                            try
+                            {
+                                await intake.ReceiveAsync(tenantId, environmentId, inboxId, raw, ct);
+                            }
+                            catch (Kernel.KernelException ex)
+                            {
+                                logger.LogWarning("Mailbox {Inbox} of workspace {Tenant} skipped message {Uid}: {Code}", inboxId, tenantId, uid.Id, ex.Code);
+                            }
+                        }
                     }
 
                     await folder.AddFlagsAsync(uid, MessageFlags.Seen, true, ct);
@@ -140,6 +151,25 @@ public sealed class ImapPoller(Database database, MailIntakeService intake, ISec
                 .SetProperty(i => i.ImapUidValidity, validity)
                 .SetProperty(i => i.ImapLastUid, lastUid)
                 .SetProperty(i => i.PollError, error), ct), ct);
+    }
+
+    /// <summary>The message's bytes, or null when it is larger than <see cref="MailParser.MaxBytes"/>.</summary>
+    private static async Task<byte[]?> ReadCappedAsync(Stream stream, CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MailParser.MaxBytes)
+            {
+                return null;
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return buffer.ToArray();
     }
 }
 

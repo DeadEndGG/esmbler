@@ -14,6 +14,10 @@ public class MailGuardTests
     [InlineData("mx.test; dmarc=fail header.from=example.com", "dana@example.com", false)]
     [InlineData("mx.test; dkim=pass header.d=com", "dana@example.com", false)]
     [InlineData("attacker.example; dmarc=pass header.from=example.com", "dana@example.com", false)]
+    [InlineData("mx.test; spf=pass (domain of \"x smtp.mailfrom=example.com \"@evil.example designates 1.2.3.4) smtp.mailfrom=bounce@evil.example", "ceo@example.com", false)]
+    [InlineData("mx.test; spf=fail (sender said: dkim=pass header.d=example.com) smtp.mailfrom=evil.example", "ceo@example.com", false)]
+    [InlineData("mx.test; dmarc=pass (p=reject dis=none) header.from=example.com", "dana@example.com", true)]
+    [InlineData("mx.test; spf=pass smtp.helo=example.com", "dana@example.com", false)]
     public void Only_the_trusted_servers_aligned_pass_verifies_a_sender(string header, string from, bool verified) =>
         Assert.Equal(verified, MailGuard.Verify([header], from, "mx.test").Verified);
 
@@ -24,6 +28,9 @@ public class MailGuardTests
         Assert.False(MailGuard.Verify(["mx.test; dmarc=fail header.from=example.com", "mx.test; dmarc=pass header.from=example.com"], "a@example.com", "mx.test").Verified);
         Assert.False(MailGuard.Verify(["mx.test; dmarc=pass header.from=example.com"], "a@example.com", null).Verified);
         Assert.False(MailGuard.Verify([], "a@example.com", "mx.test").Verified);
+
+        // A header the sender wrote below another server's header is not trusted either.
+        Assert.False(MailGuard.Verify(["relay.example; none", "mx.test; dmarc=pass header.from=example.com"], "a@example.com", "mx.test").Verified);
     }
 
     [Theory]
@@ -60,6 +67,18 @@ public class MailGuardTests
         var raw = Encoding.UTF8.GetBytes($"From: a@example.com\r\nSubject: s\r\n{header}\r\n\r\nbody\r\n");
         Assert.Contains(signal, MailParser.Parse(raw).AutoSignals);
         Assert.Empty(MailParser.Parse(Encoding.UTF8.GetBytes("From: a@example.com\r\nAuto-Submitted: no\r\nSubject: s\r\n\r\nbody\r\n")).AutoSignals);
+    }
+
+    [Fact]
+    public void Pathological_html_is_converted_quickly()
+    {
+        var html = new string('<', 2_000_000) + string.Concat(Enumerable.Repeat("<script", 100_000));
+        var raw = Encoding.UTF8.GetBytes($"From: a@example.com\r\nSubject: s\r\nContent-Type: text/html\r\n\r\n{html}\r\n");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        MailParser.Parse(raw);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
+        Assert.Null(MailParser.CleanId("<not an id>"));
+        Assert.Equal("a@b", MailParser.CleanId(" <a@b> "));
     }
 
     [Fact]

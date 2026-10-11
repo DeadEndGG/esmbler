@@ -42,6 +42,9 @@ public static partial class MailParser
     /// <summary>Largest message accepted (bytes); larger ones are refused before parsing.</summary>
     public const int MaxBytes = 10 * 1024 * 1024;
 
+    /// <summary>Most HTML characters turned into text; the rest of a longer HTML body is dropped.</summary>
+    public const int MaxHtml = 512 * 1024;
+
     public static ParsedMail Parse(byte[] raw)
     {
         using var stream = new MemoryStream(raw, writable: false);
@@ -54,11 +57,12 @@ public static partial class MailParser
 
         threadIds.AddRange(message.References.Reverse().Select(r => r.Trim('<', '>', ' ')));
         var html = message.HtmlBody;
-        var text = message.TextBody ?? (html is null ? string.Empty : NotificationRenderer.PlainText(ScriptOrStyle().Replace(html, string.Empty)));
+        // HTML-only mail: at most MaxHtml characters are converted, with linear-time patterns (anyone can send this).
+        var text = message.TextBody ?? (html is null ? string.Empty : NotificationRenderer.PlainText(StyleBlock().Replace(ScriptBlock().Replace(html.Length > MaxHtml ? html[..MaxHtml] : html, string.Empty), string.Empty)));
         return new ParsedMail
         {
-            MessageId = string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId.Trim('<', '>', ' '),
-            ThreadIds = [.. threadIds.Where(t => t.Length is > 0 and <= 250).Distinct(StringComparer.Ordinal).Take(20)],
+            MessageId = CleanId(message.MessageId),
+            ThreadIds = [.. threadIds.Select(CleanId).OfType<string>().Distinct(StringComparer.Ordinal).Take(20)],
             From = [.. message.From.Mailboxes.Select(m => (m.Address.Trim(), string.IsNullOrWhiteSpace(m.Name) ? null : m.Name.Trim()))],
             To = [.. message.To.Mailboxes.Select(m => m.Address.Trim()).Take(50)],
             Cc = [.. message.Cc.Mailboxes.Select(m => m.Address.Trim()).Take(50)],
@@ -80,8 +84,17 @@ public static partial class MailParser
         using var stream = new MemoryStream(raw, writable: false);
         var parser = new MimeParser(stream, MimeFormat.Entity);
         var headers = parser.ParseHeaders();
-        var value = headers[HeaderId.MessageId];
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim().Trim('<', '>', ' ');
+        return CleanId(headers[HeaderId.MessageId]);
+    }
+
+    /// <summary>
+    /// A Message-ID safe to store and reuse in References: printable ASCII without spaces or angle brackets, with an @,
+    /// at most 250 characters; anything else counts as no ID.
+    /// </summary>
+    public static string? CleanId(string? value)
+    {
+        var id = value?.Trim().Trim('<', '>').Trim();
+        return id is { Length: > 2 and <= 250 } && id.Contains('@', StringComparison.Ordinal) && id.All(c => c is > ' ' and < (char)127 and not ('<' or '>' or '"' or '\\' or ',')) ? id : null;
     }
 
     private static List<string> AutoSignalsOf(MimeMessage message)
@@ -125,6 +138,9 @@ public static partial class MailParser
         return signals;
     }
 
-    [GeneratedRegex("<(script|style)[^>]*>.*?</\\1\\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex ScriptOrStyle();
+    [GeneratedRegex("<script[^>]*>.*?</script[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.NonBacktracking)]
+    private static partial Regex ScriptBlock();
+
+    [GeneratedRegex("<style[^>]*>.*?</style[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.NonBacktracking)]
+    private static partial Regex StyleBlock();
 }

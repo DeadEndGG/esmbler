@@ -164,7 +164,15 @@ public class MailIntakeTests(PlatformFixture f)
         await records.TransitionAsync(agent, Ticket, ticket.Id, started.Revision, "resolve", new JsonObject { ["resolution_notes"] = "Cleared" }, null, null, default);
         var (_, reopen) = await SendAsync(box, Message(await EmailOfAsync(t, "dana"), $"Re: [{number}] Printer jam", "It jammed again."));
         Assert.Equal(("processed", "reopened"), (reopen.Status, reopen.Outcome));
-        Assert.Equal("in_progress", (await records.GetAsync(agent, Ticket, ticket.Id, default)).Data["status"]!.GetValue<string>());
+        var reopened = await records.GetAsync(agent, Ticket, ticket.Id, default);
+        Assert.Equal(("in_progress", 1), (reopened.Data["status"]!.GetValue<string>(), reopened.Data["reopen_count"]!.GetValue<int>()));
+
+        // An agent answering by email (for example to an escalation email whose Reply-To is the mailbox) writes an
+        // internal note: only the requester's own email becomes a public reply.
+        var (_, fromAgent) = await SendAsync(box, Message(await EmailOfAsync(t, "agent"), $"Re: [{number}] Printer jam", "Ordered a new roller, arrives Tuesday."));
+        Assert.Equal(("processed", "replied"), (fromAgent.Status, fromAgent.Outcome));
+        Assert.Contains(await records.ActivityAsync(agent, Ticket, ticket.Id, default), a => a.Kind == "work_note" && a.Source == "email" && a.Body.Contains("new roller", StringComparison.Ordinal));
+        Assert.DoesNotContain(await records.ActivityAsync(f.As(t, "dana"), Ticket, ticket.Id, default), a => a.Body.Contains("new roller", StringComparison.Ordinal));
 
         // Once closed, a reply starts a new ticket.
         var current = await records.GetAsync(agent, Ticket, ticket.Id, default);
@@ -219,6 +227,12 @@ public class MailIntakeTests(PlatformFixture f)
         Assert.Equal(("suspended", MailReasons.UnverifiedSender), (unverified.Status, unverified.Reason));
         var (_, spoofed) = await SendAsync(box, Message(dana, "Wire money", "Now.", authDomain: "evil.example"));
         Assert.Equal(("suspended", MailReasons.UnverifiedSender), (spoofed.Status, spoofed.Reason));
+        // Forged mail does not use up Dana's allowance; her own processed mail does.
+        foreach (var n in new[] { "First", "Second" })
+        {
+            Assert.Equal("processed", (await SendAsync(box, Message(dana, n, $"{n} message within the hour."))).Row.Status);
+        }
+
         var (_, tooMany) = await SendAsync(box, Message(dana, "Third", "Third message within the hour."));
         Assert.Equal(("suspended", MailReasons.TooManyFromSender), (tooMany.Status, tooMany.Reason));
         var (strangerId, stranger) = await SendAsync(box, Message("pat@partner.example", "Invoice question", "Where is invoice 42?"));
@@ -240,9 +254,15 @@ public class MailIntakeTests(PlatformFixture f)
         var created = await f.Get<RecordService>().GetAsync(agent, Ticket, accepted.RecordId!.Value, default);
         Assert.Equal((t.Users["jordan"].ToString(), "pat@partner.example"), (created.Data["requester"]!.GetValue<string>(), created.Data["contact_email"]!.GetValue<string>()));
 
-        // The unverified message is accepted as Dana's; a decided message cannot be decided again.
+        // Accepting the unverified message never acts as Dana (it could be forged): the agent opens the ticket for her
+        // with their own rights, and the audit shows the agent. A decided message cannot be decided again.
         var verifiedLater = await Intake.AcceptAsync(agent, unverifiedId, null, default);
-        Assert.Equal("processed", verifiedLater.Status);
+        Assert.Equal(("processed", "created"), (verifiedLater.Status, verifiedLater.Outcome));
+        var forDana = await f.Get<RecordService>().GetAsync(agent, Ticket, verifiedLater.RecordId!.Value, default);
+        Assert.Equal(t.Users["dana"].ToString(), forDana.Data["requester"]!.GetValue<string>());
+        var creator = await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AsNoTracking()
+            .Where(a => a.Operation == "record.create" && a.TargetId == forDana.Id.ToString()).Select(a => a.Actor).FirstAsync(), default);
+        Assert.Equal(t.Users["agent"], creator);
         Assert.Equal(409, (await Assert.ThrowsAsync<KernelException>(() => Intake.RejectAsync(agent, unverifiedId, default))).Status);
         var rejected = await Intake.RejectAsync(agent, (await Intake.ListAsync(agent, null, default))[0].Id, default);
         Assert.Equal(("rejected", MailReasons.Rejected), (rejected.Status, rejected.Reason));

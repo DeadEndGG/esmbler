@@ -61,6 +61,8 @@ public static class MailEndpoints
         var inboxes = app.MapGroup("/api/admin/mail/inboxes").WithTags("Mail").RequireAuthorization();
         inboxes.MapGet("/", (ClaimsPrincipal user, MailIntakeService intake, CancellationToken ct) =>
             intake.InboxesAsync(RequestContextFactory.From(user, "api"), ct));
+        app.MapGet("/api/admin/mail/intakes", (ClaimsPrincipal user, MailIntakeService intake, CancellationToken ct) =>
+            intake.IntakesAsync(RequestContextFactory.From(user, "api"), ct)).WithTags("Mail").RequireAuthorization();
         inboxes.MapPut("/{key}", (string key, MailInboxRequest body, ClaimsPrincipal user, MailIntakeService intake, CancellationToken ct) =>
             intake.SaveInboxAsync(RequestContextFactory.From(user, "api"), body with { Key = key }, ct));
         inboxes.MapPost("/{key}/rotate-token", (string key, ClaimsPrincipal user, MailIntakeService intake, CancellationToken ct) =>

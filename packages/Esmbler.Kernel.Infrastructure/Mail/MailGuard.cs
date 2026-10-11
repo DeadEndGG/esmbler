@@ -12,13 +12,15 @@ namespace Esmbler.Kernel.Infrastructure.Mail;
 public static partial class MailGuard
 {
     /// <summary>Line that outbound mail puts above the quoted text; everything from it down is dropped from replies.</summary>
-    public const string ReplyMarker = "##- Reply above this line -##";
+    public const string ReplyMarker = Sdk.Specs.MailConventions.ReplyMarker;
 
     public const int MaxText = 20_000;
 
     /// <summary>
-    /// Whether the topmost Authentication-Results header from <paramref name="authservId"/> says the From domain passed
-    /// DMARC, or an aligned DKIM signature or SPF check. Headers from other servers are ignored (a sender can add any).
+    /// Whether the topmost Authentication-Results header, added by <paramref name="authservId"/> (the receiving server the
+    /// workspace trusts), says the From domain passed DMARC, or an aligned DKIM signature or SPF check. Only the topmost
+    /// header counts: anything below it could come from the sender. Comments and quoted strings are ignored (RFC 8601),
+    /// so text a sender controls inside them cannot pose as a result.
     /// </summary>
     public static (bool Verified, string Detail) Verify(IReadOnlyList<string> authenticationResults, string fromAddress, string? authservId)
     {
@@ -34,34 +36,94 @@ public static partial class MailGuard
         }
 
         var domain = fromAddress[(at + 1)..].ToLowerInvariant();
-        var header = authenticationResults.FirstOrDefault(h => AuthservId(h).Equals(authservId.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (header is null)
+        if (authenticationResults.Count == 0)
+        {
+            return (false, "no result from the trusted mail server");
+        }
+
+        var header = Uncommented(authenticationResults[0]);
+        if (!AuthservId(header).Equals(authservId.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             return (false, "no result from the trusted mail server");
         }
 
         foreach (var result in header.Split(';').Skip(1).Select(r => r.Trim()))
         {
-            var match = MethodResult().Match(result);
-            if (!match.Success || !match.Groups["result"].Value.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            var tokens = result.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length == 0 || tokens[0].Split('=', 2) is not [var methodToken, var outcome] || !outcome.Equals("pass", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var method = match.Groups["method"].Value.ToLowerInvariant();
-            string? Property(string name) => Regex.Match(result, $@"(?:^|\s){Regex.Escape(name)}=([^\s;]+)", RegexOptions.IgnoreCase) is { Success: true } m ? m.Groups[1].Value.Trim('"').ToLowerInvariant() : null;
+            var method = methodToken.Split('/')[0].ToLowerInvariant();
+            string? Property(string name) => tokens.Skip(1).Select(t => t.Split('=', 2)).Where(kv => kv.Length == 2 && kv[0].Equals(name, StringComparison.OrdinalIgnoreCase)).Select(kv => kv[1].ToLowerInvariant()).FirstOrDefault();
             switch (method)
             {
-                case "dmarc" when Aligned(Property("header.from"), domain):
+                case "dmarc" when Property("header.from") == domain:
                     return (true, "dmarc=pass");
                 case "dkim" when Aligned(Property("header.d") ?? DomainOf(Property("header.i")), domain):
                     return (true, "dkim=pass");
-                case "spf" when Aligned(DomainOf(Property("smtp.mailfrom")) ?? Property("smtp.helo"), domain):
+                case "spf" when Aligned(DomainOf(Property("smtp.mailfrom")), domain):
                     return (true, "spf=pass");
             }
         }
 
         return (false, "the sender's domain did not pass");
+    }
+
+    /// <summary>A header value without comments (nested parentheses) and with quoted strings emptied (RFC 5322, RFC 8601).</summary>
+    internal static string Uncommented(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length);
+        var depth = 0;
+        var quoted = false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '\\' && (depth > 0 || quoted))
+            {
+                i++; // an escaped character inside a comment or quoted string
+                continue;
+            }
+
+            if (quoted)
+            {
+                if (c == '"')
+                {
+                    quoted = false;
+                    sb.Append('"');
+                }
+
+                continue;
+            }
+
+            if (c == '(')
+            {
+                depth++;
+                sb.Append(' ');
+                continue;
+            }
+
+            if (c == ')' && depth > 0)
+            {
+                depth--;
+                continue;
+            }
+
+            if (depth > 0)
+            {
+                continue;
+            }
+
+            if (c == '"')
+            {
+                quoted = true;
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -70,7 +132,7 @@ public static partial class MailGuard
     /// </summary>
     public static string NewText(string text)
     {
-        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var lines = (text.Length > 200_000 ? text[..200_000] : text).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var kept = new List<string>();
         for (var i = 0; i < lines.Length; i++)
         {
@@ -154,10 +216,7 @@ public static partial class MailGuard
     private static bool Aligned(string? authenticated, string fromDomain) =>
         authenticated is { Length: > 0 } a && (a == fromDomain || a.EndsWith("." + fromDomain, StringComparison.Ordinal) || fromDomain.EndsWith("." + a, StringComparison.Ordinal)) && a.Contains('.', StringComparison.Ordinal);
 
-    [GeneratedRegex(@"^(?<method>[a-z0-9_-]+)\s*=\s*(?<result>[a-z]+)", RegexOptions.IgnoreCase)]
-    private static partial Regex MethodResult();
-
-    [GeneratedRegex(@"^On\s.+\swrote:$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^On\s.+\swrote:$", RegexOptions.IgnoreCase | RegexOptions.NonBacktracking)]
     private static partial Regex OnWrote();
 
     [GeneratedRegex(@"^-{2,}\s*(Original Message|Forwarded message)\s*-{2,}$", RegexOptions.IgnoreCase)]

@@ -33,6 +33,9 @@ public sealed record InboundMessageDetail(InboundMessageView Message, string? Te
 
 public sealed record MailReceipt(Guid Id, bool Duplicate);
 
+/// <summary>A mail intake of the published configuration, for choosing one in mailbox settings.</summary>
+public sealed record MailIntakeOption(string Id, string Label, string Entity, bool Enabled);
+
 /// <summary>A reviewer's decision to process a suspended message anyway, optionally naming the requester for an unknown sender.</summary>
 public sealed record MailDecision(RequestContext Reviewer, Guid? Requester);
 
@@ -129,7 +132,7 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
 
     // ---- Processing ------------------------------------------------------------------------------------------------
 
-    private sealed record Plan(InboundMessageRow Row, MailIntakeSpec Intake, EntitySpec Entity, ParsedMail Mail, string Sender, Guid? SenderId, Guid? RecordId, string? State, string Text, string Subject);
+    private sealed record Plan(InboundMessageRow Row, MailIntakeSpec Intake, EntitySpec Entity, ParsedMail Mail, string Sender, Guid? SenderId, Guid? RecordId, string? State, string Text, string Subject, bool FromRequester, bool ActAsSender);
 
     /// <summary>Processes a received message (the job), or a suspended one a reviewer accepted.</summary>
     public async Task ProcessAsync(Guid tenantId, Guid environmentId, Guid messageId, MailDecision? decision, CancellationToken ct)
@@ -142,12 +145,14 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
 
         // Writes go through the record service as the sender (or, for an unknown sender a reviewer accepted, as the
         // reviewer on the requester's behalf), so every rule and permission applies.
-        var onBehalf = plan.SenderId is null;
+        // A reviewer's decision never makes the platform act as the claimed sender of a message nobody verified: the
+        // reviewer acts (with their own rights) on the sender's behalf.
+        var onBehalf = !plan.ActAsSender;
         var actor = new RequestContext
         {
             TenantId = tenantId,
             EnvironmentId = environmentId,
-            PrincipalId = plan.SenderId ?? decision!.Reviewer.PrincipalId,
+            PrincipalId = onBehalf ? decision!.Reviewer.PrincipalId : plan.SenderId!.Value,
             Channel = onBehalf ? decision!.Reviewer.Channel : "email",
             CorrelationId = decision?.Reviewer.CorrelationId ?? Guid.NewGuid(),
         };
@@ -159,7 +164,7 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             }
             else
             {
-                await CreateAsync(plan, actor, decision?.Requester ?? plan.SenderId!.Value, plan.RecordId is not null, ct);
+                await CreateAsync(plan, actor, decision?.Requester ?? plan.SenderId ?? actor.PrincipalId, plan.RecordId is not null, ct);
             }
         }
         catch (ValidationFailedException ex)
@@ -251,7 +256,8 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
 
             var limit = settings["maxPerSenderPerHour"]?.GetValue<int>() ?? DefaultMaxPerSenderPerHour;
             var since = clock.UtcNow.AddHours(-1);
-            var recent = await db.InboundMessages.CountAsync(m => m.InboxId == row.InboxId && m.Id != row.Id && m.FromAddress != null && EF.Functions.ILike(m.FromAddress, Like(sender), "\\") && m.ReceivedAt > since, ct);
+            // Only mail that was processed counts, so forged mail in someone's name cannot use up their allowance.
+            var recent = await db.InboundMessages.CountAsync(m => m.InboxId == row.InboxId && m.Id != row.Id && m.Status == "processed" && m.FromAddress != null && EF.Functions.ILike(m.FromAddress, Like(sender), "\\") && m.ReceivedAt > since, ct);
             if (recent >= limit)
             {
                 return await StopAsync("suspended", MailReasons.TooManyFromSender);
@@ -261,6 +267,7 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             {
                 var (verified, detail) = MailGuard.Verify(mail.AuthenticationResults, sender, settings["authservId"]?.GetValue<string>());
                 details["verification"] = detail;
+                details["verified"] = verified;
                 if (!verified)
                 {
                     return await StopAsync("suspended", MailReasons.UnverifiedSender);
@@ -300,36 +307,48 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             AuditWriter.Add(db, decision.Reviewer, "mail.accept", "inbound_message", row.Id.ToString(), artifact.Revision, new { reason = row.Reason, onBehalf = senderId is null });
         }
 
-        var recordId = await MailThreading.FindAsync(db, artifact.Config, entity.Id, mail, ct);
+        var (recordId, threadedBy) = await MailThreading.FindAsync(db, artifact.Config, entity.Id, mail, ct);
         string? state = null;
-        if (recordId is { } found && artifact.Config.Workflows.Find(w => w.Entity == entity.Id) is { } wf)
+        var fromRequester = false;
+        if (recordId is { } found)
         {
-            var data = await db.Records.AsNoTracking().Where(r => r.Id == found).Select(r => r.Data).FirstAsync(ct);
-            state = JsonNode.Parse(data)?[wf.StateField]?.GetValue<string>();
+            var data = JsonNode.Parse(await db.Records.AsNoTracking().Where(r => r.Id == found).Select(r => r.Data).FirstAsync(ct))?.AsObject();
+            state = artifact.Config.Workflows.Find(w => w.Entity == entity.Id) is { } wf ? data?[wf.StateField]?.GetValue<string>() : null;
+            fromRequester = senderId is { } s && data?[intake.RequesterField]?.GetValue<string>() == s.ToString();
         }
 
         details["threadedTo"] = recordId?.ToString();
+        details["threadedBy"] = threadedBy;
         row.Details = details.ToJsonString();
         row.EntityId = entity.Id;
         await db.SaveChangesAsync(ct);
-        return new Plan(row, intake, entity, mail, sender, senderId, recordId, state, text, subject);
+        // The job acts as a member sender (verified, or the mailbox does not require it); a reviewer's decision does so
+        // only for a message whose sender was verified.
+        var actAsSender = senderId is not null && (decision is null || details["verified"]?.GetValue<bool>() == true);
+        return new Plan(row, intake, entity, mail, sender, senderId, recordId, state, text, subject, fromRequester && actAsSender, actAsSender);
     }
 
     private async Task ReplyAsync(Plan plan, RequestContext actor, Guid recordId, bool onBehalf, CancellationToken ct)
     {
-        // A reply from someone who is not a member (accepted by a reviewer) is kept as the reviewer's internal note, not
-        // published to the requester as the reviewer's own words.
-        var kind = onBehalf ? "work_note" : "public_reply";
+        // Only the requester's own email becomes a public reply. Anyone else (an agent answering an escalation email, a
+        // colleague in copy) adds an internal note, which needs the right to write notes, so nothing reaches the
+        // requester by accident; a reply from a non-member a reviewer accepted is kept as the reviewer's internal note.
+        var kind = onBehalf || !plan.FromRequester ? "work_note" : "public_reply";
         var body = onBehalf ? $"<p>Email from {System.Net.WebUtility.HtmlEncode(plan.Sender)}:</p>{MailGuard.ToRichText(plan.Text)}" : MailGuard.ToRichText(plan.Text.Length > 0 ? plan.Text : plan.Subject);
         await records.AddActivityAsync(actor, plan.Entity.Id, recordId, kind, body, sanitizer, "email", async (db, activityId) =>
         {
-            await db.InboundMessages.Where(m => m.Id == plan.Row.Id && m.Status == plan.Row.Status)
+            var updated = await db.InboundMessages.Where(m => m.Id == plan.Row.Id && m.Status == plan.Row.Status)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.Status, "processed").SetProperty(m => m.Reason, (string?)null).SetProperty(m => m.Outcome, "replied")
                     .SetProperty(m => m.RecordId, recordId).SetProperty(m => m.ActivityId, activityId).SetProperty(m => m.ProcessedAt, clock.UtcNow), ct);
+            if (updated == 0)
+            {
+                // Someone decided the message meanwhile (or another run processed it): the reply is not added.
+                throw KernelException.Conflict("mail_decided", "This message was already processed or decided.");
+            }
         }, ct);
 
         // A reply to a resolved record reopens it, as the sender (their own right to run the transition decides).
-        if (!onBehalf && plan.Intake.ReopenTransition is { } transition && plan.Intake.ReopenFrom.Contains(plan.State ?? string.Empty))
+        if (kind == "public_reply" && plan.Intake.ReopenTransition is { } transition && plan.Intake.ReopenFrom.Contains(plan.State ?? string.Empty))
         {
             try
             {
@@ -409,6 +428,11 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             return 0;
         }, ct);
 
+    internal Task FailAsync(Guid tenantId, Guid environmentId, Guid messageId, CancellationToken ct) =>
+        database.InTenantAsync(tenantId, environmentId, null, db =>
+            db.InboundMessages.Where(m => m.Id == messageId && m.Status == "received")
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Status, "failed").SetProperty(m => m.Reason, MailReasons.ProcessingFailed).SetProperty(m => m.ProcessedAt, clock.UtcNow), ct), ct);
+
     // ---- Review (people who work the intake's entity) --------------------------------------------------------------
 
     public Task<IReadOnlyList<InboundMessageView>> ListAsync(RequestContext ctx, string? status, CancellationToken ct) =>
@@ -478,7 +502,11 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             row.Reason = MailReasons.Rejected;
             row.DecidedBy = ctx.PrincipalId;
             row.ProcessedAt = clock.UtcNow;
-            row.Raw = null;
+            if (!await db.LegalHolds.AnyAsync(h => h.ReleasedAt == null, ct))
+            {
+                row.Raw = null;
+            }
+
             AuditWriter.Add(db, ctx, "mail.reject", "inbound_message", row.Id.ToString(), null, new { inbox = key });
             await db.SaveChangesAsync(ct);
             return View(row, key);
@@ -533,12 +561,26 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             return rows.Select(r => InboxView(r, accessor)).ToList();
         }, ct);
 
+    public Task<IReadOnlyList<MailIntakeOption>> IntakesAsync(RequestContext ctx, CancellationToken ct) =>
+        database.InTenantAsync<IReadOnlyList<MailIntakeOption>>(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            await RequireManageAsync(db, ctx, ct);
+            var config = (await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct)).Config;
+            return config.MailIntakes.Select(i => new MailIntakeOption(i.Id, i.Label, i.Entity, i.Enabled)).ToList();
+        }, ct);
+
     public Task<MailInboxSaved> SaveInboxAsync(RequestContext ctx, MailInboxRequest request, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            await RequireManageAsync(db, ctx, ct);
+            var perms = await RequireManageAsync(db, ctx, ct);
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             var errors = new List<FieldError>();
+            if (request.Settings?["senderVerification"]?.GetValue<string>() == "none" && !perms.Can(PlatformActions.PermissionsAdmin))
+            {
+                // Without verification anyone can write as any member: a permission decision.
+                throw KernelException.Forbidden("Turning sender verification off needs permission administration.", "settings.senderVerification", "Name the trusted mail server (authservId) instead.");
+            }
+
             if (!InboxKey().IsMatch(request.Key ?? string.Empty))
             {
                 errors.Add(new FieldError("key", "invalid", "Use 2 to 41 lowercase letters, digits or underscores, starting with a letter."));
@@ -705,7 +747,7 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             r.Mode != "imap" || options.IsAllowed("imap", settings["host"]?.GetValue<string>()), r.PolledAt, r.PollError, r.Version, r.UpdatedAt);
     }
 
-    private async Task RequireManageAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
+    private async Task<EffectivePermissions> RequireManageAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
     {
         var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
         var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
@@ -713,6 +755,8 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
         {
             throw KernelException.Forbidden(ctx.AgentId is null ? "Managing mailboxes needs the notifications.manage right." : "AI agents cannot manage mailboxes.");
         }
+
+        return perms;
     }
 
     private async Task<Sdk.Notifications.ISecretAccessor> AccessorAsync(KernelDbContext db, RequestContext ctx, CancellationToken ct)
@@ -763,4 +807,8 @@ public sealed class MailProcessJobHandler(MailIntakeService intake) : IJobHandle
 
     public Task RunAsync(JobContext job, CancellationToken ct) =>
         intake.ProcessAsync(job.TenantId, job.EnvironmentId, Guid.Parse(job.Payload["message"]!.GetValue<string>()), null, ct);
+
+    /// <summary>When retries run out, the message is marked failed so people see it instead of it waiting forever.</summary>
+    public Task OnAbandonedAsync(JobContext job, string reason, CancellationToken ct) =>
+        intake.FailAsync(job.TenantId, job.EnvironmentId, Guid.Parse(job.Payload["message"]!.GetValue<string>()), ct);
 }
