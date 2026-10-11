@@ -75,8 +75,14 @@ public static class MailReasons
     /// <summary>The mailbox's intake is missing or disabled in the published configuration.</summary>
     public const string NoIntake = "no_intake";
 
+    /// <summary>The record the message would create is not valid (for example a required field the intake does not set).</summary>
+    public const string InvalidRecord = "invalid_record";
+
+    /// <summary>The message could not be read as email.</summary>
+    public const string Unreadable = "unreadable";
+
     /// <summary>A reviewer rejected the message.</summary>
     public const string Rejected = "rejected";
 
-    public static IReadOnlyList<string> All { get; } = [AutoReply, OwnMessage, TooManyFromSender, UnverifiedSender, UnknownSender, NotAllowed, BadSender, Empty, NoIntake, Rejected];
+    public static IReadOnlyList<string> All { get; } = [AutoReply, OwnMessage, TooManyFromSender, UnverifiedSender, UnknownSender, NotAllowed, BadSender, Empty, NoIntake, InvalidRecord, Unreadable, Rejected];
 }

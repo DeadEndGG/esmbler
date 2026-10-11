@@ -101,11 +101,17 @@ public static class ServiceRegistration
             {
                 AllowedEmailHosts = o.AllowedEmailHosts,
                 AllowedSmsHosts = o.AllowedSmsHosts,
+                AllowedImapHosts = o.AllowedImapHosts,
                 MaxRecipientsPerEvent = o.MaxRecipientsPerEvent,
                 WebUrl = configuration["Esmbler:WebUrl"] ?? "http://localhost:8080",
             };
         });
         services.AddSingleton<Kernel.Infrastructure.Notifications.ISecretStore, Kernel.Infrastructure.Notifications.EnvironmentSecretStore>();
+
+        // Email intake (ADR 0023): mailboxes, inbound messages, the processing job and the IMAP poller (worker only).
+        services.AddSingleton<Kernel.Infrastructure.Mail.MailIntakeService>();
+        services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Mail.MailProcessJobHandler>();
+        services.AddSingleton<Kernel.Infrastructure.Mail.ImapPoller>();
         // No redirects: the allow-listed host is the only one the SMS adapter ever talks to (T-54, T-73).
         services.AddHttpClient("notifications.sms").ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddSingleton<Sdk.Notifications.INotificationChannel, Kernel.Infrastructure.Notifications.Channels.SmtpEmailChannel>();

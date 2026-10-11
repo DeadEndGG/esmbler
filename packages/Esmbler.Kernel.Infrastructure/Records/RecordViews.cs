@@ -50,7 +50,7 @@ public sealed record RecordView
 
 public sealed record RecordPage(IReadOnlyList<RecordView> Items, int Total, bool TotalIsCapped, int Offset, int PageSize, int ConfigRevision);
 
-public sealed record ActivityView(Guid Id, string Kind, string Body, Guid? Author, string? AuthorName, bool ByAgent, DateTimeOffset CreatedAt);
+public sealed record ActivityView(Guid Id, string Kind, string Body, Guid? Author, string? AuthorName, bool ByAgent, DateTimeOffset CreatedAt, string? Source = null);
 
 public sealed record HistoryEntryView(long Id, DateTimeOffset At, string Operation, string? Actor, bool ByAgent, int? ConfigRevision, IReadOnlyList<FieldChangeView> Changes);
 

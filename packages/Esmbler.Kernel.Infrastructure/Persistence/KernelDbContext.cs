@@ -63,6 +63,10 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
 
     public DbSet<NotificationDeliveryRow> NotificationDeliveries => Set<NotificationDeliveryRow>();
 
+    public DbSet<MailInboxRow> MailInboxes => Set<MailInboxRow>();
+
+    public DbSet<InboundMessageRow> InboundMessages => Set<InboundMessageRow>();
+
     public DbSet<NotificationDeliveryAttemptRow> NotificationDeliveryAttempts => Set<NotificationDeliveryAttemptRow>();
 
     public DbSet<NotificationPreferenceRow> NotificationPreferences => Set<NotificationPreferenceRow>();
@@ -139,6 +143,8 @@ public sealed class KernelDbContext(DbContextOptions<KernelDbContext> options) :
         b.Entity<AuditPolicyRow>().ToTable("audit_policies").HasKey(x => x.TenantId);
         b.Entity<LegalHoldRow>().ToTable("legal_holds").HasKey(x => new { x.TenantId, x.Id });
         b.Entity<RefreshTokenRow>().ToTable("refresh_tokens").HasKey(x => x.Id);
+        b.Entity<MailInboxRow>().ToTable("mail_inboxes").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
+        b.Entity<InboundMessageRow>().ToTable("inbound_messages").HasKey(x => new { x.TenantId, x.EnvironmentId, x.Id });
 
         string[] jsonColumns = ["Manifest", "Config", "Overlay", "Op", "Data", "Response", "Details", "Event", "State", "Payload", "Checkpoint", "Report", "Definition", "PolicySnapshot", "Requesters", "Snapshot", "Settings", "SecretRefs"];
         foreach (var entity in b.Model.GetEntityTypes())

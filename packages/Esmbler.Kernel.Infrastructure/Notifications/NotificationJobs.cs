@@ -520,7 +520,7 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
 
     public string? RequiredAction => null;
 
-    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug, string EnvironmentKey, IReadOnlySet<string> Declared);
+    private sealed record Send(NotificationDeliveryRow Delivery, JsonObject Settings, string TenantSlug, string EnvironmentKey, IReadOnlySet<string> Declared, IReadOnlyList<string> References, string? ReplyTo);
 
     public async Task RunAsync(JobContext job, CancellationToken ct)
     {
@@ -610,6 +610,13 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
                 return null;
             }
 
+            // Email threading (ADR 0023): an opaque Message-ID per delivery, kept so a reply finds the record.
+            var settings = JsonNode.Parse(instance.Settings) as JsonObject ?? [];
+            if (d.ChannelType == NotificationChannels.Email && d.MessageId is null)
+            {
+                d.MessageId = Mail.MailThreading.NewMessageId(settings["from"]?.GetValue<string>());
+            }
+
             if (instance.Mode == "capture")
             {
                 // Sandboxes capture by default: the rendered message is kept for inspection and never leaves the platform.
@@ -638,7 +645,8 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
             var slug = await db.Tenants.Where(t => t.Id == job.TenantId).Select(t => t.Slug).FirstAsync(ct);
             var environment = await db.Environments.Where(e => e.Id == job.EnvironmentId).Select(e => e.Key).FirstAsync(ct);
             var declared = (JsonNode.Parse(instance.SecretRefs) as JsonArray ?? []).Select(n => n?.GetValue<string>()).OfType<string>().ToHashSet(StringComparer.Ordinal);
-            return new Send(d, JsonNode.Parse(instance.Settings) as JsonObject ?? [], slug, environment, declared);
+            var (references, replyTo) = d.ChannelType == NotificationChannels.Email ? await Mail.MailThreading.ForRecordAsync(db, configs, job.TenantId, job.EnvironmentId, d.EntityId, d.RecordId, ct) : ([], null);
+            return new Send(d, settings, slug, environment, declared, references, replyTo);
         }, ct);
 
         if (send is null)
@@ -651,7 +659,8 @@ public sealed class NotifyDeliverJobHandler(IEnumerable<INotificationChannel> ch
         ChannelResult result;
         try
         {
-            result = await adapter.SendAsync(new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null), send.Settings, new DeclaredSecrets(secrets.For(send.TenantSlug, send.EnvironmentKey), send.Declared), delivery.IdempotencyKey, ct);
+            var message = new ChannelMessage(delivery.RecipientAddress ?? string.Empty, delivery.Subject, delivery.Body, null) { MessageId = delivery.MessageId, References = send.References, ReplyTo = send.ReplyTo };
+            result = await adapter.SendAsync(message, send.Settings, new DeclaredSecrets(secrets.For(send.TenantSlug, send.EnvironmentKey), send.Declared), delivery.IdempotencyKey, ct);
         }
         catch (Exception)
         {

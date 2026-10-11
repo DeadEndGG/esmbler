@@ -46,6 +46,9 @@ public sealed class PlatformOptions
 
         public List<string> AllowedSmsHosts { get; set; } = ["api.twilio.com"];
 
+        /// <summary>IMAP hosts workspace mailboxes may poll (ADR 0023, Esmbler__Notifications__AllowedImapHosts__0=imap.example.com). Empty: webhook mailboxes only.</summary>
+        public List<string> AllowedImapHosts { get; set; } = [];
+
         public int MaxRecipientsPerEvent { get; set; } = 200;
     }
 

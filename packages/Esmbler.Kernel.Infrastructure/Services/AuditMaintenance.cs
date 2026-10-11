@@ -9,7 +9,7 @@ namespace Esmbler.Kernel.Infrastructure.Services;
 /// Audit and retention housekeeping (ADR 0022, REQ-AUD-001, KI-024), all through narrow definer functions: seal new
 /// audit entries into each workspace's hash chain, verify chains daily, and purge what retention lets go (audit beyond the
 /// policy, final notification deliveries after 90 days, read inbox items after 30 and unread ones after 365, resolved
-/// alerts after a year), never during a legal hold.
+/// alerts after a year, inbound mail after 30 days, ADR 0023), never during a legal hold.
 /// </summary>
 public sealed class AuditMaintenance(Database database, ILogger<AuditMaintenance> logger)
 {
@@ -17,6 +17,7 @@ public sealed class AuditMaintenance(Database database, ILogger<AuditMaintenance
     public const int InboxReadRetentionDays = 30;
     public const int InboxUnreadRetentionDays = 365;
     public const int AlertRetentionDays = 365;
+    public const int InboundMailRetentionDays = 30;
 
     public sealed class PurgedRow
     {
@@ -58,11 +59,17 @@ public sealed class AuditMaintenance(Database database, ILogger<AuditMaintenance
         return total;
     }
 
-    public Task<List<PurgedRow>> PurgeAsync(CancellationToken ct) =>
-        database.AnonymousAsync(db => db.Database.SqlQuery<PurgedRow>($"""
+    public async Task<List<PurgedRow>> PurgeAsync(CancellationToken ct)
+    {
+        var purged = await database.AnonymousAsync(db => db.Database.SqlQuery<PurgedRow>($"""
             SELECT tenant_id AS "TenantId", kind AS "Kind", removed AS "Removed"
             FROM kernel.purge_retention({DeliveryRetentionDays}, {InboxReadRetentionDays}, {InboxUnreadRetentionDays}, {AlertRetentionDays}, 5000)
             """).ToListAsync(ct), ct);
+        purged.AddRange(await database.AnonymousAsync(db => db.Database.SqlQuery<PurgedRow>($"""
+            SELECT tenant_id AS "TenantId", 'inbound_mail' AS "Kind", removed AS "Removed" FROM kernel.purge_inbound_mail({InboundMailRetentionDays}, 5000)
+            """).ToListAsync(ct), ct));
+        return purged;
+    }
 
     /// <summary>Verifies the chains not verified in the last day; a break is recorded as a workspace-wide failed audit entry.</summary>
     public async Task<int> VerifyDueAsync(CancellationToken ct)

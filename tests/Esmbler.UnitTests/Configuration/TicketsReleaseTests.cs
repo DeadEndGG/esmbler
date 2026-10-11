@@ -14,6 +14,7 @@ public class TicketsReleaseTests
     [InlineData("1.6.0")]
     [InlineData("1.7.0")]
     [InlineData("1.8.0")]
+    [InlineData("1.9.0")]
     public void Release_compiles_without_errors(string version)
     {
         var result = CompilerFixture.Compile(version);

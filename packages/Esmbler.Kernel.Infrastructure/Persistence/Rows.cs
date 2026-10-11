@@ -432,6 +432,9 @@ public sealed class ActivityRow
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset? RedactedAt { get; set; }
+
+    /// <summary>"email" when the reply came by email (ADR 0023).</summary>
+    public string? Source { get; set; }
 }
 
 public sealed class IdempotencyRow
@@ -803,6 +806,9 @@ public sealed class NotificationDeliveryRow
     public DateTimeOffset UpdatedAt { get; set; }
 
     public DateTimeOffset? SentAt { get; set; }
+
+    /// <summary>The Message-ID an email delivery was sent with, for reply threading (ADR 0023).</summary>
+    public string? MessageId { get; set; }
 }
 
 public sealed class NotificationDeliveryAttemptRow
@@ -1090,4 +1096,91 @@ public sealed class SlaTimerRow
     public string? Outcome { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>A workspace mailbox (environment setting) that feeds a mail intake (ADR 0023).</summary>
+public sealed class MailInboxRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public string Key { get; set; } = "";
+
+    public string Label { get; set; } = "";
+
+    public string Address { get; set; } = "";
+
+    public string IntakeId { get; set; } = "";
+
+    public string Mode { get; set; } = "disabled";
+
+    public string Settings { get; set; } = "{}";
+
+    public byte[]? TokenHash { get; set; }
+
+    public long? ImapUidValidity { get; set; }
+
+    public long? ImapLastUid { get; set; }
+
+    public DateTimeOffset? PolledAt { get; set; }
+
+    public string? PollError { get; set; }
+
+    public int Version { get; set; } = 1;
+
+    public Guid? UpdatedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>One inbound message per mailbox and Message-ID (ADR 0023).</summary>
+public sealed class InboundMessageRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid EnvironmentId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid InboxId { get; set; }
+
+    public string MessageKey { get; set; } = "";
+
+    public string? MessageId { get; set; }
+
+    public string? FromAddress { get; set; }
+
+    public string? FromName { get; set; }
+
+    public string? Subject { get; set; }
+
+    public string Status { get; set; } = "received";
+
+    public string? Reason { get; set; }
+
+    public string? Outcome { get; set; }
+
+    public Guid? RecordId { get; set; }
+
+    public string? EntityId { get; set; }
+
+    public Guid? ActivityId { get; set; }
+
+    public byte[]? Raw { get; set; }
+
+    /// <summary>Recipients, threading headers, verification and loop signals, attachments (names and sizes only).</summary>
+    public string Details { get; set; } = "{}";
+
+    public int SizeBytes { get; set; }
+
+    public Guid? DecidedBy { get; set; }
+
+    public DateTimeOffset ReceivedAt { get; set; }
+
+    public DateTimeOffset? ProcessedAt { get; set; }
 }

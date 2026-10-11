@@ -235,6 +235,14 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
         }, ct);
 
     public Task<ActivityView> AddActivityAsync(RequestContext ctx, string entityId, Guid id, string kind, string body, IRichTextSanitizer sanitizer, CancellationToken ct) =>
+        AddActivityAsync(ctx, entityId, id, kind, body, sanitizer, null, null, ct);
+
+    /// <summary>
+    /// Adds a reply or note as <paramref name="ctx"/>'s person. <paramref name="source"/> marks replies that came by email;
+    /// <paramref name="alongside"/> runs in the same transaction with the new activity's ID (email intake marks its
+    /// message processed there, so a retry never adds the reply twice).
+    /// </summary>
+    public Task<ActivityView> AddActivityAsync(RequestContext ctx, string entityId, Guid id, string kind, string body, IRichTextSanitizer sanitizer, string? source, Func<KernelDbContext, Guid, Task>? alongside, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             var (artifact, entity, perms) = await PrepareAsync(db, ctx, entityId, null, ct);
@@ -279,13 +287,19 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
                 Author = ctx.PrincipalId,
                 Agent = ctx.AgentId,
                 CreatedAt = clock.UtcNow,
+                Source = source,
             };
             db.Activity.Add(activity);
-            AuditWriter.Add(db, ctx, "activity.add", entity.Id, id.ToString(), artifact.Revision, new { kind });
+            AuditWriter.Add(db, ctx, "activity.add", entity.Id, id.ToString(), artifact.Revision, source is null ? new { kind } : new { kind, source });
+            if (alongside is not null)
+            {
+                await alongside(db, activity.Id);
+            }
+
             AddEvent(db, ctx, artifact.Config, EventTypes.ActivityAdded, entity.Id, id, row.Revision, artifact.Revision, new JsonObject { ["kind"] = kind, ["activityId"] = activity.Id.ToString() });
             await db.SaveChangesAsync(ct);
             var name = await db.Principals.Where(p => p.Id == ctx.PrincipalId).Select(p => p.DisplayName).FirstOrDefaultAsync(ct);
-            return new ActivityView(activity.Id, kind, clean, ctx.PrincipalId, name, ctx.AgentId is not null, activity.CreatedAt);
+            return new ActivityView(activity.Id, kind, clean, ctx.PrincipalId, name, ctx.AgentId is not null, activity.CreatedAt, source);
         }, ct);
 
     public Task<IReadOnlyList<ActivityView>> ActivityAsync(RequestContext ctx, string entityId, Guid id, CancellationToken ct) =>
@@ -304,7 +318,7 @@ public sealed class RecordService(Database database, ConfigStore configs, Access
             var items = await db.Activity.Where(a => a.RecordId == id && (seesInternal || a.Kind != "work_note")).OrderBy(a => a.CreatedAt).ToListAsync(ct);
             var authors = items.Select(a => a.Author).OfType<Guid>().Distinct().ToList();
             var names = await db.Principals.Where(p => authors.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
-            return items.Select(a => new ActivityView(a.Id, a.Kind, a.RedactedAt is null ? a.Body : "(redacted)", a.Author, a.Author is { } au ? names.GetValueOrDefault(au) : null, a.Agent is not null, a.CreatedAt)).ToList();
+            return items.Select(a => new ActivityView(a.Id, a.Kind, a.RedactedAt is null ? a.Body : "(redacted)", a.Author, a.Author is { } au ? names.GetValueOrDefault(au) : null, a.Agent is not null, a.CreatedAt, a.Source)).ToList();
         }, ct);
 
     public Task<IReadOnlyList<HistoryEntryView>> HistoryAsync(RequestContext ctx, string entityId, Guid id, CancellationToken ct) =>
