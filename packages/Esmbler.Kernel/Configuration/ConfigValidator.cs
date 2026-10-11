@@ -2100,7 +2100,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                     RecipientKinds.Group => GroupKey().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not a group key",
                     RecipientKinds.User => Guid.TryParse(r.Ref, out _) ? null : $"'{r.Ref}' is not a person's ID",
                     RecipientKinds.Approvers => type?.Fields.ContainsKey("approval") == true || sub?.Event.StartsWith("platform.approval.", StringComparison.Ordinal) == true ? null : "approvers only exist for approval events",
-                    RecipientKinds.AlertOwner => sub?.Event.StartsWith("platform.alert.", StringComparison.Ordinal) == true ? null : "alert_owner only exists for alert events",
+                    RecipientKinds.AlertOwner => sub is not null && Sdk.Events.EventTypes.IsAlert(sub.Event) ? null : "alert_owner only exists for alert events",
                     RecipientKinds.Address => EmailAddress().IsMatch(r.Ref) || PhoneNumber().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not an email address or phone number (+ and digits)",
                     _ => $"kind '{r.Kind}' is unknown",
                 };

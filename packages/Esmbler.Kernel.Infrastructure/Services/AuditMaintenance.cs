@@ -79,6 +79,7 @@ public sealed class AuditMaintenance(Database database, ILogger<AuditMaintenance
     public Task<VerifyRow> VerifyAsync(Guid tenant, CancellationToken ct) =>
         database.InTenantWideAsync(tenant, null, async db =>
         {
+            var knownBreak = await db.AuditChainHeads.AsNoTracking().Where(h => h.TenantId == tenant).Select(h => h.BrokenAtSeq).FirstOrDefaultAsync(ct);
             VerifyRow step;
             var guard = 0;
             do
@@ -87,7 +88,8 @@ public sealed class AuditMaintenance(Database database, ILogger<AuditMaintenance
             }
             while (!step.Complete && ++guard < 100);
 
-            if (step.BrokenAt is { } at)
+            // Report a break once, when it is first found (or moves), not on every verification.
+            if (step.BrokenAt is { } at && at != knownBreak)
             {
                 logger.LogWarning("Audit chain of workspace {Tenant} is broken at link {Seq}", tenant, at);
                 db.AuditLog.Add(new AuditRow

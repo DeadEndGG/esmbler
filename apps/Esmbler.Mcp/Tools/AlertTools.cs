@@ -30,7 +30,7 @@ public sealed class EscalationStepInput
 [McpServerToolType]
 public sealed class AlertTools(ToolRunner runner, DraftService drafts, PreviewService preview, AlertService alerts)
 {
-    private static readonly string[] AlertEvents = ["platform.alert.opened", "platform.alert.acknowledged", "platform.alert.escalated", "platform.alert.assigned", "platform.alert.resolved"];
+    private static readonly string[] AlertEvents = [Sdk.Events.EventTypes.AlertOpened, Sdk.Events.EventTypes.AlertAcknowledged, Sdk.Events.EventTypes.AlertEscalated, Sdk.Events.EventTypes.AlertAssigned, Sdk.Events.EventTypes.AlertResolved];
 
     [McpServerTool(Name = "list_alert_rules", ReadOnly = true), Description("Alert rules in the open draft: the events that raise each (trigger subscription and minimum severity), its key, title, owner, escalation steps and the events that resolve it. Alerts publish platform.alert.* events; notification routes on those events tell people.")]
     public Task<CallToolResult> ListAlertRules() =>

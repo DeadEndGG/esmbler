@@ -25,7 +25,7 @@ public sealed class AlertRouter(ConfigStore configs) : IEventConsumer
     public string Name => "alerts.router";
 
     // Alert events never raise alerts (the validator refuses such triggers too).
-    public bool Handles(EventEnvelope envelope) => !envelope.Type.StartsWith("platform.alert.", StringComparison.Ordinal);
+    public bool Handles(EventEnvelope envelope) => !EventTypes.IsAlert(envelope.Type);
 
     public async Task HandleAsync(EventEnvelope envelope, KernelDbContext db, CancellationToken ct)
     {
@@ -154,7 +154,9 @@ public sealed partial class AlertEvaluateJobHandler(ConfigStore configs, IClock 
             var recent = (await db.Alerts.FromSqlInterpolated($"SELECT * FROM kernel.alerts WHERE rule_id = {rule.Id} AND dedup_key = {key} AND status = 'resolved' AND resolved_at > {since} ORDER BY resolved_at DESC LIMIT 1 FOR UPDATE").AsTracking().ToListAsync(ct)).FirstOrDefault();
             if (recent is not null && recent.LastEventId != envelope.EventId && AlertLifecycle.Reopens(rule, recent.ResolvedAt!.Value, now))
             {
-                recent.Status = AlertStatuses.Open;
+                var window = await SuppressionAsync(db, rule, entity, envelope.RecordId, now, ct);
+                recent.Status = window is null ? AlertStatuses.Open : AlertStatuses.Suppressed;
+                recent.SuppressionId = window;
                 recent.ReopenedCount++;
                 recent.Occurrences++;
                 recent.Level = 1;
@@ -168,9 +170,13 @@ public sealed partial class AlertEvaluateJobHandler(ConfigStore configs, IClock 
                 recent.AcknowledgedBy = null;
                 recent.UpdatedAt = now;
                 recent.Version++;
-                Activity(db, recent, "reopened", null, new JsonObject { ["event"] = envelope.EventId.ToString() });
-                Publish(db, ctx, revision, recent, EventTypes.AlertOpened, envelope.EventId, reopened: true);
-                await ScheduleEscalationAsync(db, job, rule, recent, ct);
+                Activity(db, recent, window is null ? "reopened" : "suppressed", null, new JsonObject { ["event"] = envelope.EventId.ToString() });
+                if (window is null)
+                {
+                    Publish(db, ctx, revision, recent, EventTypes.AlertOpened, envelope.EventId, reopened: true);
+                    await ScheduleEscalationAsync(db, job, rule, recent, ct);
+                }
+
                 return;
             }
         }
@@ -312,7 +318,7 @@ public sealed partial class AlertEvaluateJobHandler(ConfigStore configs, IClock 
         }
     }
 
-    private static async Task<Guid?> SuppressionAsync(KernelDbContext db, AlertRuleSpec rule, EntitySpec? entity, Guid? recordId, DateTimeOffset now, CancellationToken ct) =>
+    internal static async Task<Guid?> SuppressionAsync(KernelDbContext db, AlertRuleSpec rule, EntitySpec? entity, Guid? recordId, DateTimeOffset now, CancellationToken ct) =>
         await db.AlertSuppressions.AsNoTracking()
             .Where(s => s.CancelledAt == null && s.StartsAt <= now && s.EndsAt > now
                 && (s.RuleId == null || s.RuleId == rule.Id)
@@ -410,9 +416,10 @@ public sealed class AlertEscalateJobHandler(ConfigStore configs, IClock clock) :
                 AlertEvaluateJobHandler.Publish(db, ctx, artifact.Revision, alert, EventTypes.AlertEscalated, alert.LastEventId);
                 await AlertEvaluateJobHandler.ScheduleEscalationAsync(db, job, rule, alert, ct);
             }
-            else if (AlertLifecycle.NextEscalation(rule, alert.OpenedAt, level) is { } next)
+            else if ((alert.Status != AlertStatuses.Acknowledged || AlertLifecycle.LaterStepIgnoresAcknowledgment(rule, level))
+                && AlertLifecycle.NextEscalation(rule, alert.OpenedAt, level) is { } next)
             {
-                // This step waits for acknowledgment; later steps may not.
+                // This step waits for acknowledgment; a later one does not (once acknowledged, nothing else is scheduled).
                 await JobScheduler.ScheduleAsync(db, alert.TenantId, alert.EnvironmentId, new JobRequest(Kind, new JsonObject { ["alert"] = alert.Id.ToString(), ["level"] = next.Level })
                 {
                     RunAt = next.At,
@@ -420,6 +427,63 @@ public sealed class AlertEscalateJobHandler(ConfigStore configs, IClock clock) :
                     ReplaceExisting = true,
                     CausationId = alert.LastEventId,
                 }, ct);
+            }
+
+            await db.SaveChangesAsync(ct);
+            return true;
+        }, ct);
+}
+
+/// <summary>
+/// Announces the alerts a maintenance window held back once it ends (at its end time, or at once when someone ends it
+/// early): each still-suppressed alert of the window opens, publishes <c>platform.alert.opened</c> and starts escalating,
+/// unless another window still covers it.
+/// </summary>
+public sealed class AlertUnsuppressJobHandler(ConfigStore configs, IClock clock) : IJobHandler
+{
+    public const string JobKind = "alert.unsuppress";
+
+    public string Kind => JobKind;
+
+    public string? RequiredAction => null;
+
+    public static string Key(Guid window) => $"{JobKind}:{window:N}";
+
+    public Task RunAsync(JobContext job, CancellationToken ct) =>
+        job.Database.InTenantAsync(job.TenantId, job.EnvironmentId, null, async db =>
+        {
+            var window = Guid.Parse(job.Payload["window"]!.GetValue<string>());
+            var now = clock.UtcNow;
+            var held = await db.Alerts.FromSqlInterpolated($"SELECT * FROM kernel.alerts WHERE suppression_id = {window} AND status = 'suppressed' FOR UPDATE").AsTracking().ToListAsync(ct);
+            if (held.Count == 0)
+            {
+                return true;
+            }
+
+            var artifact = await configs.GetActiveAsync(db, job.TenantId, job.EnvironmentId, ct);
+            var ctx = new RequestContext { TenantId = job.TenantId, EnvironmentId = job.EnvironmentId, PrincipalId = Guid.Empty, Channel = "worker" };
+            foreach (var alert in held)
+            {
+                var rule = artifact.Config.FindAlertRule(alert.RuleId);
+                var entity = alert.EntityId is { } e ? artifact.Config.FindEntity(e) : null;
+                if (rule is not null && await AlertEvaluateJobHandler.SuppressionAsync(db, rule, entity, alert.RecordId, now, ct) is { } other && other != window)
+                {
+                    alert.SuppressionId = other; // another window still covers it; that window announces it
+                    continue;
+                }
+
+                alert.Status = AlertStatuses.Open;
+                alert.SuppressionId = null;
+                alert.OpenedAt = now;
+                alert.Level = 1;
+                alert.UpdatedAt = now;
+                alert.Version++;
+                AlertEvaluateJobHandler.Activity(db, alert, "unsuppressed", null, null);
+                if (rule is { Enabled: true })
+                {
+                    AlertEvaluateJobHandler.Publish(db, ctx, artifact.Revision, alert, EventTypes.AlertOpened, alert.LastEventId);
+                    await AlertEvaluateJobHandler.ScheduleEscalationAsync(db, job, rule, alert, ct);
+                }
             }
 
             await db.SaveChangesAsync(ct);

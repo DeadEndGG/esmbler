@@ -2,7 +2,7 @@
 title: Acceptance test plan
 status: living
 owner: quality-engineering
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-ACC-01, REQ-ACC-02, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-ACC-06, REQ-ACC-07, REQ-ACC-08, REQ-ACC-09, REQ-ACC-10, REQ-ACC-11, REQ-ACC-12, REQ-ACC-13, REQ-ACC-14, REQ-ACC-15, REQ-WS-001, REQ-WS-003, REQ-WS-004, REQ-WS-005, REQ-WS-006, REQ-AISAFE-005, REQ-LIVE-002, REQ-AI-007, REQ-TEN-002, REQ-OPS-006]
 ---
 
@@ -107,6 +107,7 @@ The master spec's working path is covered by the API test `Acceptance.Gate1PathT
 | Scenarios REQ-ACC-05, 06 (fulfillment), 11, 12, 13 | See table | See table |
 | Connected workspace: figures equal their drill-down for every persona, restricted figures are removed, the explorer keeps its state on return, one request is one change; guided creation (REQ-ACC-15) | Product owner | G2-M9: `Records.MetricTests.*`, `Configuration.UpgradeTests.Upgrading_to_dashboards_keeps_customizations_and_running_sla_clocks`, Playwright `dashboard.spec.ts` and the Overview audits in `a11y.spec.ts`; G2-M9b: `Configuration.WorkspaceCreationTests.*`, Playwright `workspace.spec.ts` `@REQ-ACC-15` and the creation-flow audit in `a11y.spec.ts` |
 | Notifications: a P1 ticket reaches its team through the mandatory route and links to the ticket, mandatory notifications cannot be muted while optional ones can, deliveries are visible with their status, previews send nothing, sandboxes capture, credentials never leave the secret store ([ADR 0021](../adr/0021-notification-routing-and-delivery.md)) | Platform lead | G2-M18: Playwright `notifications.spec.ts` `@REQ-NOT-004` (with axe audits of the inbox, preferences, channels and deliveries); `Notifications.NotificationTests.*`; `Unit.Configuration.NotificationSpecTests.*`; `Mcp.McpServerTests.Agent_sets_up_a_notification_but_external_recipients_stay_with_people` |
+| Alerts and audit policy: a critical escalation opens one alert for the owning team, counts repeats, escalates until acknowledged and resolves with the ticket; maintenance windows silence without losing alerts; only owners and responders who may read the record see or act, and agents never act; audit entries are sealed into a per-workspace chain that reveals tampering, retention purges only a sealed prefix and stops during a legal hold, and exports are audited and formula-safe ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)) | Platform lead | G2-M19: Playwright `alerts.spec.ts` `@REQ-ALR-001` (badge, acknowledge, assign, timeline, auto-resolve, maintenance windows; axe) and `audit.spec.ts` `@REQ-AUD-001` (search, CSV export, Verify now, place and release a hold; axe); `Alerts.AlertTests.*` (including the design's section 8 example and audit capture independent of notifications); `Audit.AuditPolicyTests.*`; `Unit.Configuration.AlertSpecTests.*`; `Mcp.McpServerTests.Agent_adds_an_alert_rule_and_reads_alerts_but_never_acts_on_them` |
 | Workload measurements at pilot scale | QA lead | k6 or NBomber report: p95/p99 record read and write, list and search, page render at `PilotScaleWorkload` |
 | Tested backup and restore | Ops lead | Restore drill record plus `TenantRestoreTests` |
 | Support runbooks | Ops lead | `docs/runbooks/*` with trigger, steps, verification and rollback; each one dry-run |

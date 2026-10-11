@@ -2,8 +2,8 @@
 title: "ADR 0021: Notification routing and delivery"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
-requirements: [REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-EVT-009, REQ-AUTHZ-008, REQ-AISAFE-001, REQ-TEN-001]
+last_reviewed: 2026-10-11
+requirements: [REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-EVT-009, REQ-AUTHZ-008, REQ-AISAFE-001, REQ-TEN-001, REQ-ALR-001]
 ---
 
 # ADR 0021: Notification routing and delivery
@@ -50,12 +50,12 @@ All four objects are public SDK specs (`packages/Esmbler.Sdk/Specs/Notifications
 
 | Object | Says | Key properties |
 | --- | --- | --- |
-| `SubscriptionSpec` | Which events matter | `Event` (an event type ID), optional `Entity`, optional `When` condition over `event` (payload) and `record`, `Target` (`notify` only for now), `Enabled` |
+| `SubscriptionSpec` | Which events matter | `Event` (an event type ID), optional `Entity`, optional `When` condition over `event` (payload) and `record`, `Target` (`notify` for routes; since G2-M19 also `alert` for alert rules, [ADR 0022](0022-alerts-and-audit-policy.md)), `Enabled` |
 | `NotificationRouteSpec` | Who hears about a subscription's events, how and with which text | `Subscription`, `Profile`, `Template`, `Recipients` (1 to 50 rules), `Mandatory`, `Enabled` |
 | `NotificationProfileSpec` | How a route delivers | `Channels` in order (`in_app`, `email`, `sms`), `Delivery` (`all`, or `fallback`: the first channel the recipient can be reached on), `MinSeverity`, `Enabled` |
 | `NotificationTemplateSpec` | The text | `Subject`, `Body`, per-channel `Variants`, `Entity` whose fields placeholders read, `ExternalFields`, `Enabled` |
 
-Recipient rules (`RecipientSpec`) are `field` (a user, group, principals or email field of the record), `role`, `group` (key), `user` (principal ID), `approvers` (the pending approvers of an approval event) and `address` (an external email address or `+` phone number). People must be enabled members of the workspace and of kind `user`; an address that belongs to a member resolves to that person.
+Recipient rules (`RecipientSpec`) are `field` (a user, group, principals or email field of the record), `role`, `group` (key), `user` (principal ID), `approvers` (the pending approvers of an approval event), `alert_owner` (since G2-M19: the owner group, owner and assignee of the alert a `platform.alert.*` event is about, [ADR 0022](0022-alerts-and-audit-policy.md)) and `address` (an external email address or `+` phone number). People must be enabled members of the workspace and of kind `user`; an address that belongs to a member resolves to that person.
 
 Templates are plain text with the placeholders `{{record.<field>}}`, `{{record.number}}`, `{{event.<field>}}`, `{{recipient.name}}` and `{{link}}`. The validator refuses HTML, unknown placeholders and text over 4,000 characters; rendering caps subjects at 200 characters and SMS bodies at 480.
 
@@ -199,14 +199,16 @@ The release is additive with no data migrations; workspace routes are kept on up
 
 ## Deferred
 
+Done since: retention of deliveries, attempts and inbox rows in G2-M19 ([ADR 0022](0022-alerts-and-audit-policy.md); [KI-024](../known-issues.md) fixed): final-state deliveries and their attempts go 90 days after their last update, inbox items 30 days after being read and unread ones after 365 days, never during a legal hold.
+
 - **Team layer** between tenant and personal preferences (REQ-NOT-004).
 - **Quiet hours, schedules, business-calendar delivery windows** and fallback to the next channel after a failure; `fallback` currently means the first channel the person can be reached on (REQ-NOT-003).
 - **Approvals onto routes:** approval notifications are still inbox rows written by `ApprovalService`.
 - **Migrating legacy templates to routes:** Gate 1 templates with their own trigger still go through `NotificationConsumer`.
 - **Live push:** the web app polls the unread count every 60 seconds.
 - **Admin Center editing of routes, templates, profiles and subscriptions** (REQ-NOT-007): done in drafts through the AI builder and MCP; the Admin Center manages channel instances, deliveries and previews only.
-- Phone numbers on people (SMS reaches only `address` recipients today, [KI-028](../known-issues.md)), a production vault adapter (G2-M12) and other subscription targets (alerts in G2-M19, automation, webhooks).
-- **Retention** of deliveries, attempts and inbox rows (ADR 0017 asks for 90 days, and read plus 30 days for the inbox; [KI-024](../known-issues.md)), provider callbacks for delivered and read, a per-recipient SMS limit, and honoring a provider's `Retry-After` (REQ-NOT-005).
+- Phone numbers on people (SMS reaches only `address` recipients today, [KI-028](../known-issues.md)), a production vault adapter (G2-M12) and other subscription targets (automation, webhooks; the `alert` target shipped in G2-M19, [ADR 0022](0022-alerts-and-audit-policy.md)).
+- Provider callbacks for delivered and read, a per-recipient SMS limit, and honoring a provider's `Retry-After` (REQ-NOT-005).
 - **Builder and registry:** the builder's Notifications tab and registry `spec_object` elements for subscriptions, profiles and routes; `spec_object.notification_template.json` still describes legacy trigger templates ([KI-030](../known-issues.md)).
 
 ## Security notes

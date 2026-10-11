@@ -2,8 +2,8 @@
 title: Tickets module architecture
 status: accepted
 owner: tickets-module
-last_reviewed: 2026-10-10
-requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004]
+last_reviewed: 2026-10-11
+requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, REQ-RULE-001, REQ-RULE-002, REQ-LAY-001, REQ-AUTHZ-002, REQ-AUTHZ-011, REQ-CFG-009, REQ-MIG-001, REQ-MIG-002, REQ-MIG-003, REQ-ACC-03, REQ-ACC-04, REQ-ACC-05, REQ-EVT-008, REQ-BIZ-005, REQ-OPS-004, REQ-WS-001, REQ-WS-002, REQ-WS-004, REQ-NOT-004, REQ-ALR-001]
 ---
 
 # Tickets module architecture
@@ -16,7 +16,7 @@ requirements: [REQ-MOD-001, REQ-MOD-002, REQ-BIZ-001, REQ-BIZ-002, REQ-BIZ-004, 
 - **Fully declarative:** each release is one JSON file, `Releases/<version>/module.json`, embedded and loaded by `ModuleReleaseLoader`. There is no C# business logic.
 - **Boundaries:** references only `Esmbler.Sdk` and its own Contracts. `tests/Esmbler.ArchitectureTests` enforces this ([REQ-MOD-002](../../spec/traceability.md)).
 - **Dependencies:** `core.platform ^1.0.0`. It uses the shared rules, workflow, assignment and notification services.
-- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)) and `1.7.0` (notification routes, see [Release 1.7.0](#release-170-notification-routes)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
+- **Releases:** `1.0.0` (initial), `1.1.0` (the first upgrade, used by the Gate 1 upgrade scenario), `1.2.0` (service requests, see [Release 1.2.0](#release-120-service-requests)), `1.3.0` (approvals, see [Release 1.3.0](#release-130-approvals)) `1.4.0` (published ticket events, see [Release 1.4.0](#release-140-ticket-events)) `1.5.0` (service levels, see [Release 1.5.0](#release-150-service-levels)) `1.6.0` (Overview dashboard and metrics, see [Release 1.6.0](#release-160-overview-dashboard)) `1.7.0` (notification routes, see [Release 1.7.0](#release-170-notification-routes)) and `1.8.0` (SLA alerts, see [Release 1.8.0](#release-180-sla-alerts)). Demo tenant Acme is seeded on 1.0.0 and Globex on the newest release (ASM-043, ASM-066). Workspaces created from the [IT ticketing starter](#starter-it-ticketing) also start on the newest release.
 
 | Public ID (`TicketsIds`) | Value |
 | --- | --- |
@@ -389,6 +389,24 @@ Evidence: `tests/Esmbler.UnitTests/Configuration/MetricSpecTests.cs` (`Release_1
 Email and text messages need a channel instance in the environment ([human actions](../../human-actions.md)); without one they are recorded as suppressed and the bell still delivers. Every recipient sees only the ticket fields they may read.
 
 Evidence: `tests/Esmbler.UnitTests/Configuration/NotificationSpecTests.cs` (`Tickets_routes_escalations_and_makes_the_p1_alert_mandatory`), `tests/Esmbler.IntegrationTests/Notifications/NotificationTests.cs` (`Upgrading_tickets_adds_a_mandatory_p1_alert_and_keeps_the_workspace_routes`), Playwright `notifications.spec.ts` (`@REQ-NOT-004`).
+
+## Release 1.8.0: SLA alerts
+
+1.8.0 turns SLA risk and breaches into alerts ([ADR 0022](../../adr/0022-alerts-and-audit-policy.md), REQ-ALR-001; the "exact SLA alerts" follow-up of the Zendesk research). The release is additive with no data migrations and no permission-set changes, so upgrading from 1.7.0 has no permission impact; workspace routes and rules are kept.
+
+| Element | IDs and detail |
+| --- | --- |
+| Alert subscriptions (target `alert`) | `core.tickets.sub.sla_breached_alert` (`platform.sla.breached`), `core.tickets.sub.sla_warning_alert` (`platform.sla.warning`), `core.tickets.sub.ticket_done_alert` (`record.transitioned` when the ticket is resolved, closed or cancelled) |
+| Alert rule `core.tickets.alert.sla_breached` | Key `record.id + ':' + event.target` (one alert per ticket and SLA target); title "SLA breached: {{record.number}} {{record.title}} ({{event.target}})"; owner the ticket's `assignment_group`; one escalation step after 30 minutes unless acknowledged; resolved by `ticket_done_alert` |
+| Alert rule `core.tickets.alert.sla_at_risk` | Severity `medium`, same key and owner, title "SLA at risk: ..."; no escalation; resolved by `ticket_done_alert` or by the breach (`sla_breached_alert`), so the breach alert takes over |
+| Notification subscriptions | `core.tickets.sub.sla_alert_opened` (`platform.alert.opened` for either rule) and `core.tickets.sub.sla_alert_escalated` (`platform.alert.escalated` for the breach rule) |
+| Template | `core.tickets.template.sla_alert` (the alert title, a pointer to the Alerts page and the link; shorter `sms` variant) |
+| Route `core.tickets.route.sla_alert_opened` | Recipients `alert_owner` (the owner group and assignee), profile `core.platform.profile.in_app_email`. Optional |
+| Route `core.tickets.route.sla_alert_escalated` | Recipients `alert_owner`, profile `core.platform.profile.urgent`. Optional |
+
+Team members answer their own team's alerts on the Alerts page as owners; acknowledging a breach stops its escalation. Tenants can disable or retune the rules (owner, escalation, title, severity), but not change their trigger or key.
+
+Evidence: `tests/Esmbler.UnitTests/Configuration/AlertSpecTests.cs` (`Tickets_alerts_on_sla_breach_and_risk_and_resolves_them_with_the_ticket`, including no permission change from 1.7.0), `tests/Esmbler.IntegrationTests/Alerts/AlertTests.cs` (`Tickets_alerts_the_owning_team_on_an_sla_breach_and_resolves_it_with_the_ticket`, upgrading from 1.7.0), `TicketsReleaseTests` and `DesignTokenTests` for 1.8.0.
 
 ## Starter: IT ticketing
 

@@ -2,7 +2,7 @@
 title: Documentation index
 status: living
 owner: platform-lead
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [all]
 ---
 
@@ -56,8 +56,8 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 ## Architecture
 
 - [Architecture overview](architecture/overview.md): one-page summary, C4 levels 1–3, module graph, transaction boundaries, service extraction.
-- [Events, audit, alerts and notifications](architecture/events-audit-alerts-notifications.md): inventory, envelope v2, subscriptions, alerts, channels, profiles, routing, delivery, preview, end-to-end example and phases (ADR 0017).
-- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, 1.2.0 service requests (catalog, fulfillment tasks), 1.3.0 approvals, 1.4.0 ticket events, 1.5.0 service levels, the 1.6.0 Overview dashboard and metrics, and 1.7.0 notification routes.
+- [Events, audit, alerts and notifications](architecture/events-audit-alerts-notifications.md): inventory, envelope v2, subscriptions, audit, alerts, channels, profiles, routing, delivery, preview, end-to-end example and phases (ADR 0017, as built in ADRs 0021 and 0022).
+- [Tickets module](architecture/modules/tickets.md): entities, workflow, rules, roles, pages, extension points, the 1.1.0 upgrade, 1.2.0 service requests (catalog, fulfillment tasks), 1.3.0 approvals, 1.4.0 ticket events, 1.5.0 service levels, the 1.6.0 Overview dashboard and metrics, 1.7.0 notification routes and 1.8.0 SLA alerts.
 
 ## Architecture decision records
 
@@ -82,6 +82,7 @@ Esmbler's documentation is docs-as-code. It is organized with the Diátaxis fram
 - [0019 Metrics, dashboards and the connected explorer](adr/0019-metrics-dashboards-and-connected-explorer.md): metrics as spec objects evaluated through the explorer's query compiler, drill-down as the exact query, restricted figures removed, explorer state in the URL, draft change sets.
 - [0020 Self-service workspace creation](adr/0020-self-service-workspace-creation.md): module-declared starters, self-service creation that operators turn on, workspaces created from the latest release and activated only when provisioning finishes, a per-person limit enforced in a definer function, labeled preview figures on empty workspaces.
 - [0021 Notification routing and delivery](adr/0021-notification-routing-and-delivery.md): subscriptions, routes, profiles and per-channel templates as configuration with module, tenant and personal layers and mandatory routes; channel instances as environment settings (live, capture, disabled) with secret references and host allow-lists; rendering once per recipient under their permissions; delivery states with idempotency keys, ambiguous outcomes and explicit replay.
+- [0022 Alerts and audit policy](adr/0022-alerts-and-audit-policy.md): alert rules on `alert` subscriptions with deduplication, acknowledgment, escalation timers, auto-resolve, cool-down reopen and maintenance windows; alerts publish events that routes deliver (`alert_owner`); a per-workspace audit hash chain sealed asynchronously, retention with legal holds, and an audited, redacted export.
 
 ## Decisions
 

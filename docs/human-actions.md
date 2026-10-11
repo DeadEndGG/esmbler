@@ -2,8 +2,8 @@
 title: Human actions
 status: living
 owner: platform-architecture
-last_reviewed: 2026-10-10
-requirements: [REQ-AISAFE-005, REQ-IAM-003, REQ-BIZ-003, REQ-BIZ-006, REQ-MKT-002, REQ-OPS-006, REQ-ADM-002, REQ-NOT-001]
+last_reviewed: 2026-10-11
+requirements: [REQ-AISAFE-005, REQ-IAM-003, REQ-BIZ-003, REQ-BIZ-006, REQ-MKT-002, REQ-OPS-006, REQ-ADM-002, REQ-NOT-001, REQ-AUD-001]
 ---
 
 # Human actions
@@ -25,6 +25,9 @@ Things only a human can provide (execution brief, section 1). The platform keeps
 | Provide an SMS provider account (Twilio or a Twilio-compatible API) | Live text messages for urgent notifications | Before the Gate 2 pilot, if SMS is wanted | SMS instances capture; people have no phone numbers on file yet, so SMS reaches only explicit addresses (ASM-088). To go live: the instance's `accountSid` and `from` settings, the auth token as `ESMBLER_SECRET__<WORKSPACE_SLUG>__<ENVIRONMENT_KEY>__SMS_AUTH_TOKEN` on the worker and API hosts (or the name in `tokenRef`, listed as a secret reference), and a non-default host in `Esmbler__Notifications__AllowedSmsHosts__0` (default `api.twilio.com`) | not needed yet |
 | Set the public web URL and notification limits for production | Links in notifications point at the web app; the fan-out cap fits the pilot | Before any non-local deployment | `Esmbler__WebUrl` defaults to `http://localhost:8080`, so links in emails only work locally; `Esmbler__Notifications__MaxRecipientsPerEvent` defaults to 200. Docker Compose sets neither | open |
 | Provide a vault for workspace secrets | Channel credentials per workspace without environment variables | Before Gate 2 pilot hosting (G2-M12) | The development secret store reads `ESMBLER_SECRET__<WORKSPACE_SLUG>__<ENVIRONMENT_KEY>__<NAME>` environment variables on the API and worker hosts (secrets are per workspace environment) ([ADR 0021](adr/0021-notification-routing-and-delivery.md), ASM-078) | not needed yet |
+| Provide WORM storage (object lock) or an RFC 3161 timestamping service to anchor audit chain heads | The audit hash chain and its head live in the same database, so a database owner could rewrite both consistently ([ADR 0022](adr/0022-alerts-and-audit-policy.md), [KI-032](known-issues.md), threat model T-77) | Before the Gate 2 pilot holds regulated data; built in G2-M14 or Gate 3 | Chains are verified daily inside the database; operators can export JSON Lines (permission administrators) and keep the chain head hashes elsewhere by hand | open |
+| Decide production retention periods | Audit entries are kept 2,555 days (seven years) by default and at least 365; notification deliveries 90 days, read inbox items 30 and unread 365, resolved alerts 365 (ASM-108). These are engineering defaults, not a legal or contractual decision | Before the Gate 2 pilot | Defaults apply; each workspace's administrators can set audit retention between 365 and 3,650 days on the audit log page | open |
+| Name an owner and a procedure for legal holds | Placing and releasing a hold stops or restarts all deletion in a workspace; someone must decide when a matter needs one and confirm its release | Before the Gate 2 pilot | Tenant administrators place and release holds on `/admin/audit` (audited); a hold is released only by a permission administrator or the person who placed it | open |
 | Provide object storage bucket | Attachments and exports | Gate 2 | Local filesystem / MinIO-compatible fake behind the storage adapter | not needed yet |
 | Register OIDC/SAML identity provider(s) | Per-tenant SSO, SCIM, MFA | Gate 2 | Local password login ([ADR 0011](adr/0011-identity-and-development-authentication.md)) | not needed yet |
 | Provide payment provider sandbox credentials | Marketplace billing and payouts against a sandbox | Gate 5 | Fake payment adapter | not needed yet |

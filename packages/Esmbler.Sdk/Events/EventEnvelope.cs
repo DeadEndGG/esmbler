@@ -91,4 +91,10 @@ public static class EventTypes
     public const string AlertEscalated = "platform.alert.escalated";
     public const string AlertAssigned = "platform.alert.assigned";
     public const string AlertResolved = "platform.alert.resolved";
+
+    /// <summary>Prefix of every alert event type.</summary>
+    public const string AlertPrefix = "platform.alert.";
+
+    /// <summary>Whether an event type is an alert event (alert events never raise alerts).</summary>
+    public static bool IsAlert(string type) => type.StartsWith(AlertPrefix, StringComparison.Ordinal);
 }

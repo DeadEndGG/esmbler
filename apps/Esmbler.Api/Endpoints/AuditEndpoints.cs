@@ -30,7 +30,8 @@ public static class AuditEndpoints
             await audit.WriteExportAsync(ctx, format, prepared, http.Response.Body, ct);
         }).RequireRateLimiting(LoginThrottle.ExportPolicy);
         g.MapGet("/chain", (ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.ChainAsync(RequestContextFactory.From(user, "api"), ct));
-        g.MapPost("/chain/verify", (ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.VerifyNowAsync(RequestContextFactory.From(user, "api"), ct));
+        g.MapPost("/chain/verify", (ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.VerifyNowAsync(RequestContextFactory.From(user, "api"), ct))
+            .RequireRateLimiting(LoginThrottle.ExportPolicy);
         g.MapGet("/policy", (ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.PolicyAsync(RequestContextFactory.From(user, "api"), ct));
         g.MapPut("/policy", (RetentionRequest body, ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.SetRetentionAsync(RequestContextFactory.From(user, "api"), body.RetentionDays, ct));
         g.MapPost("/holds", (HoldRequest body, ClaimsPrincipal user, AuditService audit, CancellationToken ct) => audit.PlaceHoldAsync(RequestContextFactory.From(user, "api"), body.Reason, ct));

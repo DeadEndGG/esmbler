@@ -2,7 +2,7 @@
 title: Events, audit, alerts and notifications
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-EVT-001, REQ-EVT-002, REQ-EVT-003, REQ-EVT-005, REQ-EVT-006, REQ-EVT-007, REQ-EVT-008, REQ-EVT-009, REQ-AUD-001, REQ-ALR-001, REQ-NOT-001, REQ-NOT-002, REQ-NOT-003, REQ-NOT-004, REQ-NOT-005, REQ-NOT-006, REQ-NOT-007, REQ-TEN-001, REQ-TEN-005]
 ---
 
@@ -21,10 +21,10 @@ This is the design for turning the platform's events, audit, alerting and notifi
 | Subscribers | Code consumers registered in the composition root: projection, in-app notification templates, fulfillment, approvals | `IEventConsumer` (internal), `ServiceRegistration` | Not a public contract; no configurable subscriptions; packages cannot subscribe |
 | Durable jobs and timers | Leases, jittered backoff, max attempts, dead letters, replay, dedup keys, idempotent timers, depth and fan-out governors | `Jobs.cs`, `JobRunner.cs` | Ready to carry deliveries and escalations |
 | Automation engine | Governors only (causation depth, fan-out, queue quotas) | `JobScheduler` | The trigger → condition → action engine is not built |
-| Audit | Append-only `kernel.audit_log` (no UPDATE or DELETE for the app role), FORCE RLS, written in the same transaction as the change; actor, agent, channel, operation, target, outcome, correlation, config revision, change details | `AuditWriter`, `Migrations/0001` | No retention or legal-hold policy, no export, no tamper evidence, denied writes rely on each service |
+| Audit | Append-only `kernel.audit_log` (no UPDATE or DELETE for the app role), FORCE RLS, written in the same transaction as the change; actor, agent, channel, operation, target, outcome, correlation, config revision, change details | `AuditWriter`, `Migrations/0001` | Since G2-M19 ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)): per-workspace hash chain sealed by the worker with daily and on-demand verification, retention policy with legal holds, audited export, search page (`AuditService`, `AuditMaintenance`, `Migrations/0016`). Denied writes still rely on each service; chain heads are not anchored outside the database |
 | Notifications | Templates (`NotificationTemplateSpec`) on record events, recipients from user fields, rendered per recipient with their field permissions into `kernel.notifications` (`in_app_fake`); approval notifications written directly | `NotificationConsumer`, `ApprovalService` | No channels besides a fake in-app store, no API or UI to read them, no profiles, routing, preferences, quiet hours, delivery states, retries per recipient, rate limits, or preview |
-| Alerts | None | | Whole service |
-| Configuration | Typed overlay ops, drafts, review, publish, rollback, upgrades, MCP tools | `Sdk/Overlay`, `Kernel/Configuration` | No spec objects for events, routes, profiles, alert rules |
+| Alerts | Since G2-M19 ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)): alert rules on `alert` subscriptions, dedup, acknowledgment, escalation timers, auto-resolve, cool-down reopen, maintenance windows, `platform.alert.*` events, Alerts page | `AlertRouter`, `AlertEvaluateJobHandler`, `AlertEscalateJobHandler`, `AlertService`, `Migrations/0015` | Recurring windows, on-call schedules, notes, snooze and manual alerts |
+| Configuration | Typed overlay ops, drafts, review, publish, rollback, upgrades, MCP tools | `Sdk/Overlay`, `Kernel/Configuration` | Event types (G2-M17), subscriptions, routes, profiles and templates (G2-M18) and alert rules (G2-M19) are spec objects with overlay ops; Admin Center editing of them is not built |
 | Secrets | Environment variables for platform settings | `PlatformOptions` | Per-tenant credentials as vault references come with the Admin Center (G2-M12) |
 
 ## 2. Target architecture
@@ -130,7 +130,7 @@ The validator checks that emitted payloads conform to the declared schema (expre
 
 ### 3.3 Subscriptions
 
-Built in G2-M18 with the notification service, which is their first target ([ADR 0021](../adr/0021-notification-routing-and-delivery.md)). The built subscription has `event`, an optional `entity` and `when` condition over `event` and `record`, and the target `notify`; the other targets come later.
+Built in G2-M18 with the notification service, which is their first target ([ADR 0021](../adr/0021-notification-routing-and-delivery.md)). The built subscription has `event`, an optional `entity` and `when` condition over `event` and `record`, and the target `notify`; G2-M19 added the target `alert` with its own consumer, `alerts.router` ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)). Automation, webhook and package targets come later.
 
 One public contract for "something reacts to events", stored as configuration:
 
@@ -158,12 +158,26 @@ One public contract for "something reacts to events", stored as configuration:
 
 ## 4. Audit
 
+This section is the design target. What G2-M19 built is recorded in [ADR 0022](../adr/0022-alerts-and-audit-policy.md). As built:
+
+- **Chain.** One hash chain per workspace, across its environments and workspace-wide rows. The worker seals committed rows asynchronously (`kernel.seal_audit`), never in the business transaction, so chain order is seal order. A guard trigger and column-level `INSERT` keep sealed rows immutable and stop the runtime role from presealing. The chain is verified daily and on demand.
+- **Retention.** A workspace policy of 365 to 3,650 days (default 2,555) purges only a sealed prefix of the chain and moves its anchor. The purge re-verifies what it deletes and never passes the verified point or a break. A workspace-wide legal hold pauses every purge (audit, deliveries, inbox, alerts), and every purge is audited.
+- **Export and search.** Export (`audit.export`) is CSV, or JSON Lines with chain links for `permissions.admin` only; it is rate limited, at most 400 days, and audited before streaming. Search (`audit.read`) is on `/admin/audit`. Details are redacted for viewers without `permissions.admin` (record change values they could not read show "Restricted"). AI agents never read the audit log.
+- **Not built yet.** Central auditing of all denied sensitive attempts, external anchoring of chain heads, holds per record, and a chain-broken event.
+
 - Captured synchronously by the service performing the action, in the same transaction (`AuditWriter`); required capture never depends on subscriptions, notification settings or delivery.
 - What is audited (categories): record writes (with field changes, truncated, hidden values redacted to "changed"), access-relevant actions (permissions, roles, delegations, impersonation), configuration (draft steps, publish, rollback, upgrades), approvals and alert lifecycle actions taken by people, administrative actions on channels, profiles, routes and credentials (never secret values), denied attempts on sensitive actions, and platform governors.
 - Additions: per-tenant retention policy with legal hold (deletion job outside the app role, itself audited), export API (`audit.export`, streamed, filtered), and tamper evidence through a per-tenant hash chain (each row stores `prev_hash` and `hash` over its canonical form; a nightly verifier reports breaks).
 - Notification delivery history is not audit: it lives with the notification service, with its own shorter retention. Changes to notification configuration and replays of deliveries are audited.
 
 ## 5. Alerts
+
+This section is the design target. What G2-M19 built, and where it differs, is recorded in [ADR 0022](../adr/0022-alerts-and-audit-policy.md). As built:
+
+- **Triggers.** A rule's trigger and auto-resolve are subscriptions with target `alert` (`trigger`, `resolveOn`), not embedded event lists. `minSeverity` replaces a condition on `event.severity`, since subscription conditions see only payload fields.
+- **Escalation.** Steps only raise the alert's level: `{afterMinutes, unlessAcknowledged, repeatEveryMinutes}`, at most 10 steps and 20 repeats. Who is told at each level is a notification route on `platform.alert.*` (for example `event.level >= 2`), with the recipient kind `alert_owner` for the owner group, owner and assignee. This replaces `escalation[].notify`.
+- **Permissions.** The actions are `alerts.respond` and `alerts.manage`, not `alerts.read` and `alerts.acknowledge`. Owners and the assignee see and answer their own alerts, every view needs read access to the record, and agents read but never act.
+- **Maintenance windows** are runtime data of at most 14 days (`kernel.alert_suppressions`), not configuration. When a window ends, the alerts it held are announced.
 
 ```jsonc
 // SpecCatalog.alertRules[]
@@ -389,7 +403,7 @@ A **test send** delivers to the channel instance's `testDestination` only, is la
 | Subscriptions, routes | Spec objects | Admin Center → Notifications; overlay ops `notification_route.add/update/remove`, `subscription.*` | Draft and publish | `add_notification_route`, `update_notification_route` |
 | Profiles | Spec objects | Admin Center; `notification_profile.*` | Draft and publish | `add_notification_profile` (no raw addresses: adding external recipients is a permission change) |
 | Templates | Spec objects | Admin Center editor with live preview; `notification_template.*` | Draft and publish | `add_notification_template` |
-| Alert rules | Spec objects | Admin Center → Alerts; `alert_rule.*` | Draft and publish | `add_alert_rule` |
+| Alert rules | Spec objects | `alert_rule.*` in drafts through the AI builder and MCP (Admin Center editing not built yet) | Draft and publish | `list_alert_rules`, `add_alert_rule`, `update_alert_rule`; `list_alerts` reads alerts (no tool acts on them) |
 | Channel instances, credentials | Environment settings (not promoted) | Admin Center → Channels; credentials as vault references | Immediate, audited, `notifications.admin` | Read-only (`list_channels`, never credentials) |
 | Preferences | Per-user data | User settings | Immediate | None |
 | Preview | Read-only | Admin Center, builder Test tab | | `preview_notification` |
@@ -429,6 +443,8 @@ sequenceDiagram
     Agent->>API: Resolve INC-0042 → alert auto-resolved (rule autoResolve)
 ```
 
+*As built:* this example runs as the integration test `Alerts.AlertTests.A_critical_escalation_opens_one_alert_escalates_until_acknowledged_and_resolves_with_the_ticket` ([ADR 0022](../adr/0022-alerts-and-audit-policy.md)). It uses an alert rule on an `alert` subscription with minimum severity `critical`, owner group `network`, steps at 15 and 60 minutes (repeating), and a resolving subscription on `record.transitioned`. A route on `platform.alert.opened` with `alert_owner` recipients tells Network, and a route on `platform.alert.escalated` with `event.level >= 2` tells the service desk (standing in for Management). The test checks one alert with two occurrences, level 2 after the timer, an audited acknowledgment that stops the next step, and auto-resolve with the ticket. `Alerts.AlertTests.Audit_captures_every_change_even_when_no_notification_can_be_sent` checks that audit capture is independent of notifications. The audit operation is `alert.acknowledge`.
+
 What each store holds afterwards:
 
 - **Audit**: `record.transition` (escalate, actor, fields), `alert.acknowledged` (by whom), `record.transition` (resolve). Written whether or not any notification was configured or succeeded.
@@ -442,7 +458,7 @@ What each store holds afterwards:
 | --- | --- | --- | --- |
 | 1 | G2-M17 Event platform v2 (done; SLA events moved to G2-M4, subscriptions to G2-M18, subject and payload schema reference as in ASM-052) | Envelope v2 (source, subject, dataSchema, traceparent, severity, sensitivity) read alongside v1; event type registry in the SDK and module specs; `emits` on transitions and the `emit_event` rule action with payload type-checking; platform events for approvals and SLA; `config.published` as an envelope; per-consumer delivery state with independent retries, dead letters and replay; outbox retention | Tickets 1.4.0 emits `ticket.escalated`; a poison consumer no longer blocks others; contract tests for envelope v1/v2 |
 | 2 | G2-M18 Notification service (done per [ADR 0021](../adr/0021-notification-routing-and-delivery.md); team layer, schedules and quiet hours, approvals and legacy templates onto routes, live push and Admin Center editing of routes deferred) | Subscriptions spec object and the subscription router (section 3.3); channel abstraction; in-app inbox (API, bell, list, read state); email (fake plus one provider) and SMS (fake plus one provider) adapters; channel instances in Admin Center with vault references and capture mode; templates v2; profiles; routes with layers; resolution and dedup; delivery tables and jobs; rate limits; idempotency; ambiguous handling; failed-delivery inspection and replay; preview and test send; MCP tools; migrate existing templates and approval notifications onto routes | End-to-end test: one event to two profiles across three channels with an SMS outage; preview matches real resolution; isolation tests for every new table |
-| 3 | G2-M19 Alerts and audit policy | Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, maintenance suppression, alerts page; SLA breach alerts; audit retention and legal hold, export, hash-chain verifier | The section 8 example runs as an acceptance test |
+| 3 | G2-M19 Alerts and audit policy (done per [ADR 0022](../adr/0022-alerts-and-audit-policy.md); holds per record, external anchoring of chain heads, recurring windows and Admin Center editing of alert rules deferred) | Alert rules, lifecycle, acknowledgment, escalation timers, auto-resolve, maintenance suppression, alerts page; SLA breach alerts; audit retention and legal hold, export, hash-chain verifier | The section 8 example runs as an acceptance test |
 | 4 | Gate 3 | User preferences UI and team-level routes; digests; on-call schedules (with the org model); webhook, Teams, Slack and push channels; package subscribers through the extension runtime; the automation engine (trigger → condition → action) as a subscription target | Package subscriber conformance tests; automation governors enforced end to end |
 
 Recommended order: G2-M3 (approvals, closing) → G2-M17 → G2-M4 SLA (publishes breach events) → G2-M9 and G2-M9b (connected workspace, as agreed) → G2-M18 → G2-M19 → G2-M5 email intake (reuses the email channel and delivery jobs). Phase 1 is small and makes SLA and dashboards publish proper events; notifications land before email intake because both need the email adapter.

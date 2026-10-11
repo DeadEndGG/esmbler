@@ -189,7 +189,7 @@ public sealed class ConfigCompiler(ConfigValidator validator)
     /// </summary>
     private static object? AlertReach(EffectiveConfig config, string? type)
     {
-        if (type is null || !type.StartsWith("platform.alert.", StringComparison.Ordinal))
+        if (type is null || !Sdk.Events.EventTypes.IsAlert(type))
         {
             return null;
         }

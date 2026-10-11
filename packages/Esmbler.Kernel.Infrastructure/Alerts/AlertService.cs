@@ -46,11 +46,25 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
                 q = status == "active" ? q.Where(a => a.Status == AlertStatuses.Open || a.Status == AlertStatuses.Acknowledged) : q.Where(a => a.Status == status);
             }
 
+            // Offsets count only alerts the person may see (record read is checked in memory), so pages neither skip
+            // nor repeat, and their length says nothing about alerts on records the person cannot read.
             limit = Math.Clamp(limit, 1, MaxPage);
-            var rows = await q.OrderByDescending(a => a.LastOccurredAt).Skip(Math.Max(0, offset)).Take(limit * 3 + 1).ToListAsync(ct);
-            var readable = await ReadableAsync(db, config, perms, rows, ct);
-            var views = await ViewsAsync(db, config, perms, ctx, readable.Take(limit).ToList(), ct);
-            return new AlertPage(views, readable.Count > limit || rows.Count > limit * 3);
+            offset = Math.Max(0, offset);
+            var ordered = q.OrderByDescending(a => a.LastOccurredAt).ThenBy(a => a.Id);
+            var visible = new List<AlertRow>();
+            const int chunk = 200, scanCap = 5000;
+            for (var scanned = 0; scanned < scanCap && visible.Count <= offset + limit; scanned += chunk)
+            {
+                var rows = await ordered.Skip(scanned).Take(chunk).ToListAsync(ct);
+                visible.AddRange(await ReadableAsync(db, config, perms, rows, ct));
+                if (rows.Count < chunk)
+                {
+                    break;
+                }
+            }
+
+            var views = await ViewsAsync(db, config, perms, ctx, visible.Skip(offset).Take(limit).ToList(), ct);
+            return new AlertPage(views, visible.Count > offset + limit);
         }, ct);
 
     /// <summary>Open alerts that are the person's to answer: owned by one of their groups, by them, or assigned to them.</summary>
@@ -82,10 +96,14 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
             }
 
             RequireMove(alert, AlertStatuses.Acknowledged);
+            var announced = alert.Status != AlertStatuses.Suppressed;
             alert.Status = AlertStatuses.Acknowledged;
             alert.AcknowledgedAt = now;
             alert.AcknowledgedBy = ctx.PrincipalId;
-            return new Outcome(EventTypes.AlertAcknowledged, "acknowledged", null);
+            alert.SuppressionId = null;
+
+            // An alert nobody was told about is taken quietly.
+            return new Outcome(announced ? EventTypes.AlertAcknowledged : null, "acknowledged", null);
         }), ct);
 
     public Task<AlertView> ResolveAsync(RequestContext ctx, Guid id, string? note, int? expectedVersion, CancellationToken ct) =>
@@ -115,7 +133,7 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
             }
 
             // The assignee must be an enabled person of the workspace who may read the alert's record.
-            var person = await db.Principals.AsNoTracking().AnyAsync(p => p.Id == assignee && p.Kind == "user" && !p.Disabled, ct) && await db.Memberships.AnyAsync(m => m.PrincipalId == assignee, ct);
+            var person = await db.Principals.AsNoTracking().AnyAsync(p => p.Id == assignee && p.Kind == "user" && !p.Disabled, ct) && await db.Memberships.AnyAsync(m => m.TenantId == ctx.TenantId && m.PrincipalId == assignee, ct);
             if (!person)
             {
                 throw new KernelException("invalid_assignee", "Assign the alert to an active person in this workspace.", 400, "assignee");
@@ -198,6 +216,13 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
                 CreatedAt = now,
             };
             db.AlertSuppressions.Add(row);
+
+            // When the window ends, the alerts it held back are announced if the problem is still there.
+            await Events.JobScheduler.ScheduleAsync(db, ctx.TenantId, ctx.EnvironmentId, new Events.JobRequest(AlertUnsuppressJobHandler.JobKind, new JsonObject { ["window"] = row.Id.ToString() })
+            {
+                RunAt = row.EndsAt,
+                DedupKey = AlertUnsuppressJobHandler.Key(row.Id),
+            }, ct);
             AuditWriter.Add(db, ctx, "alert.suppress", "alert_suppression", row.Id.ToString(), null, new { row.RuleId, row.EntityId, row.RecordId, row.StartsAt, row.EndsAt });
             await db.SaveChangesAsync(ct);
             var name = await db.Principals.AsNoTracking().Where(p => p.Id == ctx.PrincipalId).Select(p => p.DisplayName).FirstOrDefaultAsync(ct);
@@ -213,6 +238,12 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
             {
                 row.CancelledAt = clock.UtcNow;
                 row.CancelledBy = ctx.PrincipalId;
+                await Events.JobScheduler.ScheduleAsync(db, ctx.TenantId, ctx.EnvironmentId, new Events.JobRequest(AlertUnsuppressJobHandler.JobKind, new JsonObject { ["window"] = id.ToString() })
+                {
+                    RunAt = clock.UtcNow,
+                    DedupKey = AlertUnsuppressJobHandler.Key(id),
+                    ReplaceExisting = true,
+                }, ct);
                 AuditWriter.Add(db, ctx, "alert.suppression_cancel", "alert_suppression", id.ToString(), null);
                 await db.SaveChangesAsync(ct);
             }

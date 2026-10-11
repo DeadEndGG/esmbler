@@ -118,7 +118,7 @@ interface Policy {
         <span class="flex-1"></span>
         @if (canExport()) {
           <button class="btn btn-sm" type="button" (click)="download('csv')">Export CSV</button>
-          <button class="btn btn-sm" type="button" (click)="download('jsonl')">Export with chain (JSON Lines)</button>
+          @if (canExportChain()) { <button class="btn btn-sm" type="button" (click)="download('jsonl')">Export with chain (JSON Lines)</button> }
         }
       </form>
 
@@ -165,6 +165,8 @@ export class AuditPage {
   private readonly actions = computed(() => this.session.app()?.actions ?? []);
   protected readonly canManage = computed(() => this.actions().some((a) => a === 'audit.manage' || a === 'permissions.admin'));
   protected readonly canExport = computed(() => this.actions().some((a) => a === 'audit.export' || a === 'permissions.admin'));
+  /** The chain export carries unredacted entries, so it is for permission administrators only. */
+  protected readonly canExportChain = computed(() => this.actions().includes('permissions.admin'));
   protected operation = '';
   protected targetType = '';
   protected targetId = '';

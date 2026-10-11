@@ -2,9 +2,15 @@ import AxeBuilder from '@axe-core/playwright';
 import { Page, expect, test } from '@playwright/test';
 import { run, signIn } from './helpers';
 
+/** Checks the page in light and dark mode (the theme follows the color scheme through CSS only). */
 async function audit(page: Page, name: string): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
-  expect(results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${name}: ${v.id}`)).toEqual([]);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${name} (${colorScheme}): ${v.id}`)).toEqual([]);
+  }
+
+  await page.emulateMedia({ colorScheme: null });
 }
 
 /**

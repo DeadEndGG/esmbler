@@ -41,13 +41,17 @@ public class AuditPolicyTests(PlatformFixture f)
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task<ProvisionedTenant> TenantWithActivityAsync(string prefix)
+    private async Task<ProvisionedTenant> TenantWithActivityAsync(string prefix, bool seal = true)
     {
         var t = await f.NewTenantAsync(prefix, "1.8.0");
         var records = f.Get<RecordService>();
         await records.CreateAsync(f.As(t, "agent"), "core.tickets.ticket", new JsonObject { ["title"] = "Audit me", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "low" }, null, null, default);
         await records.CreateAsync(f.As(t, "agent", env: "sandbox"), "core.tickets.ticket", new JsonObject { ["title"] = "Sandbox too", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "low" }, null, null, default);
-        await Maintenance.SealAllAsync(default);
+        if (seal)
+        {
+            await Maintenance.SealAllAsync(default);
+        }
+
         return t;
     }
 
@@ -115,25 +119,29 @@ public class AuditPolicyTests(PlatformFixture f)
     }
 
     [Fact]
-    public async Task Retention_removes_only_a_sealed_prefix_past_the_policy_the_chain_still_verifies_and_holds_pause_it()
+    public async Task Retention_removes_only_a_verified_prefix_past_the_policy_never_tampered_entries_and_holds_pause_it()
     {
-        var t = await TenantWithActivityAsync("audp");
+        // The workspace's first three entries were written two years ago (backdated before they were sealed).
+        var t = await TenantWithActivityAsync("audp", seal: false);
+        await AsSuperuserAsync("UPDATE kernel.audit_log SET at = at - interval '730 days' WHERE tenant_id = @p0 AND id IN (SELECT id FROM kernel.audit_log WHERE tenant_id = @p0 ORDER BY id LIMIT 3)", t.TenantId);
+        await Maintenance.SealAllAsync(default);
         var admin = f.As(t, "admin");
         Assert.Equal(AuditService.DefaultRetentionDays, (await Audit.PolicyAsync(admin, default)).RetentionDays);
         Assert.Equal("invalid_retention", (await Assert.ThrowsAsync<KernelException>(() => Audit.SetRetentionAsync(admin, 30, default))).Code);
         await Audit.SetRetentionAsync(admin, 365, default);
         Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Audit.SetRetentionAsync(f.As(t, "builder"), 400, default))).Status);
 
-        // The first three entries are two years old.
-        await AsSuperuserAsync("UPDATE kernel.audit_log SET at = at - interval '730 days' WHERE tenant_id = @p0 AND chain_seq <= 3", t.TenantId);
-        await AsSuperuserAsync("UPDATE kernel.audit_chain_heads SET verify_cursor = NULL WHERE tenant_id = @p0", t.TenantId);
+        // Nothing goes before the chain has been verified that far.
+        await Maintenance.PurgeAsync(default);
+        Assert.Equal(0, (await Audit.ChainAsync(admin, default)).AnchorSeq);
+        await Audit.VerifyNowAsync(admin, default);
 
-        // A legal hold keeps everything.
+        // A legal hold keeps everything; a hold someone else placed is released only by a permission administrator.
         var held = await Audit.PlaceHoldAsync(admin, "Litigation 2026-17", default);
         await Maintenance.PurgeAsync(default);
         Assert.Equal(0, (await Audit.ChainAsync(admin, default)).AnchorSeq);
 
-        // Released: the old prefix goes (and the backdated rows were tampered with, so they leave with it), the rest verifies.
+        // Released: the old prefix goes and the rest still verifies.
         await Audit.ReleaseHoldAsync(admin, held.Holds[0].Id, default);
         var purged = await Maintenance.PurgeAsync(default);
         Assert.Contains(purged, p => p.TenantId == t.TenantId && p.Kind == "audit" && p.Removed == 3);
@@ -142,6 +150,54 @@ public class AuditPolicyTests(PlatformFixture f)
         Assert.Null((await Audit.VerifyNowAsync(admin, default)).BrokenAt);
         var record = await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AsNoTracking().Where(a => a.Operation == "retention.purged" || a.Operation.StartsWith("audit.hold")).Select(a => a.Operation).ToListAsync(), default);
         Assert.Equal(["audit.hold_place", "audit.hold_release", "retention.purged"], record.Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public async Task Entries_changed_to_look_old_are_reported_and_kept_never_purged()
+    {
+        var t = await TenantWithActivityAsync("audx");
+        var admin = f.As(t, "admin");
+        await Audit.SetRetentionAsync(admin, 365, default);
+        await Audit.VerifyNowAsync(admin, default);
+
+        // Someone with database access backdates sealed entries so retention would remove them.
+        await AsSuperuserAsync("UPDATE kernel.audit_log SET at = at - interval '730 days' WHERE tenant_id = @p0 AND chain_seq <= 2", t.TenantId);
+        var purged = await Maintenance.PurgeAsync(default);
+        Assert.DoesNotContain(purged, p => p.TenantId == t.TenantId && p.Kind == "audit");
+        var chain = await Audit.ChainAsync(admin, default);
+        Assert.Equal((0L, 1L), (chain.AnchorSeq, chain.BrokenAt!.Value));
+        var alarms = await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AsNoTracking().CountAsync(a => a.Operation == "audit.chain_broken"), default);
+        Assert.Equal(1, alarms);
+
+        // The daily verification agrees and does not raise the same alarm again.
+        Assert.Equal(1, (await Maintenance.VerifyAsync(t.TenantId, default)).BrokenAt);
+        Assert.Equal(1, await f.Get<Database>().InTenantAsync(t.TenantId, t.Environments["prod"], null, db => db.AuditLog.AsNoTracking().CountAsync(a => a.Operation == "audit.chain_broken"), default));
+    }
+
+    [Fact]
+    public async Task People_without_permission_administration_never_see_values_hidden_from_them_in_the_audit_log()
+    {
+        var t = await TenantWithActivityAsync("audh");
+        var admin = f.As(t, "admin");
+
+        // Tickets admins (audit.read through their permission set) lose sight of the effort field.
+        var drafts = f.Get<Kernel.Infrastructure.Configuration.DraftService>();
+        var draft = await drafts.OpenAsync(admin, default);
+        var applied = await drafts.ApplyAsync(admin, new Sdk.Overlay.SetFieldAccess { PermissionSet = "core.tickets.ps_admin", Entity = "core.tickets.ticket", Field = "effort_hours", Access = "hidden" }, draft.Version, "ui", default);
+        await f.Get<Kernel.Infrastructure.Configuration.PublishService>().PublishAsync(admin, applied.Draft.ArtifactHash!, applied.Draft.PublishedRevision, default);
+        await f.Get<RecordService>().CreateAsync(f.As(t, "agent"), "core.tickets.ticket", new JsonObject { ["title"] = "Effortful", ["requester"] = t.Users["dana"].ToString(), ["impact"] = "low", ["effort_hours"] = JsonValue.Create(987.25m) }, null, null, default);
+
+        var query = new AuditQuery(null, null, null, "record.create", null, null, null, null, Limit: 200);
+        var builder = f.As(t, "builder");
+        var seen = (await Audit.SearchAsync(builder, query, default)).Items.Select(i => i.Details!.ToJsonString()).ToList();
+        Assert.Contains(seen, d => d.Contains("\"effort_hours\":\"restricted\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(seen, d => d.Contains("987.25", StringComparison.Ordinal));
+        Assert.Contains((await Audit.SearchAsync(admin, query, default)).Items, i => i.Details!.ToJsonString().Contains("987.25", StringComparison.Ordinal));
+
+        // Exports render entries through the same redacting view; audit.read alone exports nothing, and the chain export
+        // (unredacted by design) is for permission administrators only.
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Audit.ExportAsync(builder, "csv", query, Stream.Null, default))).Status);
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Audit.ExportAsync(builder, "jsonl", query, Stream.Null, default))).Status);
     }
 
     [Fact]

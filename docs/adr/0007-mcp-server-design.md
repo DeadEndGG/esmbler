@@ -2,8 +2,8 @@
 title: "ADR 0007: MCP server design"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
-requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008, REQ-WS-004, REQ-WS-005, REQ-LIVE-003, REQ-NOT-007]
+last_reviewed: 2026-10-11
+requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-TEN-003, REQ-LAY-003, REQ-BIZ-004, REQ-EVT-008, REQ-WS-004, REQ-WS-005, REQ-LIVE-003, REQ-NOT-007, REQ-ALR-001]
 ---
 
 # ADR 0007: MCP server design
@@ -122,7 +122,7 @@ Metric and dashboard tools (G2-M9, [ADR 0019](0019-metrics-dashboards-and-connec
 | | `remove_metric` | `metric`, `expected_version` | `metric.remove` (tenant metrics only; refused while a tile or saved view uses it) | config:edit |
 | | `add_dashboard_tile` | `view`, `parent`, `metric`, `kind` (`kpi`, `bar`, `table`), `title?`, `tone?`, `orientation?`, `after?`, `expected_version` | `node.insert` of `display.kpi_tile`, `display.bar_chart` or `display.metric_table` | config:edit |
 
-Notification tools (G2-M18, [ADR 0021](0021-notification-routing-and-delivery.md)). A recipient is `{kind, ref}` with kind `field`, `role`, `group`, `user`, `approvers` or `address`; a template variant is `{channel, subject?, body}`. Agents cannot manage channel instances, replay or test-send (`notifications.manage` is never delegated), and have no inbox.
+Notification tools (G2-M18, [ADR 0021](0021-notification-routing-and-delivery.md)). A recipient is `{kind, ref}` with kind `field`, `role`, `group`, `user`, `approvers`, `alert_owner` (since G2-M19, on alert events) or `address`; a template variant is `{channel, subject?, body}`. Agents cannot manage channel instances, replay or test-send (`notifications.manage` is never delegated), and have no inbox.
 
 | Family | Tool | Input (summary) | Overlay op | Scope |
 | --- | --- | --- | --- | --- |
@@ -136,6 +136,15 @@ Notification tools (G2-M18, [ADR 0021](0021-notification-routing-and-delivery.md
 | | `add_notification_profile` | `label`, `channels`, `delivery?` (`all`, `fallback`), `min_severity?`, `expected_version` | `notification_profile.add` | config:edit |
 | | `add_notification_route` | `label`, `subscription`, `profile`, `template`, `recipients`, `expected_version` | `notification_route.add`; external `address` recipients are a permission change, so the agent's call is refused | config:edit |
 | | `update_notification_route` | `route`, `label?`, `profile?`, `template?`, `recipients?` (tenant routes), `enabled?`, `expected_version` | `notification_route.update`; external recipients refused as above, mandatory module routes cannot be disabled | config:edit |
+
+Alert tools (G2-M19, [ADR 0022](0022-alerts-and-audit-policy.md)). An owner is `group:<key>`, `field:<field>` or `user:<principal ID>`; an escalation step is `{afterMinutes, unlessAcknowledged?, repeatEveryMinutes?}`. Alerts publish `platform.alert.*` events; agents route them to people with `notify_when` and the recipient `alert_owner:alert`. Agents never acknowledge, resolve, assign or silence alerts (`alerts.respond` and `alerts.manage` are never delegated), so there are no tools for it, and the audit log is never available to agents.
+
+| Family | Tool | Input (summary) | Overlay op | Scope |
+| --- | --- | --- | --- | --- |
+| Discovery | `list_alert_rules` | none | none; the draft's alert rules with trigger subscription (event, entity, condition), severities, key, title, owner as `kind:ref`, escalation steps, resolving subscriptions, cool-down and `layer`, plus the alert event types | config:read |
+| | `list_alerts` | `status?` (`active` by default, `open`, `acknowledged`, `suppressed`, `resolved`) | none; up to 50 alerts the user may see (title, severity, owner, assignee, level, occurrences, times), only about records the agent may read, wrapped as `untrusted_data` | records:read |
+| Build | `add_alert_rule` | `label`, `event`, `title`, `when?`, `min_severity?`, `owner?`, `escalation?`, `resolve_on_event?`, `resolve_when?`, `dedup_key?`, `expected_version` | `subscription.add` (trigger, target `alert`), `subscription.add` (resolving, optional), `alert_rule.add` as one change | config:edit |
+| | `update_alert_rule` | `rule`, `label?`, `title?`, `min_severity?`, `owner?`, `escalation?` (replaces all), `enabled?`, `expected_version` | `alert_rule.update`; module rules keep their trigger and key; turning off a rule behind a mandatory or external alert route is a permission change at publish | config:edit |
 
 Every build tool applies its operations as one batch through `DraftService.ApplyBatchAsync` (G2-M9, REQ-WS-005): all of them or none, one new draft version. `undo_step` undoes the whole batch by default and a single step with `only_this_step` (G2-M9b; the builder panel offers "Undo change" and "Undo" the same way). Composite tools (`add_field` with placement, a required-when rule and list settings, `add_card` with fields) report each step with a note that the steps are one change ([ADR 0003](0003-configuration-artifact-and-overlay-format.md)). Every step pushes a live update ([ADR 0008](0008-realtime-channel-for-live-editing.md)). Point-and-prompt selections arrive as chat context (node IDs, type, label) and are passed as ordinary tool arguments.
 

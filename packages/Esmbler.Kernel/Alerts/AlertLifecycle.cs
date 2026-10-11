@@ -37,6 +37,10 @@ public static class AlertLifecycle
     public static bool Escalates(AlertRuleSpec rule, string status, int level) =>
         status == AlertStatuses.Open || (status == AlertStatuses.Acknowledged && StepFor(rule, level) is { UnlessAcknowledged: false });
 
+    /// <summary>Whether any step after <paramref name="level"/> escalates even when the alert is acknowledged.</summary>
+    public static bool LaterStepIgnoresAcknowledgment(AlertRuleSpec rule, int level) =>
+        rule.Escalation.Skip(Math.Max(0, level - 1)).Any(s => !s.UnlessAcknowledged);
+
     /// <summary>A new match reopens a resolved alert within the rule's cool-down.</summary>
     public static bool Reopens(AlertRuleSpec rule, DateTimeOffset resolvedAt, DateTimeOffset now) =>
         rule.ReopenWithinMinutes > 0 && now - resolvedAt <= TimeSpan.FromMinutes(rule.ReopenWithinMinutes);

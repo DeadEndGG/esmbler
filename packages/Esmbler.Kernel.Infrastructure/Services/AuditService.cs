@@ -41,11 +41,11 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
     public Task<AuditPage> SearchAsync(RequestContext ctx, AuditQuery query, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            await RequireAsync(db, ctx, PlatformActions.AuditRead, fresh: false, ct);
+            var (config, perms) = await RequireWithConfigAsync(db, ctx, PlatformActions.AuditRead, fresh: false, ct);
             var limit = Math.Clamp(query.Limit, 1, 200);
             var rows = await Filter(db.AuditLog.AsNoTracking(), query).OrderByDescending(a => a.Id).Take(limit + 1).ToListAsync(ct);
             var names = await NamesAsync(db, rows.Select(r => r.Actor), ct);
-            var items = rows.Take(limit).Select(r => View(r, names)).ToList();
+            var items = rows.Take(limit).Select(r => View(r, names, config, perms)).ToList();
             return new AuditPage(items, rows.Count > limit ? items[^1].Id : null);
         }, ct);
 
@@ -77,7 +77,13 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
 
         await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            await RequireAsync(db, ctx, PlatformActions.AuditExport, fresh: true, ct);
+            var perms = await RequireAsync(db, ctx, PlatformActions.AuditExport, fresh: true, ct);
+            if (format == "jsonl" && !perms.Can(PlatformActions.PermissionsAdmin))
+            {
+                // The chain export carries every entry's canonical text unredacted (it must, to verify offline).
+                throw KernelException.Forbidden("Exporting the audit chain needs permission administration; export CSV instead.");
+            }
+
             AuditWriter.Add(db, ctx, "audit.export", "audit_log", null, null, new { format, from, to, query.Actor, query.Operation, query.TargetType, query.TargetId, query.Outcome });
             await db.SaveChangesAsync(ct);
             return true;
@@ -90,7 +96,12 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
     {
         var from = query.From ?? throw new ArgumentException("Prepare the export first.", nameof(query));
         var to = query.To ?? throw new ArgumentException("Prepare the export first.", nameof(query));
-        await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db => await RequireAsync(db, ctx, PlatformActions.AuditExport, fresh: false, ct), ct);
+        var (config, perms) = await database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db => await RequireWithConfigAsync(db, ctx, PlatformActions.AuditExport, fresh: false, ct), ct);
+        if (format == "jsonl" && !perms.Can(PlatformActions.PermissionsAdmin))
+        {
+            throw KernelException.Forbidden("Exporting the audit chain needs permission administration.");
+        }
+
         await using var writer = new StreamWriter(output, new UTF8Encoding(false), 64 * 1024, leaveOpen: true);
         if (format == "csv")
         {
@@ -124,7 +135,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             }, ct);
             foreach (var r in batch.rows)
             {
-                var view = View(r, batch.names);
+                var view = View(r, batch.names, config, perms);
                 if (format == "csv")
                 {
                     await writer.WriteLineAsync(string.Join(',', new[]
@@ -166,9 +177,10 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             await RequireAsync(db, ctx, PlatformActions.AuditManage, fresh: true, ct);
-            for (var i = 0; i < 20; i++)
+            // A bounded amount of work per request; the cursor carries the rest to the next call or the nightly run.
+            for (var i = 0; i < 4; i++)
             {
-                var step = await db.Database.SqlQuery<VerifyRow>($"""SELECT checked AS "Checked", verified_through AS "VerifiedThrough", broken_at AS "BrokenAt", complete AS "Complete" FROM kernel.verify_audit_chain(50000)""").FirstAsync(ct);
+                var step = await db.Database.SqlQuery<VerifyRow>($"""SELECT checked AS "Checked", verified_through AS "VerifiedThrough", broken_at AS "BrokenAt", complete AS "Complete" FROM kernel.verify_audit_chain(25000)""").FirstAsync(ct);
                 if (step.Complete)
                 {
                     break;
@@ -239,8 +251,14 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
     public Task<AuditPolicyView> ReleaseHoldAsync(RequestContext ctx, Guid id, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            await RequireAsync(db, ctx, PlatformActions.AuditManage, fresh: true, ct);
+            var perms = await RequireAsync(db, ctx, PlatformActions.AuditManage, fresh: true, ct);
             var hold = await db.LegalHolds.AsTracking().FirstOrDefaultAsync(h => h.Id == id, ct) ?? throw KernelException.NotFound("Legal hold");
+            if (hold.CreatedBy != ctx.PrincipalId && !perms.Can(PlatformActions.PermissionsAdmin))
+            {
+                // Separation of duties: a hold someone else placed is released only by a permission administrator.
+                throw KernelException.Forbidden("Only the person who placed this hold or a permission administrator can release it.");
+            }
+
             if (hold.ReleasedAt is null)
             {
                 hold.ReleasedAt = clock.UtcNow;
@@ -254,7 +272,10 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
 
     // ------------------------------------------------------------------ helpers
 
-    private async Task<EffectivePermissions> RequireAsync(KernelDbContext db, RequestContext ctx, string action, bool fresh, CancellationToken ct)
+    private async Task<EffectivePermissions> RequireAsync(KernelDbContext db, RequestContext ctx, string action, bool fresh, CancellationToken ct) =>
+        (await RequireWithConfigAsync(db, ctx, action, fresh, ct)).Perms;
+
+    private async Task<(Kernel.Configuration.EffectiveConfig Config, EffectivePermissions Perms)> RequireWithConfigAsync(KernelDbContext db, RequestContext ctx, string action, bool fresh, CancellationToken ct)
     {
         if (ctx.AgentId is not null)
         {
@@ -268,7 +289,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             throw KernelException.Forbidden($"This needs the {action} right.");
         }
 
-        return perms;
+        return (artifact.Config, perms);
     }
 
     private static IQueryable<AuditRow> Filter(IQueryable<AuditRow> q, AuditQuery query)
@@ -317,8 +338,33 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
         return q;
     }
 
-    private static AuditEntryView View(AuditRow r, Dictionary<Guid, string> names) =>
-        new(r.Id, r.At, r.Actor is { } a ? names.GetValueOrDefault(a, "someone") : null, r.Actor, r.Agent is not null, r.Channel, r.Operation, r.TargetType, r.TargetId, r.Outcome, r.EnvironmentId is null, JsonNode.Parse(r.Details));
+    private static AuditEntryView View(AuditRow r, Dictionary<Guid, string> names, Kernel.Configuration.EffectiveConfig config, EffectivePermissions perms) =>
+        new(r.Id, r.At, r.Actor is { } a ? names.GetValueOrDefault(a, "someone") : null, r.Actor, r.Agent is not null, r.Channel, r.Operation, r.TargetType, r.TargetId, r.Outcome, r.EnvironmentId is null, Redact(r, config, perms));
+
+    /// <summary>
+    /// Record entries keep old and new field values. Except for permission administrators (who see every field anyway),
+    /// a value shows only when the viewer reads every record of the entity and the field is not hidden from them; the
+    /// rest read "restricted", as on a record's own history.
+    /// </summary>
+    internal static JsonNode? Redact(AuditRow r, Kernel.Configuration.EffectiveConfig config, EffectivePermissions perms)
+    {
+        var details = JsonNode.Parse(r.Details);
+        if (perms.Can(PlatformActions.PermissionsAdmin) || details?["changes"] is not JsonObject changes || config.FindEntity(r.TargetType) is not { } entity)
+        {
+            return details;
+        }
+
+        var readsAll = perms.Entity(entity.Id).Read == RecordScopes.All;
+        foreach (var key in changes.Select(c => c.Key).ToList())
+        {
+            if (!readsAll || perms.FieldAccess(entity, key) == FieldAccessLevels.Hidden)
+            {
+                changes[key] = "restricted";
+            }
+        }
+
+        return details;
+    }
 
     private static async Task<Dictionary<Guid, string>> NamesAsync(KernelDbContext db, IEnumerable<Guid?> ids, CancellationToken ct)
     {
@@ -342,10 +388,11 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
         return new AuditPolicyView(days, MinRetentionDays, MaxRetentionDays, [.. holds.Select(h => new LegalHoldView(h.Id, h.Reason, names.GetValueOrDefault(h.CreatedBy, "someone"), h.CreatedAt, h.ReleasedBy is { } r ? names.GetValueOrDefault(r, "someone") : null, h.ReleasedAt))]);
     }
 
-    /// <summary>Spreadsheets run cells starting with = + - @ (and tab or return) as formulas: prefix them with a quote.</summary>
+    /// <summary>Spreadsheets run cells starting with = + - @ | % (also after leading spaces, tab or return) as formulas: prefix them with a quote.</summary>
     internal static string Csv(string value)
     {
-        var v = value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r' ? "'" + value : value;
+        var start = value.TrimStart(' ', '\t', '\r', '\n');
+        var v = start.Length > 0 && start[0] is '=' or '+' or '-' or '@' or '|' or '%' || (value.Length > 0 && value[0] is '\t' or '\r') ? "'" + value : value;
         return v.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + v.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : v;
     }
 

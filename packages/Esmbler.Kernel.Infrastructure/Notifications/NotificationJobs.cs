@@ -413,7 +413,8 @@ public sealed class NotifyResolveJobHandler(ConfigStore configs, AccessService a
                 case RecipientKinds.Address:
                     addresses.Add(r.Ref);
                     break;
-                case RecipientKinds.AlertOwner when envelope.Payload["alert"]?.GetValue<string>() is { } alertRef && Guid.TryParse(alertRef, out var alertId):
+                // Only on alert events the platform published (defence in depth; the validator allows it nowhere else).
+                case RecipientKinds.AlertOwner when EventTypes.IsAlert(envelope.Type) && envelope.Source == Alerts.AlertEvaluateJobHandler.Source && envelope.Payload["alert"]?.GetValue<string>() is { } alertRef && Guid.TryParse(alertRef, out var alertId):
                     // The alert's owner group, owner and assignee (ADR 0022).
                     if (await db.Alerts.AsNoTracking().Where(a => a.Id == alertId).Select(a => new { a.OwnerGroup, a.OwnerPrincipal, a.Assignee }).FirstOrDefaultAsync(ct) is { } owners)
                     {

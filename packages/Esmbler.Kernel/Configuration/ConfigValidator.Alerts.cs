@@ -31,7 +31,7 @@ public sealed partial class ConfigValidator
                 d.Add(Diagnostic.Error("config.bad_target", $"Alert rule '{rule.Label}' is triggered by subscription '{trigger.Label}', which targets {trigger.Target}.", rule.Id, "Use a subscription with target alert."));
             }
 
-            if (trigger is not null && trigger.Event.StartsWith("platform.alert.", StringComparison.Ordinal))
+            if (trigger is not null && Sdk.Events.EventTypes.IsAlert(trigger.Event))
             {
                 d.Add(Diagnostic.Error("config.alert_loop", $"Alert rule '{rule.Label}' is triggered by alert events.", rule.Id, "Raise alerts from the events that cause them; route alert events to people with notification routes."));
             }

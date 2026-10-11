@@ -14,10 +14,10 @@ namespace Esmbler.Mcp.Tools;
 /// <summary>A recipient rule for notification routes (ADR 0021).</summary>
 public sealed class RecipientInput
 {
-    [Description("field (a user, group or email field of the record), role (role ID), group (group key), user (principal ID), approvers (pending approvers of an approval event) or address (an external email address or phone number).")]
+    [Description("field (a user, group or email field of the record), role (role ID), group (group key), user (principal ID), approvers (pending approvers of an approval event), alert_owner (the owners of the alert, only for platform.alert.* events) or address (an external email address or phone number).")]
     public required string Kind { get; set; }
 
-    [Description("Field key, role ID, group key, principal ID or address; for approvers use \"pending\".")]
+    [Description("Field key, role ID, group key, principal ID or address; for approvers use \"pending\" and for alert_owner \"alert\".")]
     public required string Ref { get; set; }
 }
 
