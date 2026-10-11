@@ -88,6 +88,7 @@ public static class ServiceRegistration
         services.TryAddSingleton<IActivationHealthCheck, ActivationHealthCheck>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<PreviewService>();
+        services.AddSingleton<DashboardBuilderService>();
         services.AddSingleton<IMigrationFaultInjector>(_ => new ConfiguredFaultInjector(configuration["Esmbler:FaultInjection:Migration"]));
         services.AddSingleton<MigrationExecutor>();
         services.AddSingleton<UpgradeService>();

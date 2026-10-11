@@ -1,13 +1,14 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Api, ApiError } from '../core/api';
 import { viewerTimeZone } from '../core/drill';
-import { DashboardData, MetricResult } from '../core/models';
+import { DashboardData, DraftViewSpec, MetricResult } from '../core/models';
 import { Session } from '../core/session';
 import { NodeComponent } from '../renderer/node';
 import { MetricsContext } from '../renderer/metrics';
 import { RenderContext } from '../renderer/render-context';
 import { Icon } from '../ui/icon';
+import { DashboardBuilder } from './dashboard-builder';
 
 const REFRESH_MS = 60_000;
 
@@ -17,7 +18,7 @@ const REFRESH_MS = 60_000;
  */
 @Component({
   selector: 'esm-dashboard-page',
-  imports: [NodeComponent, Icon, RouterLink],
+  imports: [NodeComponent, Icon, RouterLink, DashboardBuilder],
   providers: [RenderContext, MetricsContext],
   template: `
     @let s = ctx.spec();
@@ -29,8 +30,14 @@ const REFRESH_MS = 60_000;
             @if (asOf(); as at) { Updated {{ at }} · figures count only records you can see } @else { Loading… }
           </p>
         </div>
+        @if (session.canCustomize() && !editing()) {
+          <button class="btn btn-sm" (click)="setEditing(true)"><esm-icon name="sliders" [size]="14" /> Edit dashboard</button>
+        }
         <button class="btn btn-sm" (click)="refresh()" [disabled]="metrics.loading()"><esm-icon name="reset" [size]="14" /> Refresh</button>
       </header>
+      @if (editing()) {
+        <esm-dashboard-builder [view]="view()" (changed)="reloadDraft()" (done)="setEditing(false)" />
+      }
       @if (error(); as err) {
         <div class="callout tone-red mb-4" role="alert">{{ err }}</div>
       }
@@ -70,6 +77,10 @@ const REFRESH_MS = 60_000;
 })
 export class DashboardPage {
   readonly view = input.required<string>();
+  /** `?edit=1`: the dashboard builder, with the layout from the draft (REQ-WS-005). */
+  readonly edit = input<string | undefined>();
+  protected readonly editing = computed(() => !!this.edit() && this.session.canCustomize());
+  private readonly router = inject(Router);
   private readonly api = inject(Api);
   protected readonly session = inject(Session);
   protected readonly ctx = inject(RenderContext);
@@ -89,16 +100,37 @@ export class DashboardPage {
   constructor() {
     effect(() => {
       const view = this.view();
-      untracked(() => void this.load(view));
+      const editing = this.editing();
+      untracked(() => void (editing ? this.loadDraft(view) : this.load(view)));
     });
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void this.loadData(this.view());
+      if (document.visibilityState === 'visible') void this.loadData(this.view(), this.editing());
     }, REFRESH_MS);
     inject(DestroyRef).onDestroy(() => clearInterval(timer));
   }
 
   protected refresh(): void {
     void this.loadData(this.view());
+  }
+
+  protected setEditing(on: boolean): void {
+    void this.router.navigate([], { queryParams: { edit: on ? 1 : null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  protected reloadDraft(): void {
+    void this.loadDraft(this.view(), false);
+  }
+
+  /** The draft's layout of this dashboard; figures are the published ones (a new dashboard has none until published). */
+  private async loadDraft(view: string, data = true): Promise<void> {
+    this.error.set(null);
+    try {
+      const draft = await this.api.get<DraftViewSpec>(`/api/drafts/current/views/${view}`);
+      this.ctx.spec.set(draft.spec);
+    } catch (e) {
+      this.error.set(e instanceof ApiError && e.status === 404 ? 'This dashboard is not in your draft.' : 'Could not load the draft of this dashboard.');
+    }
+    if (data) await this.loadData(view, true);
   }
 
   private async load(view: string): Promise<void> {
@@ -115,7 +147,7 @@ export class DashboardPage {
     await this.loadData(view);
   }
 
-  private async loadData(view: string): Promise<void> {
+  private async loadData(view: string, quiet = false): Promise<void> {
     const seq = ++this.seq;
     this.metrics.loading.set(true);
     try {
@@ -126,12 +158,13 @@ export class DashboardPage {
       this.loadedAt.set(new Date());
       this.error.set(null);
       // A publish since the spec was cached: reload the bootstrap and the layout so tiles match the figures.
-      if (this.ctx.spec() && data.configRevision !== this.ctx.spec()!.configRevision) {
+      if (!this.editing() && this.ctx.spec() && data.configRevision !== this.ctx.spec()!.configRevision) {
         await this.session.configChanged();
         if (seq === this.seq) this.ctx.spec.set(await this.session.view(view));
       }
     } catch (e) {
-      if (seq === this.seq) this.error.set(e instanceof ApiError ? e.message : 'Could not load the figures.');
+      // While editing, a dashboard that is only in the draft has no published figures yet.
+      if (seq === this.seq && !quiet) this.error.set(e instanceof ApiError ? e.message : 'Could not load the figures.');
     } finally {
       if (seq === this.seq) this.metrics.loading.set(false);
     }

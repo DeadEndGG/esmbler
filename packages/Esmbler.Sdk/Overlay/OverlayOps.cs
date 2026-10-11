@@ -24,6 +24,8 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(UpdateNode), "node.update")]
 [JsonDerivedType(typeof(MoveNode), "node.move")]
 [JsonDerivedType(typeof(RemoveNode), "node.remove")]
+[JsonDerivedType(typeof(AddView), "view.add")]
+[JsonDerivedType(typeof(RemoveView), "view.remove")]
 [JsonDerivedType(typeof(SetFieldAccess), "permission.field_access")]
 [JsonDerivedType(typeof(ResetElement), "element.reset")]
 [JsonDerivedType(typeof(AddCatalogItem), "catalog_item.add")]
@@ -697,6 +699,29 @@ public sealed class RemoveSlaPolicy : OverlayOp
     public override string Describe() => $"Remove SLA policy {Policy}";
 
     public override IEnumerable<string> Targets() => [Policy];
+}
+
+/// <summary>
+/// Adds a tenant dashboard (ADR 0019, REQ-WS-005): a view of kind <c>dashboard</c> whose layout holds layout and display
+/// nodes only. Its ID and every node ID start with <c>tenant__</c>. Other view kinds come from modules.
+/// </summary>
+public sealed class AddView : OverlayOp
+{
+    public required ViewSpec View { get; set; }
+
+    public override string Describe() => $"Add {View.Kind} \"{View.Label}\"";
+
+    public override IEnumerable<string> Targets() => [View.Id, .. View.Layout.Descendants().Select(n => n.Id)];
+}
+
+/// <summary>Removes a dashboard this workspace added.</summary>
+public sealed class RemoveView : OverlayOp
+{
+    public required string View { get; set; }
+
+    public override string Describe() => $"Remove view {View}";
+
+    public override IEnumerable<string> Targets() => [View];
 }
 
 /// <summary>Adds a tenant metric (ADR 0019). Metrics only count what each viewer can already read.</summary>

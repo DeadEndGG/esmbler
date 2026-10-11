@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Esmbler.Expressions;
 using Esmbler.Kernel;
+using Esmbler.Kernel.Configuration;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Overlay;
@@ -230,7 +231,7 @@ public sealed class CatalogTaskInput
 /// Tools never publish.
 /// </summary>
 [McpServerToolType]
-public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewService preview)
+public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewService preview, DashboardBuilderService dashboards)
 {
     [McpServerTool(Name = "open_draft", Destructive = false), Description("Open (or join) the draft for this workspace. Returns its version. Everyone else keeps seeing the published pages until a person publishes.")]
     public Task<CallToolResult> OpenDraft() =>
@@ -786,13 +787,24 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
         runner.RunAsync("remove_metric", AgentScopes.ConfigEdit, metric, async ctx =>
             await ApplyAllAsync(ctx, [new RemoveMetric { Metric = metric }], expected_version));
 
-    [McpServerTool(Name = "add_dashboard_tile", Destructive = false), Description("Show a metric on a dashboard: kpi (one number; ungrouped metrics), bar (a bar per group; grouped metrics) or table (grouped metrics). Put it in a column or card of the dashboard (list_metrics lists dashboards and their containers).")]
+    [McpServerTool(Name = "add_dashboard", Destructive = false), Description("Create a new dashboard over an entity's records, e.g. \"Hardware vendors\". It starts empty and appears in navigation once published; add tiles with add_dashboard_tile (no parent puts a tile on a new row). Returns the dashboard's view ID.")]
+    public Task<CallToolResult> AddDashboard(
+        [Description("The dashboard's name, 1-60 characters.")] string label,
+        [Description("Entity whose records its figures count, e.g. core.tickets.ticket.")] string entity,
+        int expected_version) =>
+        runner.RunAsync("add_dashboard", AgentScopes.ConfigEdit, entity, async ctx =>
+        {
+            var (result, view) = await dashboards.CreateAsync(ctx, label, entity, expected_version, default);
+            return new { view, draftVersion = result.Version, steps = result.Steps.Select(st => st.Seq) };
+        });
+
+    [McpServerTool(Name = "add_dashboard_tile", Destructive = false), Description("Show a metric on a dashboard: kpi (one number; ungrouped metrics), bar (a bar per group; grouped metrics) or table (grouped metrics). Omit parent for a new row, name a row to add it beside that row's tiles (the row is re-spanned evenly, at most 4 tiles), or name a column or card (list_metrics lists dashboards and their containers).")]
     public Task<CallToolResult> AddDashboardTile(
         string view,
-        string parent,
         string metric,
         [Description("kpi, bar or table.")] string kind,
         int expected_version,
+        [Description("A row (the tile joins its tiles), a column or card, or omit for a new row.")] string? parent = null,
         [Description("Tile label or chart title; defaults to the metric's label.")] string? title = null,
         [Description("kpi: neutral, info, success, warning or critical.")] string? tone = null,
         [Description("bar: horizontal (categories, default) or vertical (time).")] string? orientation = null,
@@ -823,6 +835,13 @@ public sealed class BuildTools(ToolRunner runner, DraftService drafts, PreviewSe
             }
 
             var node = new NodeSpec { Id = Namespaces.NewTenantNodeId(), Type = type, Props = props };
+            var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, default);
+            var dashboard = config.FindView(view) ?? throw KernelException.NotFound($"View '{view}'");
+            if (parent is null || dashboard.Layout.Find(parent) is { Type: "layout.row" })
+            {
+                return await ApplyAllAsync(ctx, [.. DashboardLayout.AddTile(dashboard, node, parent)], expected_version);
+            }
+
             return await ApplyAllAsync(ctx, [new InsertNode { View = view, Parent = parent, Node = node, Anchor = after is null ? null : new Anchor { After = after } }], expected_version);
         });
 

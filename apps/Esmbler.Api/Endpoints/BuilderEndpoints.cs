@@ -22,6 +22,8 @@ public sealed record UpgradeRequest(string ToVersion);
 
 public sealed record SimulateRequest(JsonObject Data);
 
+public sealed record NewDashboardRequest(string Label, string Entity, int ExpectedVersion);
+
 /// <summary>Builder API: drafts, live previews, publish, rollback, upgrades. The same Commands the MCP tools write.</summary>
 public static class BuilderEndpoints
 {
@@ -45,6 +47,16 @@ public static class BuilderEndpoints
         d.MapGet("/current/views/{view}", (string view, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.ViewAsync(Ctx(u), view, ct));
         d.MapGet("/current/sample/{entity}", (string entity, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.SampleAsync(Ctx(u), entity, ct));
         d.MapPost("/current/simulate/{entity}", (string entity, SimulateRequest body, ClaimsPrincipal u, PreviewService preview, CancellationToken ct) => preview.SimulateAsync(Ctx(u), entity, body.Data ?? [], ct));
+        // Dashboard builder (REQ-WS-005): draft changes to dashboards and their tiles, one batch each.
+        d.MapGet("/current/dashboards/{view}/options", (string view, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.OptionsAsync(Ctx(u), view, ct));
+        d.MapPost("/current/dashboards", async (NewDashboardRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) =>
+        {
+            var (result, view) = await builder.CreateAsync(Ctx(u), body.Label, body.Entity, body.ExpectedVersion, ct);
+            return new { view, result.Draft, result.Version };
+        });
+        d.MapPost("/current/dashboards/{view}/tiles", (string view, DashboardTileRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.AddTileAsync(Ctx(u), view, body, ct));
+        d.MapPost("/current/dashboards/{view}/tiles/{tile}/remove", (string view, string tile, VersionRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.RemoveTileAsync(Ctx(u), view, tile, body.ExpectedVersion, ct));
+        d.MapPost("/current/dashboards/{view}/remove", (string view, VersionRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.RemoveAsync(Ctx(u), view, body.ExpectedVersion, ct));
         d.MapPost("/current/publish-requests", (ClaimsPrincipal u, PublishService publisher, CancellationToken ct) => publisher.RequestAsync(Ctx(u), ct));
 
         var c = app.MapGroup("/api/config").WithTags("Configuration").RequireAuthorization();

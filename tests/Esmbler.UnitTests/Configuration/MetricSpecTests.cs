@@ -123,6 +123,87 @@ public class MetricSpecTests
         Assert.Equal(480, p2.Minutes);
     }
 
+    private static ViewSpec NewDashboard(string id = "tenant__dash_vendors") => new()
+    {
+        Id = id,
+        Kind = ViewKinds.Dashboard,
+        Entity = Ticket,
+        Label = "Vendors",
+        Layout = new NodeSpec
+        {
+            Id = id,
+            Type = "layout.page",
+            Props = new() { ["title"] = "Vendors" },
+            Children =
+            [
+                new NodeSpec
+                {
+                    Id = "tenant__n_s",
+                    Type = "layout.section",
+                    Children =
+                    [
+                        new NodeSpec
+                        {
+                            Id = "tenant__n_r",
+                            Type = "layout.row",
+                            Children = [new NodeSpec { Id = "tenant__n_c", Type = "layout.column", Props = new() { ["span"] = 12 }, Children = [new NodeSpec { Id = "tenant__n_t", Type = "display.bar_chart", Props = new() { ["metric"] = "tenant__p1_by_category" } }] }],
+                        },
+                    ],
+                },
+            ],
+        },
+    };
+
+    [Fact]
+    public void Tenants_add_and_remove_their_own_dashboards()
+    {
+        // REQ-WS-005: a new dashboard is one reviewable change with its metric and tiles.
+        var result = Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = NewDashboard() });
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors.Select(e => e.Message)));
+        Assert.Equal(ViewKinds.Dashboard, result.Config.FindView("tenant__dash_vendors")!.Kind);
+        Assert.Contains(ConfigDiff.Compare(Compile("1.10.0").Config, result.Config), c => c.Kind == "view" && c.Id == "tenant__dash_vendors" && c.Change == "added");
+        Assert.Contains("tenant__n_t", DependencyGraph.Build(result.Config).ImpactOf("tenant__p1_by_category"));
+
+        // Removing it frees its metric; tiles must match their metric like on module dashboards.
+        var removed = Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = NewDashboard() }, new RemoveView { View = "tenant__dash_vendors" }, new RemoveMetric { Metric = "tenant__p1_by_category" });
+        Assert.True(removed.Succeeded, string.Join("\n", removed.Errors.Select(e => e.Message)));
+        var kpi = NewDashboard();
+        kpi.Layout.Children[0].Children[0].Children[0].Children[0].Type = "display.kpi_tile";
+        Assert.False(Compile("1.10.0", new AddMetric { Metric = Vendors() }, new AddView { View = kpi }).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("core.tickets.dash_x", "dashboard", "overlay.namespace")]
+    [InlineData("tenant__list_x", "list", "overlay.unsupported")]
+    [InlineData("tenant__dash_x", "dashboard", "overlay.duplicate")]
+    public void Added_views_are_tenant_dashboards_with_new_ids(string id, string kind, string code)
+    {
+        var view = NewDashboard(id);
+        view.Kind = kind;
+        var ops = new List<OverlayOp> { new AddMetric { Metric = Vendors() }, new AddView { View = view } };
+        if (code == "overlay.duplicate")
+        {
+            ops.Insert(1, new AddView { View = NewDashboard(id) });
+        }
+
+        Assert.Contains(Compile("1.10.0", [.. ops]).Errors, e => e.Code == code);
+    }
+
+    [Fact]
+    public void A_new_dashboard_can_start_empty()
+    {
+        var empty = NewDashboard();
+        empty.Layout.Children[0].Children.Clear();
+        var result = Compile("1.10.0", new AddView { View = empty });
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors.Select(e => e.Message)));
+    }
+
+    [Fact]
+    public void Module_dashboards_cannot_be_removed()
+    {
+        Assert.Contains(Compile("1.10.0", new RemoveView { View = "core.tickets.dashboard" }).Errors, e => e.Code == "overlay.base_immutable");
+    }
+
     [Fact]
     public void At_risk_and_alert_metrics_are_validated()
     {

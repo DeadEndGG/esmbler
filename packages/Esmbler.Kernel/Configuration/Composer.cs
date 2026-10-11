@@ -321,6 +321,49 @@ public static class Composer
             case RemoveNode rn:
                 ApplyRemoveNode(ctx, rn);
                 break;
+            case AddView av:
+                RequireTenantId(av.View.Id, "view");
+                if (av.View.Kind != ViewKinds.Dashboard)
+                {
+                    throw new OverlayException("overlay.unsupported", $"Only dashboards can be added; '{av.View.Label}' is a {av.View.Kind} view.", av.View.Id, "Set kind to dashboard, or change the module's record and list views with node operations.");
+                }
+
+                if (ctx.Config.FindView(av.View.Id) is not null)
+                {
+                    throw new OverlayException("overlay.duplicate", $"View '{av.View.Id}' already exists.", av.View.Id, "Choose a new ID.");
+                }
+
+                foreach (var node in av.View.Layout.Descendants())
+                {
+                    if (node != av.View.Layout && !node.Id.StartsWith(Namespaces.TenantPrefix, StringComparison.Ordinal))
+                    {
+                        throw new OverlayException("overlay.namespace", $"New node IDs must start with '{Namespaces.TenantPrefix}'; '{node.Id}' does not.", node.Id, Namespaces.NewTenantNodeId());
+                    }
+                }
+
+                ctx.Config.Views.Add(SpecJson.Clone(av.View));
+                ctx.Mark(av.View.Id);
+                foreach (var node in av.View.Layout.Descendants())
+                {
+                    ctx.Mark(node.Id);
+                }
+
+                break;
+            case RemoveView rv:
+                var removedView = ctx.Config.FindView(rv.View) ?? throw Missing("view", rv.View, Expression.Suggest(rv.View, ctx.Config.Views.Select(v => v.Id)));
+                if (!IsTenant(ctx, removedView.Id))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"View '{removedView.Label}' comes from {ctx.Layer(removedView.Id)} and cannot be removed.", rv.View, "Remove or hide its nodes instead.");
+                }
+
+                ctx.Config.Views.Remove(removedView);
+                ctx.Config.Provenance.Remove(removedView.Id);
+                foreach (var node in removedView.Layout.Descendants())
+                {
+                    ctx.Config.Provenance.Remove(node.Id);
+                }
+
+                break;
             case ResetElement re:
                 if (!ctx.ResetSomething)
                 {

@@ -288,6 +288,31 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
     }
 
     [Fact]
+    public async Task Agent_creates_a_dashboard_and_lays_tiles_out_in_rows()
+    {
+        // REQ-WS-005: the AI builder adds dashboards like any configuration; rows stay on the 12-unit grid.
+        var tenant = await platform.NewTenantAsync("mdash", "1.10.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+        var created = await Call(client, "add_dashboard", new { label = "Service levels", entity = "core.tickets.ticket", expected_version = version });
+        var view = created["view"]!.GetValue<string>();
+        Assert.StartsWith("tenant__dash_service_levels", view, StringComparison.Ordinal);
+        version = created["draftVersion"]!.GetValue<int>();
+        version = (await Call(client, "add_dashboard_tile", new { view, metric = "core.tickets.metric.sla_at_risk", kind = "kpi", expected_version = version }))["version"]!.GetValue<int>();
+
+        var (config, _, _, _) = await platform.Get<Kernel.Infrastructure.Configuration.PreviewService>().WorkingConfigAsync(platform.As(tenant, "admin"), default);
+        var row = config.FindView(view)!.Layout.Descendants().Single(n => n.Type == "layout.row").Id;
+        version = (await Call(client, "add_dashboard_tile", new { view, parent = row, metric = "core.tickets.metric.sla_breached", kind = "kpi", tone = "critical", expected_version = version }))["version"]!.GetValue<int>();
+        (config, _, _, _) = await platform.Get<Kernel.Infrastructure.Configuration.PreviewService>().WorkingConfigAsync(platform.As(tenant, "admin"), default);
+        Assert.Equal([6, 6], config.FindView(view)!.Layout.Find(row)!.Children.Select(c => (int)c.Props["span"]!));
+
+        // Only dashboards can be created this way, over entities the person can read.
+        var bad = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_dashboard", new { label = "Nope", entity = "core.tickets.nothing", expected_version = version }));
+        Assert.Contains("not_found", bad.Body);
+    }
+
+    [Fact]
     public async Task Agent_defines_a_metric_and_puts_it_on_the_dashboard()
     {
         // REQ-WS-004 (ADR 0019): metrics and dashboard tiles are configuration the AI builder edits in the draft.
