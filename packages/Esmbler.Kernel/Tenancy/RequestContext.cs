@@ -42,6 +42,12 @@ public static class AgentScopes
     public static IReadOnlyList<string> All { get; } = [ConfigRead, ConfigEdit, PublishRequest, RecordsRead, RecordsWrite, AccessExplain];
 
     /// <summary>
+    /// What an external assistant (ChatGPT, Claude) may be granted through OAuth (ADR 0025): never records:write.
+    /// config:read is always granted; records:read only where the workspace allows it.
+    /// </summary>
+    public static IReadOnlyList<string> ExternalGrantable { get; } = [ConfigRead, ConfigEdit, PublishRequest, AccessExplain, RecordsRead];
+
+    /// <summary>
     /// Default delegation for the in-app builder chat. No record access by default (threat model T-23): the model works
     /// on configuration and synthetic sample data; reading real records is an explicit opt-in (records:read).
     /// </summary>

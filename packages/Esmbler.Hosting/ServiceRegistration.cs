@@ -25,6 +25,14 @@ namespace Esmbler.Hosting;
 
 public static class ServiceRegistration
 {
+    /// <summary>The OAuth authorization server for external MCP clients (ADR 0025): the API host only.</summary>
+    public static IServiceCollection AddEsmblerOAuthServer(this IServiceCollection services)
+    {
+        services.AddSingleton<Auth.IClientMetadataSource, Auth.HttpClientMetadataSource>();
+        services.AddSingleton<Auth.OAuthService>();
+        return services;
+    }
+
     /// <summary>Registers the kernel, platform services, and installed modules for any host.</summary>
     public static IServiceCollection AddEsmblerPlatform(this IServiceCollection services, IConfiguration configuration)
     {
@@ -112,9 +120,9 @@ public static class ServiceRegistration
         services.AddSingleton(_ => AiCatalogFactory.From(configuration));
         services.AddSingleton<Kernel.Infrastructure.Assistant.AiSettingsService>();
 
-        // OAuth for external MCP clients (ADR 0025): client metadata documents and the authorization server.
-        services.AddSingleton<Auth.IClientMetadataSource, Auth.HttpClientMetadataSource>();
-        services.AddSingleton<Auth.OAuthService>();
+        // OAuth for external MCP clients (ADR 0025): every host may check a connection; only the API runs the
+        // authorization server (AddEsmblerOAuthServer).
+        services.AddSingleton<Auth.McpConnectionStatus>();
 
         // Email intake (ADR 0023): mailboxes, inbound messages, the processing job and the IMAP poller (worker only).
         services.AddSingleton<Kernel.Infrastructure.Mail.MailIntakeService>();

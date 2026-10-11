@@ -45,7 +45,7 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
     public static readonly TimeSpan RequestLifetime = TimeSpan.FromMinutes(10);
 
     /// <summary>Scopes an external client may ask for; config:read is always granted, records:read only if the workspace allows it.</summary>
-    public static readonly string[] Grantable = [AgentScopes.ConfigRead, AgentScopes.ConfigEdit, AgentScopes.PublishRequest, AgentScopes.AccessExplain, AgentScopes.RecordsRead];
+    public static IReadOnlyList<string> Grantable => AgentScopes.ExternalGrantable;
 
     /// <summary>On when the MCP server has a public URL and the issuer is an HTTPS URL (the clients need both).</summary>
     public bool Enabled => !string.IsNullOrWhiteSpace(options.Mcp.PublicUrl)
@@ -448,24 +448,9 @@ public sealed class OAuthService(PlatformOptions options, Database database, Tok
             return 0;
         }, ct);
 
-    /// <summary>Whether an external client's connection is still active (checked on every MCP call); records its use.</summary>
+    /// <summary>Whether an external client's connection is still active (the MCP host uses <see cref="McpConnectionStatus"/>).</summary>
     public Task<bool> ConnectionActiveAsync(Guid tenantId, Guid connectionId, CancellationToken ct) =>
-        database.InTenantWideAsync(tenantId, null, async db =>
-        {
-            var now = clock.UtcNow;
-            var connection = await db.McpConnections.AsNoTracking().FirstOrDefaultAsync(c => c.Id == connectionId, ct);
-            if (connection is null || connection.RevokedAt is not null || connection.ExpiresAt <= now)
-            {
-                return false;
-            }
-
-            if (connection.LastUsedAt is null || now - connection.LastUsedAt > TimeSpan.FromMinutes(1))
-            {
-                await db.McpConnections.Where(c => c.Id == connectionId).ExecuteUpdateAsync(s => s.SetProperty(c => c.LastUsedAt, now), ct);
-            }
-
-            return true;
-        }, ct);
+        new McpConnectionStatus(database, clock).ActiveAsync(tenantId, connectionId, ct);
 
     private async Task RevokeConnectionCoreAsync(KernelDbContext db, Guid tenantId, Guid connectionId, Guid? by, CancellationToken ct)
     {

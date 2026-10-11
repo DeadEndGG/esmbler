@@ -15,6 +15,7 @@ if (await HealthCheckCommand.TryRunAsync(args) is { } exitCode)
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEsmblerPlatform(builder.Configuration);
+builder.Services.AddEsmblerOAuthServer();
 builder.Services.AddEsmblerAuth(Audiences.Api);
 builder.Services.AddExceptionHandler<KernelExceptionHandler>();
 builder.Services.AddProblemDetails();

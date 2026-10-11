@@ -63,8 +63,8 @@ public class BoundaryTests
     [Fact]
     public void Only_the_assistant_calls_the_model_provider()
     {
-        // ADR 0013: one adapter owns the Anthropic dependency; everything else reaches the model only through it.
-        foreach (var assembly in new[] { "Esmbler.Kernel", "Esmbler.Kernel.Infrastructure", "Esmbler.Platform", "Esmbler.Hosting", "Esmbler.Mcp", "Esmbler.Sdk" })
+        // ADR 0013, ADR 0024: only Esmbler.Assistant uses the Anthropic SDK (OpenAI is plain HTTP there); everything else reaches a model through it.
+        foreach (var assembly in new[] { "Esmbler.Kernel", "Esmbler.Kernel.Infrastructure", "Esmbler.Platform", "Esmbler.Hosting", "Esmbler.Mcp", "Esmbler.Api", "Esmbler.Sdk" })
         {
             var result = Types.InAssembly(Assembly.Load(assembly)).ShouldNot().HaveDependencyOn("Anthropic").GetResult();
             Assert.True(result.IsSuccessful, $"{assembly}: {string.Join(", ", result.FailingTypeNames ?? [])}");

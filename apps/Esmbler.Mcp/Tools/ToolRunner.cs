@@ -17,7 +17,7 @@ namespace Esmbler.Mcp.Tools;
 /// scope check, per-agent rate and session budgets, audit of actor/agent/tool/target/outcome, and structured errors
 /// ({code, message, target, suggestion}) so the AI can self-correct.
 /// </summary>
-public sealed class ToolRunner(IHttpContextAccessor http, Database database, OAuthService oauth, ILogger<ToolRunner> logger)
+public sealed class ToolRunner(IHttpContextAccessor http, Database database, McpConnectionStatus connections, ILogger<ToolRunner> logger)
 {
     public const int MaxCallsPerMinute = 60;
     public const int MaxCallsPerToken = 200;
@@ -61,7 +61,7 @@ public sealed class ToolRunner(IHttpContextAccessor http, Database database, OAu
         }
 
         // An external client's connection may have been revoked since its token was issued (ADR 0025).
-        if (Guid.TryParse(http.HttpContext?.User.FindFirst(ClaimNames.Connection)?.Value, out var connection) && !await oauth.ConnectionActiveAsync(ctx.TenantId, connection, default))
+        if (Guid.TryParse(http.HttpContext?.User.FindFirst(ClaimNames.Connection)?.Value, out var connection) && !await connections.ActiveAsync(ctx.TenantId, connection, default))
         {
             await AuditAsync(ctx, tool, target, "denied", "connection revoked");
             return Failure(Error("connection_revoked", "This assistant's connection to Esmbler was ended.", null, "Connect the assistant again from its settings."));

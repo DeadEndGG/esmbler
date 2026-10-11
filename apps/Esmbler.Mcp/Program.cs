@@ -60,7 +60,7 @@ if (!string.IsNullOrWhiteSpace(publicUrl))
     {
         resource = publicUrl,
         authorization_servers = new[] { builder.Configuration["Esmbler:Auth:Issuer"] ?? "esmbler" },
-        scopes_supported = OAuthService.Grantable,
+        scopes_supported = Esmbler.Kernel.Tenancy.AgentScopes.ExternalGrantable,
         bearer_methods_supported = new[] { "header" },
         resource_name = "Esmbler",
     };
