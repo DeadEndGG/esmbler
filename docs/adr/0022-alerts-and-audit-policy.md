@@ -70,7 +70,7 @@ This ADR settles what ADR 0017 left open:
 
 Alerts are the second subscription target (`SubscriptionTargets.Alert`). Routes may use only `notify` subscriptions and alert rules only `alert` subscriptions (`config.bad_target`). A separate consumer, `AlertRouter` (`alerts.router`), matches events with the same matching code as the notification router (`SubscriptionRouter.MatchAsync`) and schedules one durable `alert.evaluate` job per match, keyed by event and subscription. Each target therefore fails, retries and dead-letters alone.
 
-Overlay ops `alert_rule.add`, `alert_rule.update` and `alert_rule.remove` (52 ops in all). Tenants add `tenant__` rules. On module rules, `Trigger` and `DedupKey` are fixed (`overlay.base_immutable`); everything else can change, and a module rule is disabled rather than removed. A subscription used by a rule's trigger or `ResolveOn` cannot be removed (`overlay.in_use`). Module rules stay in the module's namespace and use only the module's own or `core.platform`'s subscriptions (`config.foreign_notification_element`).
+Overlay ops `alert_rule.add`, `alert_rule.update` and `alert_rule.remove` (52 ops in all at the time; 54 since `view.add` and `view.remove` in G2-M9c). Tenants add `tenant__` rules. On module rules, `Trigger` and `DedupKey` are fixed (`overlay.base_immutable`); everything else can change, and a module rule is disabled rather than removed. A subscription used by a rule's trigger or `ResolveOn` cannot be removed (`overlay.in_use`). Module rules stay in the module's namespace and use only the module's own or `core.platform`'s subscriptions (`config.foreign_notification_element`).
 
 The validator (`ConfigValidator.Alerts.cs`) also refuses:
 

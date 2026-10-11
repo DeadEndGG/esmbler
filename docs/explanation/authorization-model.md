@@ -2,7 +2,7 @@
 title: Authorization model
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-AUTHZ-001, REQ-AUTHZ-002, REQ-AUTHZ-003, REQ-AUTHZ-004, REQ-AUTHZ-005, REQ-AUTHZ-006, REQ-AUTHZ-007, REQ-AUTHZ-008, REQ-AUTHZ-009, REQ-AUTHZ-010, REQ-REC-003, REQ-RULE-006, REQ-IAM-001, REQ-ACC-07]
 ---
 
@@ -36,7 +36,7 @@ Each level is expressed in `PermissionSetSpec` (`packages/Esmbler.Sdk/Specs/Expe
 | Entity | `entities[].create / read / update / delete` | `read` and `update` scopes: `none`, `related`, `all` | Requesters: create; read and update `related` |
 | Record | Entity `accessFields` define "related" (each with a relation and whether it grants edit); optional ABAC `updateCondition` | Relations named by the entity, e.g. `requester`, `assignee`, `owner_group`, `approver`. An access field is a `user` field, a `group` field (any of the person's groups) or a `principals` list of users and groups (the approvers of a request, maintained by the platform, [ADR 0016](../adr/0016-approvals.md)) | A requester sees only tickets where they are the requester; an approver reads only the requests they were asked to approve |
 | Field | `fields[]` with `entity`, `field` (or `*`) and `access` | `hidden`, `read`, `write` | Requesters: `labels` and `estimated_effort` hidden |
-| Action | `actions[]` | `config.edit`, `config.publish`, `permissions.admin`, `audit.read`, `records.export`, `modules.manage` | Tickets admins publish config but cannot change permissions |
+| Action | `actions[]` | `config.edit`, `config.publish`, `permissions.admin`, `audit.read`, `records.export` (CSV export of lists and figures), `modules.manage`, `notifications.manage`, `alerts.respond`, `alerts.manage`, `audit.export`, `audit.manage` | Tickets admins publish config and export lists but cannot change permissions |
 
 Rules for combining:
 

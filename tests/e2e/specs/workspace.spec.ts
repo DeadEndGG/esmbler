@@ -18,7 +18,7 @@ test('@REQ-ACC-15 a new admin creates a ticketing workspace, adds a field and dr
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Which team receives new tickets?').fill('Riverside Support');
   await page.getByRole('button', { name: 'Review' }).click();
-  await expect(page.getByText(/Overview: Open, Unassigned, SLA breached/)).toBeVisible();
+  await expect(page.getByText(/Overview: Open, Unassigned, SLA breached/).first()).toBeVisible();
   await expect(page.getByText('Riverside Support.', { exact: false })).toBeVisible();
   // Preview as an agent or a requester before anything is created (REQ-WS-001 step 5).
   const personas = page.getByRole('radiogroup', { name: 'Preview as' });

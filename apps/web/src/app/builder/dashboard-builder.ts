@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BuilderState } from './builder-state';
@@ -115,7 +115,7 @@ const KINDS: Record<string, string> = { 'display.kpi_tile': 'Number', 'display.b
         </form>
 
         <div class="mt-4 flex flex-wrap gap-2">
-          <form class="flex flex-wrap items-end gap-2" (ngSubmit)="create()" aria-label="New dashboard">
+          <form class="flex flex-wrap items-end gap-2" (ngSubmit)="create()" aria-label="Create a dashboard">
             <label class="field grid gap-1 text-body-sm">New dashboard
               <input class="input" name="dashLabel" maxlength="60" [ngModel]="dashLabel()" (ngModelChange)="dashLabel.set($event)" placeholder="Hardware vendors" />
             </label>
@@ -157,7 +157,14 @@ export class DashboardBuilder {
   protected readonly canAdd = computed(() => !!this.metric() || (!!this.newLabel().trim() && (this.kind() === 'kpi' || !!this.groupBy())));
 
   constructor() {
-    queueMicrotask(() => void this.load());
+    // Reload when the route moves to another dashboard (for example right after creating one): the component is reused.
+    effect(() => {
+      this.view();
+      untracked(() => {
+        this.options.set(null);
+        void this.load();
+      });
+    });
   }
 
   protected tileLabel(t: TileOption): string {

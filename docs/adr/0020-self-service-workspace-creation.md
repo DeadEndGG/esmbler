@@ -81,7 +81,7 @@ The limit is `Esmbler:MaxWorkspacesPerPerson` (default 5). For local development
 ### API
 
 - `GET /api/starters`: signed in, no workspace needed (a new admin may have none). Returns `enabled` and the starters with their questions and surfaces.
-- `GET /api/starters/{id}/personas`: signed in; the persona preview for each role of the starter (404 for an unknown starter).
+- `GET /api/starters/{id}/personas`: signed in; the persona preview for each role of the starter (404 for an unknown starter); rate limited per person by the `figures` policy (`LoginThrottle.QueryPolicy`, `MetricRequestsPerMinute`).
 - `POST /api/workspaces` `{name, starter, answers}`: signed in; tokens with an agent claim are refused (403); `403` when creation is off; rate limited per person by its own policy `LoginThrottle.WorkspacePolicy` (`workspaces`, 3 a minute; `429 rate_limited` beyond). Returns `201` with the tenant ID, slug and name in the body and no `Location` header.
 
 ### Web flow
