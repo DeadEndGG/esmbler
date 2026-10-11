@@ -49,7 +49,8 @@ public sealed record AppBootstrap(
     bool Catalog = false,
     bool Approvals = false,
     IReadOnlyList<DashboardNavItem>? Dashboards = null,
-    bool Alerts = false);
+    bool Alerts = false,
+    bool Mail = false);
 
 /// <summary>Entity definition as one viewer may see it (hidden fields and rules that read them are removed).</summary>
 public sealed record EntityClientSpec(
@@ -110,7 +111,10 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 ctx.AgentId is null && artifact.Config.Entities.Exists(e => e.Request?.Approval is not null),
                 dashboards,
                 // Alerts (ADR 0022): for responders and for members of a group, which may own alerts.
-                ctx.AgentId is null && artifact.Config.AlertRules.Count > 0 && (Alerts.AlertService.CanRespond(perms) || perms.Facts.Groups.Count > 0));
+                ctx.AgentId is null && artifact.Config.AlertRules.Count > 0 && (Alerts.AlertService.CanRespond(perms) || perms.Facts.Groups.Count > 0),
+                // Inbound email review (ADR 0023): for people who work an intake's entity, when a mailbox feeds it.
+                ctx.AgentId is null && artifact.Config.MailIntakes.Exists(i => i.Enabled && artifact.Config.FindEntity(i.Entity) is { } e && perms.Entity(e.Id).Read == RecordScopes.All && perms.CanCreate(e))
+                    && await db.MailInboxes.AnyAsync(ct));
         }, ct);
     }
 

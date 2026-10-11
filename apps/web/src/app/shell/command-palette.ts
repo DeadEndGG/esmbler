@@ -87,6 +87,7 @@ export class CommandPalette {
     const list: Command[] = [];
     list.push({ id: 'go:notifications', label: 'Go to Notifications', section: 'Navigate', run: () => this.router.navigate(['/notifications']) });
     if (this.session.app()?.alerts) list.push({ id: 'go:alerts', label: 'Go to Alerts', section: 'Navigate', run: () => this.router.navigate(['/alerts']) });
+    if (this.session.app()?.mail || this.session.canManageNotifications()) list.push({ id: 'go:mail', label: 'Go to Inbound email', section: 'Navigate', run: () => this.router.navigate(['/mail']) });
     for (const d of app?.dashboards ?? []) {
       list.push({ id: 'dash:' + d.view, label: `Go to ${d.label}`, section: 'Navigate', run: () => this.router.navigate(['/dashboards', d.view]) });
     }

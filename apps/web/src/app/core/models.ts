@@ -37,6 +37,8 @@ export interface AppBootstrap {
   dashboards?: DashboardNavItem[];
   /** The workspace has alert rules and the user may own or answer alerts (ADR 0022). */
   alerts?: boolean;
+  /** Inbound email waits for this person's review: they work a mail intake's records (ADR 0023). */
+  mail?: boolean;
 }
 
 export interface DashboardNavItem {
@@ -411,6 +413,8 @@ export interface ActivityView {
   authorName?: string;
   byAgent: boolean;
   createdAt: string;
+  /** 'email' when the reply came by email (ADR 0023). */
+  source?: string | null;
 }
 
 export interface HistoryEntry {

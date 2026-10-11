@@ -33,6 +33,7 @@ import { Icon } from '../ui/icon';
             <div class="entry">
             <div class="meta"><strong>{{ a.authorName ?? 'Someone' }}</strong>
               @if (a.byAgent) { <span class="badge tone-brand">AI</span> }
+              @if (a.source === 'email') { <span class="badge tone-gray">Email</span> }
               <span class="badge" [class]="a.kind === 'work_note' ? 'tone-amber' : 'tone-blue'">{{ a.kind === 'work_note' ? 'Internal' : 'Public' }}</span>
               <span class="muted">{{ a.createdAt | date: 'MMM d, HH:mm' }}</span></div>
             <div class="body" [innerHTML]="a.body"></div>

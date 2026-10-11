@@ -54,6 +54,9 @@ import { Icon, IconName } from '../ui/icon';
             @if (session.openAlerts()) { <span class="nav-count" [attr.aria-label]="session.openAlerts() + ' open for you'">{{ session.openAlerts() }}</span> }
           </a>
         }
+        @if (session.app()?.mail) {
+          <a class="nav-item" routerLink="/mail" routerLinkActive="active"><esm-icon name="mail" /><span class="flex-1">Inbound email</span></a>
+        }
         <a class="nav-item" routerLink="/notifications" routerLinkActive="active">
           <esm-icon name="bell" /><span class="flex-1">Notifications</span>
           @if (session.unreadNotifications()) { <span class="nav-count" [attr.aria-label]="session.unreadNotifications() + ' unread'">{{ session.unreadNotifications() }}</span> }
@@ -83,6 +86,9 @@ import { Icon, IconName } from '../ui/icon';
           }
           @if (session.canManageNotifications()) {
             <a class="nav-item" routerLink="/admin/notifications" routerLinkActive="active"><esm-icon name="send" /><span class="flex-1">Notification channels</span></a>
+            @if (!session.app()?.mail) {
+              <a class="nav-item" routerLink="/mail" routerLinkActive="active"><esm-icon name="mail" /><span class="flex-1">Mailboxes</span></a>
+            }
           }
         }
         <div class="flex-1"></div>
