@@ -304,7 +304,7 @@ public sealed partial class MailIntakeService(Database database, ConfigStore con
             }
 
             details["acceptedBy"] = decision.Reviewer.PrincipalId.ToString();
-            AuditWriter.Add(db, decision.Reviewer, "mail.accept", "inbound_message", row.Id.ToString(), artifact.Revision, new { reason = row.Reason, onBehalf = senderId is null });
+            AuditWriter.Add(db, decision.Reviewer, "mail.accept", "inbound_message", row.Id.ToString(), artifact.Revision, new { reason = row.Reason, onBehalf = senderId is null || details["verified"]?.GetValue<bool>() != true });
         }
 
         var (recordId, threadedBy) = await MailThreading.FindAsync(db, artifact.Config, entity.Id, mail, ct);

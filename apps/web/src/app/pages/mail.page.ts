@@ -242,11 +242,12 @@ export class MailPage {
           { id: 'suspended' as const, label: 'Waiting for review' },
           { id: 'processed' as const, label: 'Processed' },
           { id: 'rejected' as const, label: 'Rejected' },
+          { id: 'failed' as const, label: 'Failed' },
         ]
       : []),
     ...(this.canManage() ? [{ id: 'mailboxes' as const, label: 'Mailboxes' }] : []),
   ]);
-  protected readonly tab = signal<'suspended' | 'processed' | 'rejected' | 'mailboxes'>('suspended');
+  protected readonly tab = signal<'suspended' | 'processed' | 'rejected' | 'failed' | 'mailboxes'>('suspended');
   protected readonly messages = signal<InboundMessage[] | null>(null);
   protected readonly mailboxes = signal<Mailbox[]>([]);
   protected readonly people = signal<Member[]>([]);
@@ -278,7 +279,7 @@ export class MailPage {
     return Object.keys(b.secrets);
   }
 
-  protected open(tab: 'suspended' | 'processed' | 'rejected' | 'mailboxes'): void {
+  protected open(tab: 'suspended' | 'processed' | 'rejected' | 'failed' | 'mailboxes'): void {
     this.tab.set(tab);
     this.openId.set(null);
     if (tab === 'mailboxes') void this.loadMailboxes();

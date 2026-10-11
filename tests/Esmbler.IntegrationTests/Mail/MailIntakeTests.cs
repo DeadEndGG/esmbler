@@ -309,4 +309,22 @@ public class MailIntakeTests(PlatformFixture f)
         Assert.True(listed.HasToken);
         Assert.DoesNotContain(rotated.Token!, System.Text.Json.JsonSerializer.Serialize(listed), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Rejecting_during_a_legal_hold_keeps_the_message_and_processing_that_keeps_failing_is_marked_failed()
+    {
+        var box = await BoxAsync("mailh");
+        var t = box.Tenant;
+        var (strangerId, _) = await SendAsync(box, Message("pat@partner.example", "Hold me", "Keep this."));
+        await f.Get<AuditService>().PlaceHoldAsync(f.As(t, "admin"), "Dispute 7", default);
+        await Intake.RejectAsync(f.As(t, "agent"), strangerId, default);
+        Assert.NotNull((await MessageRowAsync(box, strangerId)).Raw);
+
+        // When a message's job gives up, the message says so instead of waiting forever.
+        var receipt = await Intake.ReceiveAsync(t.TenantId, t.Environments["prod"], box.InboxId, Message(await EmailOfAsync(t, "dana"), "Doomed", "x"), default);
+        await f.Get<IEnumerable<IJobHandler>>().OfType<MailProcessJobHandler>().Single().OnAbandonedAsync(new JobContext(f.Get<Database>(), Guid.NewGuid(), t.TenantId, t.Environments["prod"], MailIntakeService.ProcessKind, 5, null, new JsonObject { ["message"] = receipt.Id.ToString() }, null, "test"), "dead_lettered", default);
+        var failed = await MessageRowAsync(box, receipt.Id);
+        Assert.Equal(("failed", MailReasons.ProcessingFailed), (failed.Status, failed.Reason));
+        Assert.Contains(await Intake.ListAsync(f.As(t, "agent"), "failed", default), m => m.Id == receipt.Id);
+    }
 }
