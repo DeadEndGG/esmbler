@@ -158,6 +158,22 @@ public class AlertSpecTests
     }
 
     [Fact]
+    public void Tickets_alerts_on_sla_breach_and_risk_and_resolves_them_with_the_ticket()
+    {
+        var result = Compile("1.8.0");
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors.Select(e => $"{e.Code}: {e.Message}")));
+        var breach = result.Config.FindAlertRule("core.tickets.alert.sla_breached")!;
+        Assert.Equal("platform.sla.breached", result.Config.FindSubscription(breach.Trigger)!.Event);
+        Assert.Equal(new AlertOwnerSpec { Kind = AlertOwnerKinds.Field, Ref = "assignment_group" }.Ref, breach.Owner!.Ref);
+        Assert.Contains("core.tickets.sub.ticket_done_alert", breach.ResolveOn);
+        Assert.Contains("core.tickets.sub.sla_breached_alert", result.Config.FindAlertRule("core.tickets.alert.sla_at_risk")!.ResolveOn);
+        Assert.All(result.Config.NotificationRoutes.Where(r => r.Id.StartsWith("core.tickets.route.sla_alert", StringComparison.Ordinal)), r => Assert.False(r.Mandatory));
+
+        // Upgrading from 1.7.0 adds alerts without changing who may see or do what.
+        Assert.False(ConfigCompiler.PermissionDiff(Compile("1.7.0").Config, result.Config).Changed);
+    }
+
+    [Fact]
     public void Agents_never_hold_alert_or_audit_administration()
     {
         var config = Compile("1.7.0").Config;

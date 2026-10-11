@@ -238,6 +238,49 @@ public class AlertTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Tickets_alerts_the_owning_team_on_an_sla_breach_and_resolves_it_with_the_ticket()
+    {
+        // Tickets 1.8.0, upgraded from 1.7.0 with a workspace route in place.
+        var t = await f.NewTenantAsync("alsla", "1.7.0");
+        var admin = f.As(t, "admin");
+        var upgrades = f.Get<UpgradeService>();
+        var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.8.0", default);
+        Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.alert.sla_breached" && c.Change == "added");
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.8.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);
+
+        var records = f.Get<RecordService>();
+        var agent = f.As(t, "agent");
+        var ticket = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Printer jam", ["requester"] = t.Users["dana"].ToString(), ["priority"] = "p3", ["impact"] = "low", ["category"] = "network" }, null, null, default);
+        await PumpAsync();
+        var db = f.Get<Database>();
+        var timer = await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.AsNoTracking().Where(s => s.RecordId == ticket.Id).OrderBy(s => s.TargetId).Select(s => s.Id).FirstAsync(), default);
+
+        // The goal passes: the breach event raises an alert for the ticket's assignment group (Network).
+        var past = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, async x =>
+        {
+            await x.SlaTimers.Where(s => s.Id == timer).ExecuteUpdateAsync(s => s.SetProperty(r => r.DueAt, past).SetProperty(r => r.WarnAt, (DateTimeOffset?)null));
+            return await x.Jobs.Where(j => j.DedupKey == Kernel.Infrastructure.Sla.SlaService.JobKey(timer) && j.Status == "pending").ExecuteUpdateAsync(s => s.SetProperty(j => j.AvailableAt, past));
+        }, default);
+        await PumpAsync();
+        var alert = Assert.Single(await AlertRowsAsync(t), a => a.RuleId == "core.tickets.alert.sla_breached");
+        Assert.Equal((AlertStatuses.Open, "network", ticket.Id), (alert.Status, alert.OwnerGroupKey, alert.RecordId));
+        Assert.StartsWith("SLA breached: TCK-", alert.Title);
+        var told = await db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.NotificationDeliveries.AsNoTracking().Where(d => d.RouteId == "core.tickets.route.sla_alert_opened").ToListAsync(), default);
+        Assert.Contains(told, d => d.RecipientPrincipal == t.Users["agent"] && d.ChannelType == "in_app");
+
+        // Done with the ticket: the alert resolves itself.
+        var current = await records.GetAsync(agent, Ticket, ticket.Id, default);
+        var working = await records.TransitionAsync(agent, Ticket, ticket.Id, current.Revision, "start", [], null, null, default);
+        await records.TransitionAsync(agent, Ticket, ticket.Id, working.Revision, "resolve", new JsonObject { ["resolution_notes"] = "Cleared" }, null, null, default);
+        await PumpAsync();
+        Assert.Equal((AlertStatuses.Resolved, "auto"), Assert.Single(await AlertRowsAsync(t), a => a.Id == alert.Id) is var done ? (done.Status, done.Resolution) : default);
+    }
+
+    [Fact]
     public async Task Audit_captures_every_change_even_when_no_notification_can_be_sent()
     {
         // ADR 0017: audit is written in the business transaction, independent of notifications and alerts.
