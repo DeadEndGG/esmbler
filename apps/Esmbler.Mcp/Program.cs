@@ -25,6 +25,7 @@ builder.Services
     .WithTools<BuildTools>()
     .WithTools<ReviewTools>()
     .WithTools<NotificationTools>()
+    .WithTools<AlertTools>()
     .WithResources<Resources>();
 
 var app = builder.Build();

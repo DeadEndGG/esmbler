@@ -298,7 +298,7 @@ public sealed class AlertService(Database database, ConfigStore configs, AccessS
         return artifact.Config;
     }
 
-    internal static bool CanRespond(EffectivePermissions perms) =>
+    public static bool CanRespond(EffectivePermissions perms) =>
         perms.Can(PlatformActions.AlertsRespond) || perms.Can(PlatformActions.AlertsManage) || perms.Can(PlatformActions.PermissionsAdmin);
 
     private static bool IsTheirs(AlertRow alert, EffectivePermissions perms, RequestContext ctx) =>

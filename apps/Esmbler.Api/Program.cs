@@ -92,6 +92,7 @@ app.MapApprovals();
 app.MapMetrics();
 app.MapWorkspaces();
 app.MapNotifications();
+app.MapAlerts();
 app.MapBuilder();
 app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");

@@ -48,7 +48,8 @@ public sealed record AppBootstrap(
     IReadOnlyList<TenantChoice> Workspaces,
     bool Catalog = false,
     bool Approvals = false,
-    IReadOnlyList<DashboardNavItem>? Dashboards = null);
+    IReadOnlyList<DashboardNavItem>? Dashboards = null,
+    bool Alerts = false);
 
 /// <summary>Entity definition as one viewer may see it (hidden fields and rules that read them are removed).</summary>
 public sealed record EntityClientSpec(
@@ -107,7 +108,9 @@ public sealed class ExperienceService(Database database, ConfigStore configs, Ac
                 workspaces,
                 catalog,
                 ctx.AgentId is null && artifact.Config.Entities.Exists(e => e.Request?.Approval is not null),
-                dashboards);
+                dashboards,
+                // Alerts (ADR 0022): for responders and for members of a group, which may own alerts.
+                ctx.AgentId is null && artifact.Config.AlertRules.Count > 0 && (Alerts.AlertService.CanRespond(perms) || perms.Facts.Groups.Count > 0));
         }, ct);
     }
 

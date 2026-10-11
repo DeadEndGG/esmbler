@@ -40,7 +40,7 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         var (_, token) = await McpFactory.AgentAsync(Api, "alex@acme.example", "acme");
         await using var client = await Mcp.ConnectAsync(token);
         var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals", "list_metrics", "describe_metric_fields", "add_metric", "update_metric", "remove_metric", "add_dashboard_tile", "evaluate_metric", "list_notification_setup", "preview_notification", "list_notification_deliveries", "notify_when", "add_subscription", "add_notification_template", "update_notification_template", "add_notification_profile", "add_notification_route", "update_notification_route" })
+        foreach (var expected in new[] { "list_elements", "describe_entity", "get_view", "open_draft", "add_field", "add_card", "add_rule", "simulate_rule", "validate_draft", "request_publish", "explain_access", "undo_step", "list_catalog_items", "add_catalog_item", "update_catalog_item", "add_workflow_state", "add_transition", "update_transition", "set_workflow_policy", "list_approval_policies", "add_approval_policy", "list_event_types", "add_event_type", "list_sla_policies", "add_business_calendar", "update_business_calendar", "add_sla_policy", "set_sla_goals", "list_metrics", "describe_metric_fields", "add_metric", "update_metric", "remove_metric", "add_dashboard_tile", "evaluate_metric", "list_notification_setup", "preview_notification", "list_notification_deliveries", "notify_when", "add_subscription", "add_notification_template", "update_notification_template", "add_notification_profile", "add_notification_route", "update_notification_route", "list_alert_rules", "add_alert_rule", "update_alert_rule", "list_alerts" })
         {
             Assert.Contains(expected, tools);
         }
@@ -433,6 +433,50 @@ public class McpServerTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         // Delivery status is visible; message text never is.
         var deliveries = await Call(client, "list_notification_deliveries");
         Assert.All(deliveries.AsArray(), d => Assert.Null(d!["subject"]));
+    }
+
+    [Fact]
+    public async Task Agent_adds_an_alert_rule_and_reads_alerts_but_never_acts_on_them()
+    {
+        // REQ-ALR-001 (ADR 0022): alert rules are draft configuration; responding to alerts is for people.
+        var tenant = await platform.NewTenantAsync("malr", "1.8.0");
+        var (_, token) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant));
+        await using var client = await Mcp.ConnectAsync(token);
+        var version = (await Call(client, "open_draft"))["version"]!.GetValue<int>();
+
+        var listed = await Call(client, "list_alert_rules");
+        Assert.Contains(listed["rules"]!.AsArray(), r => r!["id"]!.GetValue<string>() == "core.tickets.alert.sla_breached" && r["layer"]!.GetValue<string>() == "module");
+
+        var added = await Call(client, "add_alert_rule", new
+        {
+            label = "Critical escalation",
+            @event = "core.tickets.ticket.escalated",
+            title = "Critical: {{record.number}} {{record.title}}",
+            min_severity = "critical",
+            owner = "group:network",
+            escalation = new object[] { new { afterMinutes = 15 }, new { afterMinutes = 60, repeatEveryMinutes = 60 } },
+            resolve_on_event = "record.transitioned",
+            resolve_when = "record.status in ['resolved', 'closed']",
+            expected_version = version,
+        });
+        Assert.Equal(3, added["steps"]!.AsArray().Count);
+        version = added["version"]!.GetValue<int>();
+        var rule = (await Call(client, "list_alert_rules"))["rules"]!.AsArray().Single(r => r!["id"]!.GetValue<string>() == "tenant__critical_escalation")!;
+        Assert.Equal("group:network", rule["owner"]!.GetValue<string>());
+
+        // Mistakes come back with a fix: alert events cannot raise alerts, and titles are plain text.
+        var loop = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "add_alert_rule", new { label = "Loop", @event = "platform.alert.opened", title = "Loop", expected_version = version }));
+        Assert.Contains("alert_loop", loop.Body);
+        version = (await Call(client, "update_alert_rule", new { rule = "tenant__critical_escalation", title = "P1 escalated: {{record.title}}", expected_version = version }))["version"]!.GetValue<int>();
+
+        // Reading alerts needs records:read; there is no tool to acknowledge, resolve, assign or silence them.
+        var noScope = await Assert.ThrowsAsync<McpToolException>(() => Call(client, "list_alerts"));
+        Assert.Contains("scope", noScope.Body, StringComparison.OrdinalIgnoreCase);
+        var (_, reader) = await McpFactory.AgentAsync(Api, $"admin@{Slug(tenant)}.example", Slug(tenant), "config:read", "records:read");
+        await using var readClient = await Mcp.ConnectAsync(reader);
+        Assert.NotNull((await Call(readClient, "list_alerts"))["untrusted_data"]);
+        var tools = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
+        Assert.DoesNotContain(tools, t => t.Contains("acknowledge", StringComparison.Ordinal) || t.Contains("suppress", StringComparison.Ordinal) || t.Contains("resolve_alert", StringComparison.Ordinal));
     }
 
     [Fact]
