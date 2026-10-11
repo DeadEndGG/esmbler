@@ -17,6 +17,11 @@ public static class MetricEndpoints
         app.MapGet("/api/metrics/{id}", (string id, string? tz, ClaimsPrincipal user, MetricService metrics, CancellationToken ct) =>
             metrics.EvaluateAsync(RequestContextFactory.From(user, "api"), id, tz, ct)).WithTags("Metrics").RequireAuthorization().RequireRateLimiting(LoginThrottle.QueryPolicy);
 
+        // A figure as CSV for this viewer (REQ-OPS-004); restricted figures are not found; audited.
+        app.MapGet("/api/metrics/{id}/export", async (string id, string? tz, ClaimsPrincipal user, MetricService metrics, CancellationToken ct) =>
+            Results.File(System.Text.Encoding.UTF8.GetBytes(await metrics.ExportCsvAsync(RequestContextFactory.From(user, "api"), id, tz, ct)), "text/csv; charset=utf-8", $"{RecordEndpoints.FileName(id)}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmm}.csv"))
+            .WithTags("Metrics").RequireAuthorization().RequireRateLimiting(LoginThrottle.RecordExportPolicy);
+
         // Group headers for the explorer: same filters as the list, counted per value of a groupable field.
         app.MapGet("/api/records/{entity}/groups", (string entity, string field, [FromQuery(Name = "filter")] string[]? filter, [FromQuery(Name = "sla")] string[]? sla, string? search, ClaimsPrincipal user, MetricService metrics, CancellationToken ct) =>
             metrics.GroupsAsync(RequestContextFactory.From(user, "api"), new RecordQuery

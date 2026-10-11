@@ -36,10 +36,11 @@ export class Api {
     return this.run(this.http.post<T>(url, body ?? {}, { headers: new HttpHeaders(headers ?? {}) }));
   }
 
-  /** A file from the API (e.g. an export), as a Blob. */
-  download(url: string, params?: Record<string, string | undefined>): Promise<Blob> {
-    const clean: Record<string, string> = {};
+  /** A file from the API (e.g. an export), as a Blob. `lists` repeat a parameter (filter[] and sla[] of the explorer). */
+  download(url: string, params?: Record<string, string | undefined>, lists?: Record<string, string[]>): Promise<Blob> {
+    const clean: Record<string, string | string[]> = {};
     for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined && v !== '') clean[k] = v;
+    for (const [k, v] of Object.entries(lists ?? {})) if (v.length) clean[k] = v;
     return this.run(this.http.get(url, { params: clean, responseType: 'blob' }));
   }
 
@@ -77,4 +78,14 @@ export class Api {
       throw e;
     }
   }
+}
+
+/** Saves a downloaded file under a name (the browser's download prompt). */
+export function saveBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

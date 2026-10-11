@@ -3,7 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { BuilderState } from '../builder/builder-state';
-import { Api, ApiError } from '../core/api';
+import { Api, ApiError, saveBlob } from '../core/api';
 import { Directory } from '../core/directory';
 import { ExplorerState, mainScroller } from '../core/explorer-state';
 import { DraftViewSpec, FieldSpec, GroupCount, NodeSpec, RecordPage, RecordView, ViewClientSpec } from '../core/models';
@@ -101,6 +101,7 @@ interface Drill {
             @for (f of groupOptions(); track f.key) { <option [value]="f.key">Group: {{ f.label }}</option> }
           </select>
         }
+        <button class="btn btn-sm" [disabled]="exporting()" (click)="exportCsv()" title="Download the records in this list as CSV (up to 10,000)"><esm-icon name="download" [size]="14" /> Export</button>
         @if (allColumns().length > 1) {
           <details class="columns-menu relative" #columnsMenu>
             <summary class="btn btn-sm"><esm-icon name="columns" [size]="14" /> Columns</summary>
@@ -396,6 +397,24 @@ export class ListPage {
       filter.push(value === '@me' ? `record.${key} == user.id` : `record.${key} == ${quote(value)}`);
     }
     return { filter, sla };
+  }
+
+  protected readonly exporting = signal(false);
+
+  /** The list as CSV: the server applies the same filters and permissions as the list (and audits the export). */
+  protected async exportCsv(): Promise<void> {
+    const spec = this.spec();
+    if (!spec || this.exporting()) return;
+    this.exporting.set(true);
+    const { filter, sla } = this.criteria(spec);
+    try {
+      const blob = await this.api.download(`/api/records/${this.entity()}/export`, { search: this.search() || undefined, sort: this.sort().field, dir: this.sort().direction }, { filter, sla });
+      saveBlob(blob, `${this.entity()}.csv`);
+    } catch (e) {
+      this.toasts.show(e instanceof ApiError && e.status === 429 ? 'Too many exports in a short time. Try again in a minute.' : e instanceof ApiError ? e.message : 'The export failed.', 'warning');
+    } finally {
+      this.exporting.set(false);
+    }
   }
 
   private async loadPage(): Promise<void> {

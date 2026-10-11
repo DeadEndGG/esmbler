@@ -26,6 +26,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
     /// <summary>Audit exports (ADR 0022): two a minute per person.</summary>
     public const string ExportPolicy = "exports";
 
+    /// <summary>Explorer and figure CSV exports (REQ-OPS-004): ten a minute per person.</summary>
+    public const string RecordExportPolicy = "record-exports";
+
     /// <summary>
     /// OAuth token and revocation endpoints (ADR 0025): ChatGPT and Claude refresh for many people from few addresses,
     /// so the limit is per address and generous; tokens are 256-bit, so guessing is not the risk.
@@ -114,6 +117,8 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
                             ? "Too many messages from this address. Try again in a minute."
                         : context.HttpContext.Request.Path.StartsWithSegments("/api/admin/audit")
                             ? "Too many audit exports or verifications in a short time. Wait a minute and try again."
+                        : context.HttpContext.Request.Path.Value?.EndsWith("/export", StringComparison.Ordinal) == true
+                            ? "Too many exports in a short time. Wait a minute and try again."
                             : "Too many requests for figures in a short time. Wait a minute and try again.";
                 await context.HttpContext.Response.WriteAsJsonAsync(new { status = 429, title, code = "rate_limited" }, ct);
             };
@@ -133,6 +138,9 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
             o.AddPolicy(InboundMailPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(RecordExportPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
             o.AddPolicy(ExportPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 (http.User.FindFirst("sub") ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier))?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 2, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

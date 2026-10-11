@@ -389,13 +389,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
         return new AuditPolicyView(days, MinRetentionDays, MaxRetentionDays, [.. holds.Select(h => new LegalHoldView(h.Id, h.Reason, names.GetValueOrDefault(h.CreatedBy, "someone"), h.CreatedAt, h.ReleasedBy is { } r ? names.GetValueOrDefault(r, "someone") : null, h.ReleasedAt, h.CreatedBy == viewer))]);
     }
 
-    /// <summary>Spreadsheets run cells starting with = + - @ | % (also after leading spaces, tab or return) as formulas: prefix them with a quote.</summary>
-    internal static string Csv(string value)
-    {
-        var start = value.TrimStart(' ', '\t', '\r', '\n');
-        var v = start.Length > 0 && start[0] is '=' or '+' or '-' or '@' or '|' or '%' || (value.Length > 0 && value[0] is '\t' or '\r') ? "'" + value : value;
-        return v.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + v.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"" : v;
-    }
+    internal static string Csv(string value) => CsvText.Cell(value);
 
     public sealed class HeadRow
     {

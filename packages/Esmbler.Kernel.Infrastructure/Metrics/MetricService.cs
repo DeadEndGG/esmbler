@@ -8,6 +8,7 @@ using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Infrastructure.Persistence;
 using Esmbler.Kernel.Infrastructure.Records;
+using Esmbler.Kernel.Infrastructure.Services;
 using Esmbler.Kernel.Metrics;
 using Esmbler.Kernel.Tenancy;
 using Esmbler.Sdk.Specs;
@@ -142,6 +143,45 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             var metric = artifact.Config.FindMetric(metricId) ?? throw KernelException.NotFound($"Metric '{metricId}'");
             var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
             return await EvaluateAsync(await OpenAsync(db, ct), artifact.Config, artifact.Revision, perms, metric, timeZone, ct);
+        }, ct);
+
+    /// <summary>
+    /// A figure as CSV (REQ-OPS-004): one row per bar or table row (or one row for an ungrouped figure) with its label,
+    /// value and record count, evaluated for this viewer like the dashboard. Restricted figures are refused; the export
+    /// is audited. People only: AI agents cannot export.
+    /// </summary>
+    public Task<string> ExportCsvAsync(RequestContext ctx, string metricId, string? timeZone, CancellationToken ct) =>
+        database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
+        {
+            if (ctx.AgentId is not null)
+            {
+                throw new KernelException("agent_not_allowed", "AI agents cannot export figures.", 403, null, "Export the figure yourself from the dashboard.");
+            }
+
+            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+            var metric = artifact.Config.FindMetric(metricId) ?? throw KernelException.NotFound($"Metric '{metricId}'");
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            var result = await EvaluateAsync(await OpenAsync(db, ct), artifact.Config, artifact.Revision, perms, metric, timeZone, ct);
+            if (result.Status == "restricted")
+            {
+                throw KernelException.NotFound($"Metric '{metricId}'");
+            }
+
+            if (result.Status != "ok")
+            {
+                throw new KernelException("metric_timeout", $"'{metric.Label}' took too long to count.", 503, metricId, "Try again in a moment.");
+            }
+
+            string Number(double? v) => v is { } x ? Math.Round(x, 4).ToString(CultureInfo.InvariantCulture) : string.Empty;
+            string Count(long n, bool capped) => capped ? $"{n}+" : n.ToString(CultureInfo.InvariantCulture);
+            var unit = result.Unit is { } u ? $" ({u})" : string.Empty;
+            var lines = new List<string> { CsvText.Row([result.Buckets.Count > 0 ? "Group" : "Figure", $"Value{unit}", "Records"]) };
+            lines.AddRange(result.Buckets.Count > 0
+                ? result.Buckets.Select(b => CsvText.Row([b.Label, Number(b.Value), Count(b.Count, b.Capped)]))
+                : [CsvText.Row([result.Label, Number(result.Value), Count(result.Count, result.Capped)])]);
+            AuditWriter.Add(db, ctx, "metric.export", "metric", metric.Id, artifact.Revision, new { format = "csv", rows = lines.Count - 1 });
+            await db.SaveChangesAsync(ct);
+            return string.Join("\n", lines) + "\n";
         }, ct);
 
     /// <summary>Explorer group headers for a query: counts per value of a groupable field, from the same WHERE clause.</summary>

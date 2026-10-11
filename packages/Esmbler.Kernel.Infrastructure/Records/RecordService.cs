@@ -29,7 +29,7 @@ namespace Esmbler.Kernel.Infrastructure.Records;
 /// pins one configuration revision, enforces entity/record/field permissions, runs the data-level write pipeline,
 /// and commits the record change, its audit entry, and its outbox event together.
 /// </summary>
-public sealed class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock, WorkflowVersions workflows, Sla.SlaService sla)
+public sealed partial class RecordService(Database database, ConfigStore configs, AccessService access, RecordWriteEngine engine, IClock clock, WorkflowVersions workflows, Sla.SlaService sla)
 {
     private const int AuditValueLimit = 500;
 

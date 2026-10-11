@@ -1,7 +1,9 @@
 import { Component, Injectable, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Api, ApiError, saveBlob } from '../core/api';
 import { drillCommands, drillParams, formatMetric } from '../core/drill';
 import { MetricBucket, MetricResult, NodeSpec } from '../core/models';
+import { Toasts } from '../core/toast';
 import { Icon } from '../ui/icon';
 
 /**
@@ -123,13 +125,38 @@ export class MetricBucketTable {
   }
 }
 
+/** Downloads a figure as CSV, as the viewer sees it (the server evaluates it again and audits the export). */
+@Component({
+  selector: 'esm-metric-export',
+  imports: [Icon],
+  template: `<button class="btn btn-ghost btn-sm" [disabled]="busy()" (click)="run()" [attr.aria-label]="'Export ' + label() + ' as CSV'"><esm-icon name="download" [size]="14" /> CSV</button>`,
+})
+export class MetricExport {
+  readonly metric = input.required<string>();
+  readonly label = input('figure');
+  private readonly api = inject(Api);
+  private readonly toasts = inject(Toasts);
+  protected readonly busy = signal(false);
+
+  protected async run(): Promise<void> {
+    this.busy.set(true);
+    try {
+      saveBlob(await this.api.download(`/api/metrics/${encodeURIComponent(this.metric())}/export`, { tz: Intl.DateTimeFormat().resolvedOptions().timeZone }), `${this.metric()}.csv`);
+    } catch (e) {
+      this.toasts.show(e instanceof ApiError && e.status === 429 ? 'Too many exports in a short time. Try again in a minute.' : 'The export failed.', 'warning');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+}
+
 /**
  * display.bar_chart: a grouped metric as bars. Bars are links into the explorer, so each one is reachable by keyboard
  * and announced with its label and value; a table with the same numbers can be shown.
  */
 @Component({
   selector: 'esm-bar-chart',
-  imports: [RouterLink, MetricBucketTable],
+  imports: [RouterLink, MetricBucketTable, MetricExport],
   template: `
     @let m = metric();
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
@@ -138,6 +165,7 @@ export class MetricBucketTable {
         @if (m?.preview) { <span class="badge tone-gray">Preview</span> }
         @if (m?.status === 'ok' && max() > 0) {
           <button class="btn btn-ghost btn-sm" [attr.aria-pressed]="table()" (click)="showTable.set(!table())">{{ table() ? 'Hide table' : 'Show table' }}</button>
+          @if (!m?.preview) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
         }
       </header>
       @if (!m) {
@@ -256,11 +284,14 @@ function figure(m: MetricResult, b: MetricBucket): number {
 /** display.metric_table: a grouped metric as a table card. */
 @Component({
   selector: 'esm-metric-table',
-  imports: [MetricBucketTable],
+  imports: [MetricBucketTable, MetricExport],
   template: `
     @let m = metric();
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
-      <h3 [id]="node().id + '-t'">{{ node().props['title'] ?? m?.label ?? 'Table' }} @if (m?.preview) { <span class="badge tone-gray">Preview</span> }</h3>
+      <header class="flex items-center gap-2">
+        <h3 [id]="node().id + '-t'" class="flex-1">{{ node().props['title'] ?? m?.label ?? 'Table' }} @if (m?.preview) { <span class="badge tone-gray">Preview</span> }</h3>
+        @if (m?.status === 'ok' && !m?.preview && m?.buckets?.length) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
+      </header>
       @if (!m) {
         <p class="muted state">{{ ctx?.loading() ? 'Loading…' : 'No data.' }}</p>
       } @else if (m.status !== 'ok') {

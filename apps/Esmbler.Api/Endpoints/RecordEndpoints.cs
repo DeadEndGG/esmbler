@@ -45,6 +45,24 @@ public static class RecordEndpoints
                 PageSize = size ?? 50,
             }, ct));
 
+        // CSV of the explorer's result for this viewer (REQ-OPS-004): audited first, then streamed.
+        g.MapGet("/export", async (string entity, [FromQuery(Name = "filter")] string[]? filter, [FromQuery(Name = "sla")] string[]? sla, string? search, string? sort, string? dir, ClaimsPrincipal user, RecordService records, HttpContext http, CancellationToken ct) =>
+        {
+            var ctx = Ctx(user);
+            var query = new RecordQuery
+            {
+                Entity = entity,
+                Filters = LimitFilters(filter),
+                Sla = [.. (sla ?? []).Take(5).Select(SlaFilter.Parse)],
+                Search = search,
+                Sort = sort is null ? null : new SortSpec(sort, dir is "desc"),
+            };
+            await records.PrepareExportAsync(ctx, query, ct);
+            http.Response.ContentType = "text/csv; charset=utf-8";
+            http.Response.Headers.ContentDisposition = $"attachment; filename=\"{FileName(entity)}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmm}.csv\"";
+            await records.WriteExportAsync(ctx, query, http.Response.Body, ct);
+        }).RequireRateLimiting(LoginThrottle.RecordExportPolicy);
+
         g.MapPost("/", async (string entity, CreateRecordRequest body, [FromHeader(Name = "Idempotency-Key")] string? key, ClaimsPrincipal user, RecordService records, CancellationToken ct) =>
         {
             var created = await records.CreateAsync(Ctx(user), entity, body.Data ?? [], body.ConfigRevision, key, ct);
@@ -93,4 +111,7 @@ public static class RecordEndpoints
     }
 
     private static Kernel.Tenancy.RequestContext Ctx(ClaimsPrincipal user) => RequestContextFactory.From(user, "api");
+
+    /// <summary>A safe file name from an entity ID (letters, digits, dots, dashes and underscores only).</summary>
+    public static string FileName(string id) => new([.. id.Where(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_').Take(80)]);
 }
