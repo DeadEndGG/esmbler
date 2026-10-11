@@ -59,6 +59,7 @@ export const routes: Routes = [
       { path: 'mail', loadComponent: () => import('./pages/mail.page').then((m) => m.MailPage) },
       { path: 'admin/audit', loadComponent: () => import('./admin/audit.page').then((m) => m.AuditPage) },
       { path: 'admin/notifications', loadComponent: () => import('./admin/notifications.page').then((m) => m.NotificationsAdminPage) },
+      { path: 'admin/ai', loadComponent: () => import('./admin/ai.page').then((m) => m.AiPage) },
       { path: 'admin/people', loadComponent: () => import('./admin/people.page').then((m) => m.PeoplePage) },
       { path: 'admin/operations', loadComponent: () => import('./admin/operations.page').then((m) => m.OperationsPage) },
       { path: 'admin/configuration', loadComponent: () => import('./admin/configuration.page').then((m) => m.ConfigurationPage) },

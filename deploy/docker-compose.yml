@@ -80,6 +80,7 @@ services:
       Esmbler__Assistant__McpUrl: http://mcp:8080/mcp
       # Leave empty to use the built-in scripted assistant; set to use Claude (human action: provide the key).
       Esmbler__Assistant__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
+      Esmbler__Assistant__OpenAIApiKey: ${OPENAI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

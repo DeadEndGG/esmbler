@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using Esmbler.Api.Assistant;
+using Esmbler.Hosting.Auth;
+using Esmbler.Kernel.Infrastructure.Assistant;
 
 namespace Esmbler.Api.Endpoints;
 
@@ -16,5 +18,10 @@ public static class AssistantEndpoints
             assistant.Stop(user, id);
             return Results.NoContent();
         });
+
+        // AI provider settings (ADR 0024): model from the operator's catalog, effort, daily budget; never keys.
+        var ai = app.MapGroup("/api/admin/ai").WithTags("Assistant").RequireAuthorization();
+        ai.MapGet("/", (ClaimsPrincipal user, AiSettingsService settings, CancellationToken ct) => settings.GetAsync(RequestContextFactory.From(user, "api"), ct));
+        ai.MapPut("/", (AiSettingsRequest body, ClaimsPrincipal user, AiSettingsService settings, CancellationToken ct) => settings.SaveAsync(RequestContextFactory.From(user, "api"), body, ct));
     }
 }

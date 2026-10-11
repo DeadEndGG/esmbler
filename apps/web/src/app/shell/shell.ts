@@ -79,6 +79,7 @@ import { Icon, IconName } from '../ui/icon';
           }
           @if (session.isAdmin()) {
             <a class="nav-item" routerLink="/admin/people" routerLinkActive="active"><esm-icon name="users" /><span class="flex-1">People and roles</span></a>
+            <a class="nav-item" routerLink="/admin/ai" routerLinkActive="active"><esm-icon name="sparkles" /><span class="flex-1">AI assistant</span></a>
             <a class="nav-item" routerLink="/admin/operations" routerLinkActive="active"><esm-icon name="activity" /><span class="flex-1">Operations</span></a>
           }
           @if (session.canReadAudit()) {
