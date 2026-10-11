@@ -2,8 +2,10 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Esmbler.Api.Endpoints;
 using Esmbler.Assistant;
+using Esmbler.Assistant.Models;
 using Esmbler.Hosting.Auth;
 using Esmbler.Kernel;
+using Esmbler.Kernel.Infrastructure.Assistant;
 using Esmbler.Kernel.Infrastructure.Configuration;
 using Esmbler.Kernel.Infrastructure.Identity;
 using Esmbler.Kernel.Tenancy;
@@ -11,20 +13,21 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Esmbler.Api.Assistant;
 
-/// <summary>Bound from "Esmbler:Assistant". Provider: auto (Claude when an API key is configured), anthropic, or scripted.</summary>
+/// <summary>
+/// Bound from "Esmbler:Assistant". Provider: auto (each workspace's model from the catalog when its credential is
+/// configured, otherwise the scripted planner) or scripted (always scripted). Models, credentials and keys: ADR 0024,
+/// <see cref="Esmbler.Hosting.AiCatalogFactory"/>.
+/// </summary>
 public sealed class AssistantOptions
 {
     public string Provider { get; set; } = "auto";
 
     public string McpUrl { get; set; } = "http://localhost:5090/mcp";
 
-    public string Model { get; set; } = "claude-opus-5-5";
+    /// <summary>Legacy (ADR 0013): names the default catalog model when Esmbler:Assistant:DefaultModel is not set.</summary>
+    public string? Model { get; set; }
 
-    public string Effort { get; set; } = "medium";
-
-    public string FallbackModel { get; set; } = "claude-opus-4-8";
-
-    /// <summary>Anthropic API key (Esmbler:Assistant:AnthropicApiKey, or the ANTHROPIC_API_KEY variable). From a secret store in production.</summary>
+    /// <summary>Anthropic API key (Esmbler:Assistant:AnthropicApiKey, or the ANTHROPIC_API_KEY variable): the anthropic-default credential.</summary>
     public string? AnthropicApiKey { get; set; }
 
     public int MaxToolCalls { get; set; } = 30;
@@ -67,22 +70,23 @@ public sealed class AssistantService(
     DraftService drafts,
     TokenService tokens,
     IAssistantGatewayFactory gateways,
+    AiSettingsService ai,
     IHubContext<LiveHub> hub,
     ILogger<AssistantService> logger)
 {
     private readonly ConcurrentDictionary<string, Conversation> conversations = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, Queue<DateTimeOffset>> rate = new();
 
-    public string PlannerName => UseClaude ? "claude" : "scripted";
-
-    private bool UseClaude => options.Provider switch
+    /// <summary>Which planner and model this workspace's assistant uses (no keys).</summary>
+    public async Task<object> StatusAsync(ClaimsPrincipal user, CancellationToken ct)
     {
-        "anthropic" => true,
-        "scripted" => false,
-        _ => !string.IsNullOrWhiteSpace(options.AnthropicApiKey) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")),
-    };
+        var ctx = RequestContextFactory.From(user, "ui");
+        var resolved = await ai.ResolveAsync(ctx.TenantId, ctx.EnvironmentId, ct);
+        var model = Uses(resolved) ? resolved.Model : null;
+        return new { planner = model is null ? "scripted" : model.Provider == "anthropic" ? "claude" : model.Provider, model = model?.Model, provider = model?.Provider };
+    }
 
-    public object Status() => new { planner = PlannerName, model = UseClaude ? options.Model : null };
+    private bool Uses(AiResolved resolved) => options.Provider != "scripted" && resolved.Model is not null && resolved.Credential is not null;
 
     public async Task<AssistantAccepted> SendAsync(ClaimsPrincipal user, AssistantMessageRequest body, CancellationToken ct)
     {
@@ -137,7 +141,7 @@ public sealed class AssistantService(
             (body.Selection ?? []).Take(10).Select(s => new SelectedElement(s.View, s.Node, s.Type, s.Label)).ToList(),
             conversation.History.ToList());
         conversation.History.Add(new ConversationTurn("user", text));
-        var planner = CreatePlanner();
+        var planner = CreatePlanner(await ai.ResolveAsync(ctx.TenantId, ctx.EnvironmentId, ct), ctx, conversation.Id);
         _ = Task.Run(() => RunAsync(conversation, planner, request, token), CancellationToken.None);
         return new AssistantAccepted(conversation.Id, planner.Name);
     }
@@ -156,9 +160,26 @@ public sealed class AssistantService(
         }
     }
 
-    private IPlanner CreatePlanner() => UseClaude
-        ? new ClaudePlanner(new ClaudePlannerOptions { Model = options.Model, Effort = options.Effort, FallbackModel = options.FallbackModel, ApiKey = options.AnthropicApiKey })
-        : new ScriptedPlanner();
+    /// <summary>The workspace's catalog model through its provider's client, metered; scripted when none is configured.</summary>
+    private IPlanner CreatePlanner(AiResolved resolved, RequestContext ctx, string conversationId)
+    {
+        if (!Uses(resolved))
+        {
+            return new ScriptedPlanner();
+        }
+
+        var model = resolved.Model!;
+        var credential = resolved.Credential!;
+        var settings = new ModelSettings { Model = model.Model, Effort = resolved.Effort, FallbackModel = model.FallbackModel };
+        IModelClient client = model.Provider switch
+        {
+            "openai" => new OpenAIResponsesModelClient(settings, OpenAIEndpoint.OpenAI(credential.ApiKey!)),
+            "azure-openai" when credential.Endpoint is { } endpoint => new OpenAIResponsesModelClient(settings, OpenAIEndpoint.AzureOpenAI(endpoint, credential.ApiKey!)),
+            "anthropic" => new AnthropicModelClient(settings, credential.ApiKey),
+            _ => throw new AssistantUnavailableException("The AI model for this workspace is not configured correctly."),
+        };
+        return new ToolLoopPlanner(client, new AiUsageMeter(ai, ctx, conversationId));
+    }
 
     private async Task RunAsync(Conversation conversation, IPlanner planner, AssistantRequest request, string token)
     {

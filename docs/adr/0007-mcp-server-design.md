@@ -8,6 +8,8 @@ requirements: [REQ-AI-003, REQ-AI-004, REQ-AI-005, REQ-AI-006, REQ-AISAFE-001, R
 
 # ADR 0007: MCP server design
 
+> **Extended by [ADR 0025](0025-oauth-for-external-mcp-clients.md)** (2026-10-11): ChatGPT, Claude and other external MCP clients connect through OAuth 2.1 with Esmbler as the authorization server. When `Esmbler:Mcp:PublicUrl` is set it becomes the audience of all MCP tokens instead of `esmbler-mcp`, each external connection gets its own agent principal, and per-connection rate limits replace the per-token budget for those connections. ADR 0025 answers the OAuth revisit trigger below.
+
 ## Context and problem statement
 
 The AI builder customizes a tenant through Esmbler's own MCP server: both the in-app assistant ([ADR 0013](0013-ai-assistant-model-adapter.md)) and external MCP clients use it. The master spec ("AI-native builder via MCP", "AI execution safeguards") requires discovery, build, review and lifecycle tools, precise errors, tenant/environment bound by authentication with no override, audience-validated tokens without passthrough, bounded tool use, and human approval before publish.

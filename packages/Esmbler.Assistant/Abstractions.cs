@@ -94,3 +94,6 @@ public interface IPlanner
 
 /// <summary>Thrown when a budget runs out; the loop reports what was done so far.</summary>
 public sealed class BudgetExceededException(string message) : Exception(message);
+
+/// <summary>The model provider failed; the person sees a short, safe message (no provider details or keys).</summary>
+public sealed class AssistantUnavailableException(string message) : Exception(message);

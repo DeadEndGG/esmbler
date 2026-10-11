@@ -1184,3 +1184,53 @@ public sealed class InboundMessageRow
 
     public DateTimeOffset? ProcessedAt { get; set; }
 }
+
+/// <summary>A workspace's AI provider settings (ADR 0024); names a catalog model, never a key.</summary>
+public sealed class AiSettingsRow
+{
+    public Guid TenantId { get; set; }
+
+    public string? ModelId { get; set; }
+
+    public string? Effort { get; set; }
+
+    public decimal DailyBudgetUsd { get; set; } = 20;
+
+    public bool AllowRecordsRead { get; set; }
+
+    public string ExternalAssistants { get; set; } = "off";
+
+    public int Version { get; set; } = 1;
+
+    public Guid? UpdatedBy { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>One model request's usage and estimated cost (ADR 0024).</summary>
+public sealed class AiUsageRow
+{
+    public Guid TenantId { get; set; }
+
+    public Guid Id { get; set; }
+
+    public Guid? EnvironmentId { get; set; }
+
+    public Guid? PrincipalId { get; set; }
+
+    public string? ConversationId { get; set; }
+
+    public string Provider { get; set; } = "";
+
+    public string Model { get; set; } = "";
+
+    public int InputTokens { get; set; }
+
+    public int OutputTokens { get; set; }
+
+    public int CachedTokens { get; set; }
+
+    public decimal CostUsd { get; set; }
+
+    public DateTimeOffset At { get; set; }
+}

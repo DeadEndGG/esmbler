@@ -2,11 +2,13 @@
 title: "ADR 0013: AI assistant model adapter"
 status: accepted
 owner: platform-architecture
-last_reviewed: 2026-10-10
+last_reviewed: 2026-10-11
 requirements: [REQ-AI-005, REQ-AI-007, REQ-AISAFE-001, REQ-AISAFE-002, REQ-AISAFE-003, REQ-AISAFE-004, REQ-AISAFE-005, REQ-AUTHZ-007, REQ-LIVE-001, REQ-LIVE-003, REQ-LAY-003, REQ-ACC-10]
 ---
 
 # ADR 0013: AI assistant model adapter
+
+> **Superseded in part by [ADR 0024](0024-multiple-model-providers.md)** (2026-10-11): the single global provider (`Provider`, `AnthropicApiKey`) and the `ClaudePlanner` structure give way to a provider-neutral `ToolLoopPlanner` over an `IModelClient` per provider, per-tenant AI settings, named credentials, metering and a daily spend budget. The loop through MCP, the scripted planner, the safeguards, the bounds and the evaluation bar below stay in force.
 
 ## Context and problem statement
 

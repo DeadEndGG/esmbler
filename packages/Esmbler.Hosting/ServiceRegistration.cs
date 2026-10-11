@@ -108,6 +108,10 @@ public static class ServiceRegistration
         });
         services.AddSingleton<Kernel.Infrastructure.Notifications.ISecretStore, Kernel.Infrastructure.Notifications.EnvironmentSecretStore>();
 
+        // AI providers (ADR 0024): the operator's model catalog and named credentials, per-workspace settings and metering.
+        services.AddSingleton(_ => AiCatalogFactory.From(configuration));
+        services.AddSingleton<Kernel.Infrastructure.Assistant.AiSettingsService>();
+
         // Email intake (ADR 0023): mailboxes, inbound messages, the processing job and the IMAP poller (worker only).
         services.AddSingleton<Kernel.Infrastructure.Mail.MailIntakeService>();
         services.AddSingleton<Kernel.Infrastructure.Events.IJobHandler, Kernel.Infrastructure.Mail.MailProcessJobHandler>();

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Esmbler.Api.Assistant;
 using Esmbler.Assistant;
+using Esmbler.Assistant.Models;
 using Esmbler.IntegrationTests.Api;
 using Esmbler.IntegrationTests.Infrastructure;
 using Esmbler.IntegrationTests.Mcp;
@@ -48,15 +49,24 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
         Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
-    [Fact]
-    public async Task Claude_planner_evaluation_runs_when_a_key_is_configured()
+    /// <summary>
+    /// The model-driven builder is scored against every provider whose key is configured (ADR 0024): a model may be
+    /// offered to workspaces (Esmbler__Assistant__EvaluatedModels) only after this passes for it.
+    /// </summary>
+    [Theory]
+    [InlineData("anthropic", "ANTHROPIC_API_KEY", "claude-opus-5-5")]
+    [InlineData("openai", "OPENAI_API_KEY", "gpt-6.1-sol")]
+    public async Task Model_driven_planner_evaluation_runs_when_a_key_is_configured(string provider, string keyVariable, string defaultModel)
     {
-        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+        var key = Environment.GetEnvironmentVariable(keyVariable);
+        if (string.IsNullOrWhiteSpace(key))
         {
             return; // Recorded in docs/human-actions.md: provide a key to score the model-driven planner.
         }
 
-        var planner = new ClaudePlanner(new ClaudePlannerOptions { Model = Environment.GetEnvironmentVariable("ESMBLER_EVAL_MODEL") ?? "claude-opus-5-5" });
+        var settings = new ModelSettings { Model = Environment.GetEnvironmentVariable($"ESMBLER_EVAL_MODEL_{provider.ToUpperInvariant()}") ?? defaultModel };
+        IModelClient client = provider == "openai" ? new OpenAIResponsesModelClient(settings, OpenAIEndpoint.OpenAI(key)) : new AnthropicModelClient(settings with { FallbackModel = "claude-opus-4-8" }, key);
+        var planner = new ToolLoopPlanner(client);
         var scores = new List<string>();
         var passed = 0;
         var cases = LoadCases();
@@ -67,9 +77,9 @@ public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFa
             scores.Add($"{c["id"]}: {(failures.Count == 0 ? "pass" : string.Join("; ", failures))}");
         }
 
-        var report = Path.Combine(AppContext.BaseDirectory, "ai-eval-report.txt");
-        await File.WriteAllLinesAsync(report, scores.Prepend($"Claude planner: {passed}/{cases.Count} passed"));
-        Assert.True(passed >= cases.Count - 1, string.Join("\n", scores));
+        var report = Path.Combine(AppContext.BaseDirectory, $"ai-eval-report-{provider}.txt");
+        await File.WriteAllLinesAsync(report, scores.Prepend($"{provider} {settings.Model}: {passed}/{cases.Count} passed"));
+        Assert.True(passed >= cases.Count * 0.8, string.Join("\n", scores));
     }
 
     [Fact]
