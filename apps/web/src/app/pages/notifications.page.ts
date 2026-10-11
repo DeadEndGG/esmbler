@@ -136,7 +136,7 @@ const CHANNEL_LABELS: Record<string, string> = { in_app: 'In the app', email: 'E
     .pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--esm-space-3); border-radius: var(--esm-radius-full); border: 1px solid var(--esm-border-strong); background: var(--esm-surface-raised);
       font: var(--esm-text-body-sm); font-weight: 500; color: var(--esm-text-muted); }
     .pill.on { color: var(--esm-text-on-accent); background: var(--esm-accent-brand); border-color: var(--esm-accent-brand); }
-    .count { min-width: 18px; padding: 0 5px; border-radius: var(--esm-radius-full); background: color-mix(in srgb, currentColor 18%, transparent); font: var(--esm-text-caption); font-weight: 600; text-align: center; }
+    .count { min-width: 18px; padding: 0 5px; border-radius: var(--esm-radius-full); background: var(--esm-surface-raised); color: var(--esm-text-default); border: 1px solid var(--esm-border-subtle); font: var(--esm-text-caption); font-weight: 600; text-align: center; }
     .item { padding: var(--esm-space-3) var(--esm-space-4); border-radius: var(--esm-radius-lg); border: 1px solid var(--esm-border-subtle); background: var(--esm-surface-raised); }
     .item.unread { box-shadow: var(--esm-shadow-card); }
     .title { font: var(--esm-text-body); font-weight: 600; color: var(--esm-text-default); }

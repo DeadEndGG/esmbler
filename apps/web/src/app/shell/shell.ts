@@ -48,6 +48,12 @@ import { Icon, IconName } from '../ui/icon';
             @if (session.pendingApprovals()) { <span class="nav-count" [attr.aria-label]="session.pendingApprovals() + ' waiting for you'">{{ session.pendingApprovals() }}</span> }
           </a>
         }
+        @if (session.app()?.alerts) {
+          <a class="nav-item" routerLink="/alerts" routerLinkActive="active">
+            <esm-icon name="siren" /><span class="flex-1">Alerts</span>
+            @if (session.openAlerts()) { <span class="nav-count" [attr.aria-label]="session.openAlerts() + ' open for you'">{{ session.openAlerts() }}</span> }
+          </a>
+        }
         <a class="nav-item" routerLink="/notifications" routerLinkActive="active">
           <esm-icon name="bell" /><span class="flex-1">Notifications</span>
           @if (session.unreadNotifications()) { <span class="nav-count" [attr.aria-label]="session.unreadNotifications() + ' unread'">{{ session.unreadNotifications() }}</span> }
@@ -132,7 +138,7 @@ export class Shell {
       shortcuts.register({ keys: 'g h', description: 'Go home', group: 'Global', run: () => this.router.navigate(['/']) }),
     ];
     // Keep the notifications badge current while the app is visible (no push channel yet).
-    const poll = setInterval(() => document.visibilityState === 'visible' && this.session.refreshNotifications(), 60_000);
+    const poll = setInterval(() => document.visibilityState === 'visible' && (this.session.refreshNotifications(), this.session.refreshAlerts()), 60_000);
     inject(DestroyRef).onDestroy(() => {
       off.forEach((f) => f());
       clearInterval(poll);

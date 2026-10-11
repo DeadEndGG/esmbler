@@ -35,6 +35,8 @@ export interface AppBootstrap {
   approvals?: boolean;
   /** Dashboards the user can see at least one figure on (ADR 0019). */
   dashboards?: DashboardNavItem[];
+  /** The workspace has alert rules and the user may own or answer alerts (ADR 0022). */
+  alerts?: boolean;
 }
 
 export interface DashboardNavItem {

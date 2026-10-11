@@ -18,6 +18,7 @@ export class Session {
   readonly pendingApprovals = signal(0);
   /** Unread notifications of the signed-in person (navigation badge, ADR 0021). */
   readonly unreadNotifications = signal(0);
+  readonly openAlerts = signal(0);
   readonly canManageNotifications = computed(() => this.app()?.actions.some((a) => a === 'notifications.manage' || a === 'permissions.admin') ?? false);
 
   async load(): Promise<AppBootstrap> {
@@ -29,6 +30,7 @@ export class Session {
     this.app.set(app);
     this.refreshApprovals();
     this.refreshNotifications();
+    this.refreshAlerts();
     return app;
   }
 
@@ -39,6 +41,15 @@ export class Session {
       return;
     }
     this.api.get<{ pending: number }>('/api/approvals/count').then((c) => this.pendingApprovals.set(c.pending), () => undefined);
+  }
+
+  /** Re-reads the open alerts badge (alerts that are the user's to answer); failures leave the last value. */
+  refreshAlerts(): void {
+    if (!this.app()?.alerts) {
+      this.openAlerts.set(0);
+      return;
+    }
+    this.api.get<{ open: number }>('/api/alerts/count').then((c) => this.openAlerts.set(c.open), () => undefined);
   }
 
   /** Re-reads the unread notifications badge; failures leave the last value. */
