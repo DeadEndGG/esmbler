@@ -121,6 +121,8 @@ public sealed class AssistantService(
             throw KernelException.NotFound("Conversation");
         }
 
+        // Built before the turn is marked running, so a misconfigured model fails the request without leaving the conversation busy.
+        var planner = CreatePlanner(await ai.ResolveAsync(ctx.TenantId, ctx.EnvironmentId, ct), ctx, conversation.Id);
         lock (conversation)
         {
             if (conversation.Running is not null)
@@ -141,7 +143,6 @@ public sealed class AssistantService(
             (body.Selection ?? []).Take(10).Select(s => new SelectedElement(s.View, s.Node, s.Type, s.Label)).ToList(),
             conversation.History.ToList());
         conversation.History.Add(new ConversationTurn("user", text));
-        var planner = CreatePlanner(await ai.ResolveAsync(ctx.TenantId, ctx.EnvironmentId, ct), ctx, conversation.Id);
         _ = Task.Run(() => RunAsync(conversation, planner, request, token), CancellationToken.None);
         return new AssistantAccepted(conversation.Id, planner.Name);
     }
@@ -176,7 +177,7 @@ public sealed class AssistantService(
             "openai" => new OpenAIResponsesModelClient(settings, OpenAIEndpoint.OpenAI(credential.ApiKey!)),
             "azure-openai" when credential.Endpoint is { } endpoint => new OpenAIResponsesModelClient(settings, OpenAIEndpoint.AzureOpenAI(endpoint, credential.ApiKey!)),
             "anthropic" => new AnthropicModelClient(settings, credential.ApiKey),
-            _ => throw new AssistantUnavailableException("The AI model for this workspace is not configured correctly."),
+            _ => throw new KernelException("ai_unavailable", "The AI model for this workspace is not configured correctly.", 503, "modelId", "Ask a permission administrator to choose another model in Settings > AI."),
         };
         return new ToolLoopPlanner(client, new AiUsageMeter(ai, ctx, conversationId, model.Id));
     }

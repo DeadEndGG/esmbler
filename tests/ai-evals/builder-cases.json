@@ -1,5 +1,5 @@
 {
-  "$comment": "AI builder evaluation cases (G1-M16). Each case runs against a fresh tenant draft; checks read the draft back through MCP. The scripted planner must pass all cases with tag 'scripted'; the Claude planner is scored on every case when ANTHROPIC_API_KEY is set.",
+  "$comment": "AI builder evaluation cases (G1-M16). Each case runs against a fresh tenant draft; checks read the draft back through MCP. The scripted planner must pass all cases with tag 'scripted'; the model-driven planner is scored on every case for each provider whose key is set (ANTHROPIC_API_KEY, OPENAI_API_KEY).",
   "cases": [
     {
       "id": "add-required-field-in-card",

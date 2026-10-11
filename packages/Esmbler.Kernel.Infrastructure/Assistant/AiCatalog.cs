@@ -24,7 +24,8 @@ public sealed record AiModelOption(
 /// <summary>A named credential: provider, key and (for Azure OpenAI) endpoint. Its text form never shows the key.</summary>
 public sealed record AiCredential(string Provider, string? ApiKey, Uri? Endpoint)
 {
-    public bool Configured => !string.IsNullOrWhiteSpace(ApiKey);
+    /// <summary>A key is set and, for Azure OpenAI, an https endpoint; anything less cannot build a model client.</summary>
+    public bool Configured => !string.IsNullOrWhiteSpace(ApiKey) && (Provider != "azure-openai" || Endpoint is { Scheme: "https" });
 
     public override string ToString() => $"AiCredential {{ Provider = {Provider}, Configured = {Configured}, Endpoint = {Endpoint} }}";
 }
@@ -43,7 +44,7 @@ public sealed class AiCatalog(IReadOnlyList<AiModelOption> models, IReadOnlyDict
     public AiModelOption? Find(string? id) => id is null ? null : Models.FirstOrDefault(m => m.Id == id);
 
     /// <summary>Whether the model's credential is configured on this deployment.</summary>
-    public bool Available(AiModelOption model) => credentials.TryGetValue(model.Credential, out var c) && c.Configured && c.Provider == ProviderFamily(model.Provider);
+    public bool Available(AiModelOption model) => CredentialFor(model) is not null;
 
     /// <summary>
     /// Whether a workspace may choose or keep using a model: evaluated, its credential configured for the right provider,
@@ -55,8 +56,12 @@ public sealed class AiCatalog(IReadOnlyList<AiModelOption> models, IReadOnlyDict
     public AiModelOption? DefaultFor(string tenantSlug) =>
         Find(defaultModel) is { } chosen && Usable(chosen, tenantSlug) ? chosen : Models.FirstOrDefault(m => Usable(m, tenantSlug));
 
-    /// <summary>The credential for building a model client (the host only); null unless it is configured for the model's provider.</summary>
-    public AiCredential? CredentialFor(AiModelOption model) => credentials.TryGetValue(model.Credential, out var c) && c.Configured && c.Provider == ProviderFamily(model.Provider) ? c : null;
+    /// <summary>
+    /// The credential for building a model client (the host only); null unless the model's provider is one Esmbler has a
+    /// client for and the credential is configured for that provider.
+    /// </summary>
+    public AiCredential? CredentialFor(AiModelOption model) =>
+        KnownProviders.Contains(model.Provider) && credentials.TryGetValue(model.Credential, out var c) && c.Configured && c.Provider == model.Provider ? c : null;
 
     /// <summary>
     /// Estimated cost of one request, in US dollars: uncached input at the input price, cache reads at a tenth of it,
@@ -70,5 +75,6 @@ public sealed class AiCatalog(IReadOnlyList<AiModelOption> models, IReadOnlyDict
         return ((freshInput * input) + (cacheRead * input / 10m) + (cacheWrite * input * 1.25m) + (output * outputPrice)) / 1_000_000m;
     }
 
-    private static string ProviderFamily(string provider) => provider == "azure-openai" ? "azure-openai" : provider;
+    /// <summary>The providers the assistant has a model client for (ADR 0024).</summary>
+    public static IReadOnlyList<string> KnownProviders { get; } = ["anthropic", "openai", "azure-openai"];
 }

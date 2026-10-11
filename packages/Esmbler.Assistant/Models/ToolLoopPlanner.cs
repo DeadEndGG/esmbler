@@ -108,14 +108,19 @@ public sealed class ToolLoopPlanner(IModelClient client, IModelUsageMeter? meter
     private static async Task<ToolOutcome> CallToolAsync(AssistantRequest request, IToolGateway tools, IAssistantSink sink, ToolCall call, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        JsonObject args;
+        JsonObject? args;
         try
         {
-            args = JsonNode.Parse(string.IsNullOrWhiteSpace(call.ArgumentsJson) ? "{}" : call.ArgumentsJson) as JsonObject ?? [];
+            args = JsonNode.Parse(string.IsNullOrWhiteSpace(call.ArgumentsJson) ? "{}" : call.ArgumentsJson) as JsonObject;
         }
         catch (JsonException)
         {
-            // Malformed arguments go back to the model as a tool error, which it can correct.
+            args = null;
+        }
+
+        if (args is null)
+        {
+            // Malformed or non-object arguments go back to the model as a tool error, which it can correct; the tool never runs.
             return new ToolOutcome(true, """{"error":{"code":"invalid_arguments","message":"The tool arguments were not a JSON object."}}""");
         }
 

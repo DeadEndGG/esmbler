@@ -148,7 +148,7 @@ Requirement: [REQ-AISAFE-005](../spec/traceability.md). Location: `tests/ai-eval
 - `prompt`, optionally with a point-and-prompt selection;
 - `checks`: expected effects on the draft and events, and effects that must not happen (no unintended changes).
 
-**Harness.** `Scripted_planner_passes_the_evaluation_case` runs each case against a fresh tenant through the real MCP server and checks the resulting draft steps and assistant events. `Claude_planner_evaluation_runs_when_a_key_is_configured` runs the same cases with Claude when `ANTHROPIC_API_KEY` is set and reports the completion rate.
+**Harness.** `Scripted_planner_passes_the_evaluation_case` runs each case against a fresh tenant through the real MCP server and checks the resulting draft steps and assistant events. `Model_driven_planner_evaluation_runs_when_a_key_is_configured` runs the same cases with the model-driven planner once per provider whose key is set (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; [ADR 0024](../adr/0024-multiple-model-providers.md)) and reports the completion rate.
 
 | Category | Examples | Pass criterion |
 | --- | --- | --- |

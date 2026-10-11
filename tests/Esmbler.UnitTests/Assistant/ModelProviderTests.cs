@@ -55,11 +55,14 @@ public class ModelProviderTests
         await Assert.ThrowsAsync<BudgetExceededException>(() => new ToolLoopPlanner(new FakeModelClient(), new CountingMeter { Exhausted = true }).RunAsync(new AssistantRequest("c", "x", [], []), new Gateway("{}"), new ListSink(), new AssistantBudget(), default));
 
         // Arguments that are not a JSON object go back to the model as a tool error; no tool runs.
-        var malformed = new FakeModelClient(FakeModelClient.Calls(("add_field", "not json")), FakeModelClient.Says("Sorry."));
-        var tools = new Gateway("{}");
-        await new ToolLoopPlanner(malformed).RunAsync(new AssistantRequest("c", "x", [], []), tools, new ListSink(), new AssistantBudget(), default);
-        Assert.Empty(tools.Calls);
-        Assert.True(malformed.Requests[1].Items.OfType<ToolResult>().Single().IsError);
+        foreach (var bad in new[] { "not json", "[1]", "\"x\"" })
+        {
+            var malformed = new FakeModelClient(FakeModelClient.Calls(("add_field", bad)), FakeModelClient.Says("Sorry."));
+            var tools = new Gateway("{}");
+            await new ToolLoopPlanner(malformed).RunAsync(new AssistantRequest("c", "x", [], []), tools, new ListSink(), new AssistantBudget(), default);
+            Assert.Empty(tools.Calls);
+            Assert.True(malformed.Requests[1].Items.OfType<ToolResult>().Single().IsError);
+        }
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -172,6 +175,16 @@ public class ModelProviderTests
         // A credential for another provider is never handed out.
         var crossed = new AiCatalog([sol], new Dictionary<string, AiCredential> { ["openai-default"] = new("anthropic", "k", null) }, null);
         Assert.Null(crossed.CredentialFor(sol));
+
+        // Azure OpenAI needs an https endpoint, and a provider Esmbler has no client for is never available.
+        var azure = new AiModelOption("azure-sol", "Sol (Azure)", "azure-openai", "sol", "azure", "medium", 2m, 10m, true);
+        var unknown = new AiModelOption("gemini", "Gemini", "gemini", "gemini", "gemini", "medium", 1m, 1m, true);
+        var noEndpoint = new AiCatalog([azure, unknown], new Dictionary<string, AiCredential> { ["azure"] = new("azure-openai", "k", null), ["gemini"] = new("gemini", "k", null) }, null);
+        Assert.False(noEndpoint.Available(azure));
+        Assert.False(noEndpoint.Available(unknown));
+        Assert.Null(noEndpoint.DefaultFor("acme"));
+        Assert.False(new AiCatalog([azure], new Dictionary<string, AiCredential> { ["azure"] = new("azure-openai", "k", new Uri("http://example.openai.azure.com")) }, null).Available(azure));
+        Assert.True(new AiCatalog([azure], new Dictionary<string, AiCredential> { ["azure"] = new("azure-openai", "k", new Uri("https://example.openai.azure.com")) }, null).Available(azure));
     }
 
     private sealed class Gateway(string result) : IToolGateway

@@ -13,7 +13,8 @@ short-lived agent token, so the assistant can never do more than the person it a
   turns is plain text. `IModelUsageMeter` checks the workspace's spend budget before and records usage after each request.
   `ModelUsage` is normalized across providers: `InputTokens` excludes cache reads (`CachedInputTokens`) and cache writes
   (`CacheWriteTokens`); OpenAI's `input_tokens` include cached tokens, so its client subtracts them. Arguments that are
-  not a JSON object go back to the model as an `invalid_arguments` tool error.
+  not a JSON object (unparseable or another JSON kind) go back to the model as an `invalid_arguments` tool error, and
+  no tool runs.
 - Which model a workspace uses, its key and its budget are decided outside this package (`AiCatalog` and
   `AiSettingsService` in `Esmbler.Kernel.Infrastructure`, wired in `apps/Esmbler.Api/Assistant/AssistantService.cs` with
   `AiUsageMeter`). Clients receive a key only through their constructor and must never put it in exceptions, logs or

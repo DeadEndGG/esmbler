@@ -28,7 +28,7 @@ public sealed class LoginThrottle(PlatformOptions options, TimeProvider clock)
 
     /// <summary>
     /// OAuth token and revocation endpoints (ADR 0025): ChatGPT and Claude refresh for many people from few addresses,
-    /// so the limit is per client and address and generous; tokens are 256-bit, so guessing is not the risk.
+    /// so the limit is per address and generous; tokens are 256-bit, so guessing is not the risk.
     /// </summary>
     public const string OAuthPolicy = "oauth";
 

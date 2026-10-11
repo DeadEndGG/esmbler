@@ -19,7 +19,7 @@ namespace Esmbler.IntegrationTests.Assistant;
 /// <summary>
 /// G1-M15/M16, REQ-AI-005, REQ-LIVE-003: the assistant customizes a workspace only through the MCP server, with
 /// the person's agent token, and streams its progress. The evaluation cases in tests/ai-evals run here against the
-/// scripted planner on every build; the Claude planner runs them too when ANTHROPIC_API_KEY is set.
+/// scripted planner on every build; the model-driven planner runs them too for each provider whose key is set (ANTHROPIC_API_KEY, OPENAI_API_KEY).
 /// </summary>
 [Collection(PlatformCollection.Name)]
 public class AssistantTests(PlatformFixture platform) : IClassFixture<ApiTestsFactoryHolder>, IClassFixture<McpServerTests.Holder>
