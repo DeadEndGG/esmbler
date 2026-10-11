@@ -94,6 +94,7 @@ app.MapWorkspaces();
 app.MapNotifications();
 app.MapAlerts();
 app.MapAudit();
+app.MapMail();
 app.MapBuilder();
 app.MapAssistant();
 app.MapHub<LiveHub>("/hubs/live");
