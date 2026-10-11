@@ -136,8 +136,9 @@ public class AuditPolicyTests(PlatformFixture f)
         Assert.Equal(0, (await Audit.ChainAsync(admin, default)).AnchorSeq);
         await Audit.VerifyNowAsync(admin, default);
 
-        // A legal hold keeps everything; a hold someone else placed is released only by a permission administrator.
+        // A legal hold keeps everything until the person who placed it (or a permission administrator) releases it.
         var held = await Audit.PlaceHoldAsync(admin, "Litigation 2026-17", default);
+        Assert.True(held.Holds[0].PlacedByYou);
         await Maintenance.PurgeAsync(default);
         Assert.Equal(0, (await Audit.ChainAsync(admin, default)).AnchorSeq);
 

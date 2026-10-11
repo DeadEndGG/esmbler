@@ -22,7 +22,8 @@ public sealed record AuditChainView(long Sealed, long AnchorSeq, DateTimeOffset?
 
 public sealed record AuditPolicyView(int RetentionDays, int MinDays, int MaxDays, IReadOnlyList<LegalHoldView> Holds);
 
-public sealed record LegalHoldView(Guid Id, string Reason, string CreatedBy, DateTimeOffset CreatedAt, string? ReleasedBy, DateTimeOffset? ReleasedAt);
+/// <param name="PlacedByYou">Whether the viewer placed the hold (only they or a permission administrator may release it).</param>
+public sealed record LegalHoldView(Guid Id, string Reason, string CreatedBy, DateTimeOffset CreatedAt, string? ReleasedBy, DateTimeOffset? ReleasedAt, bool PlacedByYou);
 
 /// <summary>
 /// The audit log as people use it (ADR 0022, REQ-AUD-001): search (audit.read), streamed export (audit.export; the export
@@ -197,7 +198,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
             await RequireAsync(db, ctx, PlatformActions.AuditRead, fresh: false, ct);
-            return await PolicyViewAsync(db, ct);
+            return await PolicyViewAsync(db, ctx.PrincipalId, ct);
         }, ct);
 
     /// <summary>Changes how long audit entries are kept (365 to 3,650 days). Shortening it also needs permission administration.</summary>
@@ -228,7 +229,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             row.UpdatedAt = clock.UtcNow;
             AuditWriter.Add(db, ctx, "audit.policy_change", "audit_policy", null, null, new { from = current, to = days }, environmentScoped: false);
             await db.SaveChangesAsync(ct);
-            return await PolicyViewAsync(db, ct);
+            return await PolicyViewAsync(db, ctx.PrincipalId, ct);
         }, ct);
 
     public Task<AuditPolicyView> PlaceHoldAsync(RequestContext ctx, string reason, CancellationToken ct) =>
@@ -245,7 +246,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             db.LegalHolds.Add(hold);
             AuditWriter.Add(db, ctx, "audit.hold_place", "legal_hold", hold.Id.ToString(), null, new { reason = text }, environmentScoped: false);
             await db.SaveChangesAsync(ct);
-            return await PolicyViewAsync(db, ct);
+            return await PolicyViewAsync(db, ctx.PrincipalId, ct);
         }, ct);
 
     public Task<AuditPolicyView> ReleaseHoldAsync(RequestContext ctx, Guid id, CancellationToken ct) =>
@@ -267,7 +268,7 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
                 await db.SaveChangesAsync(ct);
             }
 
-            return await PolicyViewAsync(db, ct);
+            return await PolicyViewAsync(db, ctx.PrincipalId, ct);
         }, ct);
 
     // ------------------------------------------------------------------ helpers
@@ -380,12 +381,12 @@ public sealed class AuditService(Database database, ConfigStore configs, AccessS
             : new AuditChainView(h.LastSeq, h.AnchorSeq, h.SealedAt, h.VerifiedThroughSeq, h.VerifiedAt, h.BrokenAtSeq, h.BrokenDetectedAt, h.VerifyCursor is not null);
     }
 
-    private static async Task<AuditPolicyView> PolicyViewAsync(KernelDbContext db, CancellationToken ct)
+    private static async Task<AuditPolicyView> PolicyViewAsync(KernelDbContext db, Guid viewer, CancellationToken ct)
     {
         var days = await db.AuditPolicies.AsNoTracking().Select(p => (int?)p.RetentionDays).FirstOrDefaultAsync(ct) ?? DefaultRetentionDays;
         var holds = await db.LegalHolds.AsNoTracking().OrderByDescending(h => h.CreatedAt).Take(50).ToListAsync(ct);
         var names = await NamesAsync(db, holds.SelectMany(h => new[] { (Guid?)h.CreatedBy, h.ReleasedBy }), ct);
-        return new AuditPolicyView(days, MinRetentionDays, MaxRetentionDays, [.. holds.Select(h => new LegalHoldView(h.Id, h.Reason, names.GetValueOrDefault(h.CreatedBy, "someone"), h.CreatedAt, h.ReleasedBy is { } r ? names.GetValueOrDefault(r, "someone") : null, h.ReleasedAt))]);
+        return new AuditPolicyView(days, MinRetentionDays, MaxRetentionDays, [.. holds.Select(h => new LegalHoldView(h.Id, h.Reason, names.GetValueOrDefault(h.CreatedBy, "someone"), h.CreatedAt, h.ReleasedBy is { } r ? names.GetValueOrDefault(r, "someone") : null, h.ReleasedAt, h.CreatedBy == viewer))]);
     }
 
     /// <summary>Spreadsheets run cells starting with = + - @ | % (also after leading spaces, tab or return) as formulas: prefix them with a quote.</summary>

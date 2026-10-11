@@ -38,6 +38,7 @@ interface Hold {
   createdAt: string;
   releasedBy?: string | null;
   releasedAt?: string | null;
+  placedByYou?: boolean;
 }
 
 interface Policy {
@@ -91,7 +92,7 @@ interface Policy {
                 <li class="flex flex-wrap items-center gap-2 text-body-sm">
                   <span class="badge" [class]="h.releasedAt ? 'tone-gray' : 'tone-amber'">{{ h.releasedAt ? 'released' : 'active' }}</span>
                   <span class="flex-1">{{ h.reason }} · {{ h.createdBy }}, {{ h.createdAt | date: 'MMM d' }}</span>
-                  @if (!h.releasedAt && canManage()) { <button class="btn btn-ghost btn-sm" (click)="release(h)">Release</button> }
+                  @if (!h.releasedAt && canManage() && (h.placedByYou || isPermissionAdmin())) { <button class="btn btn-ghost btn-sm" (click)="release(h)">Release</button> }
                 </li>
               } @empty {
                 <li class="text-body-sm text-muted">No legal holds. Retention runs as set.</li>
@@ -163,6 +164,7 @@ export class AuditPage {
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
   private readonly actions = computed(() => this.session.app()?.actions ?? []);
+  protected readonly isPermissionAdmin = computed(() => this.actions().includes('permissions.admin'));
   protected readonly canManage = computed(() => this.actions().some((a) => a === 'audit.manage' || a === 'permissions.admin'));
   protected readonly canExport = computed(() => this.actions().some((a) => a === 'audit.export' || a === 'permissions.admin'));
   /** The chain export carries unredacted entries, so it is for permission administrators only. */
