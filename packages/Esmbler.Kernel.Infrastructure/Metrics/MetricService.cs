@@ -148,7 +148,7 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
     /// <summary>
     /// A figure as CSV (REQ-OPS-004): one row per bar or table row (or one row for an ungrouped figure) with its label,
     /// value and record count, evaluated for this viewer like the dashboard. Restricted figures are refused; the export
-    /// is audited. People only: AI agents cannot export.
+    /// is audited. Needs <c>records.export</c>; AI agents cannot export.
     /// </summary>
     public Task<string> ExportCsvAsync(RequestContext ctx, string metricId, string? timeZone, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
@@ -160,7 +160,12 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 
             var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
             var metric = artifact.Config.FindMetric(metricId) ?? throw KernelException.NotFound($"Metric '{metricId}'");
-            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
+            if (!perms.Can(PlatformActions.RecordsExport))
+            {
+                throw new KernelException("forbidden", "Exporting figures needs the records.export right.", 403, null, "Ask an administrator to export it, or to grant your role records.export.");
+            }
+
             var result = await EvaluateAsync(await OpenAsync(db, ct), artifact.Config, artifact.Revision, perms, metric, timeZone, ct);
             if (result.Status == "restricted")
             {

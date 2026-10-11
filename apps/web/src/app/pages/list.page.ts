@@ -101,7 +101,9 @@ interface Drill {
             @for (f of groupOptions(); track f.key) { <option [value]="f.key">Group: {{ f.label }}</option> }
           </select>
         }
-        <button class="btn btn-sm" [disabled]="exporting()" (click)="exportCsv()" title="Download the records in this list as CSV (up to 10,000)"><esm-icon name="download" [size]="14" /> Export</button>
+        @if (session.canExport()) {
+          <button class="btn btn-sm" [disabled]="exporting()" (click)="exportCsv()" title="Download the records in this list as CSV (up to 10,000)"><esm-icon name="download" [size]="14" /> Export</button>
+        }
         @if (allColumns().length > 1) {
           <details class="columns-menu relative" #columnsMenu>
             <summary class="btn btn-sm"><esm-icon name="columns" [size]="14" /> Columns</summary>
@@ -239,7 +241,7 @@ export class ListPage {
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
   private readonly toasts = inject(Toasts);
-  private readonly session = inject(Session);
+  protected readonly session = inject(Session);
   private readonly builder = inject(BuilderState);
   private readonly explorer = inject(ExplorerState);
   protected readonly directory = inject(Directory);

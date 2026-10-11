@@ -15,7 +15,8 @@ namespace Esmbler.Kernel.Infrastructure.Records;
 /// <summary>
 /// CSV export of explorer results (REQ-OPS-004): the same WHERE clause and order as the list
 /// (<see cref="QueryCompiler.Compile"/>), so the file holds exactly the records the explorer counts for this viewer, at
-/// most <see cref="QueryCompiler.MaxCount"/>, with only the fields the viewer can see.
+/// most <see cref="QueryCompiler.MaxCount"/>, with only the fields the viewer can see. Needs the <c>records.export</c>
+/// action, which agents never have.
 /// </summary>
 public sealed partial class RecordService
 {
@@ -31,10 +32,17 @@ public sealed partial class RecordService
                 throw new KernelException("agent_not_allowed", "AI agents cannot export records.", 403, null, "Export the list yourself from the explorer.");
             }
 
-            var (artifact, entity, perms) = await PrepareAsync(db, ctx, query.Entity, null, ct);
+            var (artifact, entity, _) = await PrepareAsync(db, ctx, query.Entity, null, ct);
+            var perms = await access.ForAsync(db, ctx, artifact.Config, ct, fresh: true);
             if (perms.Entity(entity.Id).Read == RecordScopes.None)
             {
                 throw KernelException.NotFound($"Entity '{query.Entity}'");
+            }
+
+            // Exporting data is an action of its own (master spec: action-level permissions), not implied by reading.
+            if (!perms.Can(PlatformActions.RecordsExport))
+            {
+                throw new KernelException("forbidden", "Exporting records needs the records.export right.", 403, null, "Ask an administrator to export the list, or to grant your role records.export.");
             }
 
             // Compiling here refuses bad or hidden-field filters before anything is recorded.

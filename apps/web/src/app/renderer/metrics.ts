@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Api, ApiError, saveBlob } from '../core/api';
 import { drillCommands, drillParams, formatMetric } from '../core/drill';
 import { MetricBucket, MetricResult, NodeSpec } from '../core/models';
+import { Session } from '../core/session';
 import { Toasts } from '../core/toast';
 import { Icon } from '../ui/icon';
 
@@ -165,7 +166,7 @@ export class MetricExport {
         @if (m?.preview) { <span class="badge tone-gray">Preview</span> }
         @if (m?.status === 'ok' && max() > 0) {
           <button class="btn btn-ghost btn-sm" [attr.aria-pressed]="table()" (click)="showTable.set(!table())">{{ table() ? 'Hide table' : 'Show table' }}</button>
-          @if (!m?.preview) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
+          @if (!m?.preview && session?.canExport()) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
         }
       </header>
       @if (!m) {
@@ -251,6 +252,7 @@ export class MetricExport {
 })
 export class BarChart {
   readonly node = input.required<NodeSpec>();
+  protected readonly session = inject(Session, { optional: true });
   protected readonly ctx = inject(MetricsContext, { optional: true });
   protected readonly metric = computed(() => this.ctx?.result(this.node().props['metric']));
   protected readonly vertical = computed(() => this.node().props['orientation'] === 'vertical');
@@ -290,7 +292,7 @@ function figure(m: MetricResult, b: MetricBucket): number {
     <section class="chart-card" [attr.aria-labelledby]="node().id + '-t'">
       <header class="flex items-center gap-2">
         <h3 [id]="node().id + '-t'" class="flex-1">{{ node().props['title'] ?? m?.label ?? 'Table' }} @if (m?.preview) { <span class="badge tone-gray">Preview</span> }</h3>
-        @if (m?.status === 'ok' && !m?.preview && m?.buckets?.length) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
+        @if (m?.status === 'ok' && !m?.preview && m?.buckets?.length && session?.canExport()) { <esm-metric-export [metric]="m!.id" [label]="m!.label" /> }
       </header>
       @if (!m) {
         <p class="muted state">{{ ctx?.loading() ? 'Loading…' : 'No data.' }}</p>
@@ -313,6 +315,7 @@ function figure(m: MetricResult, b: MetricBucket): number {
 })
 export class MetricTable {
   readonly node = input.required<NodeSpec>();
+  protected readonly session = inject(Session, { optional: true });
   protected readonly ctx = inject(MetricsContext, { optional: true });
   protected readonly metric = computed(() => this.ctx?.result(this.node().props['metric']));
 }

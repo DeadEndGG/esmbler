@@ -11,6 +11,8 @@ export class Session {
 
   readonly app = signal<AppBootstrap | null>(null);
   readonly canCustomize = computed(() => this.app()?.actions.includes('config.edit') ?? false);
+  /** Exporting lists and figures is its own right (records.export); the server checks it again. */
+  readonly canExport = computed(() => this.app()?.actions.includes('records.export') ?? false);
   readonly canPublish = computed(() => this.app()?.actions.includes('config.publish') ?? false);
   readonly canManageModules = computed(() => this.app()?.actions.includes('modules.manage') ?? false);
   readonly isAdmin = computed(() => this.app()?.actions.includes('permissions.admin') ?? false);
