@@ -56,11 +56,17 @@ const KINDS: Record<string, string> = { 'display.kpi_tile': 'Number', 'display.b
         <ol class="mb-4 grid gap-2" aria-label="Rows">
           @for (r of o.rows; track r.id; let i = $index) {
             <li class="rounded-md border border-subtle p-3">
-              <div class="mb-2 text-caption text-muted">Row {{ i + 1 }} · {{ r.tiles.length }} of 4 tiles</div>
+              <div class="mb-2 flex items-center gap-1 text-caption text-muted">
+                <span class="flex-1">Row {{ i + 1 }} · {{ r.tiles.length }} of 4 tiles</span>
+                <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Move row ' + (i + 1) + ' up'" title="Move up" [disabled]="busy() || i === 0" (click)="move(r.id, -1)"><esm-icon name="arrow-up" [size]="13" /></button>
+                <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Move row ' + (i + 1) + ' down'" title="Move down" [disabled]="busy() || i === o.rows.length - 1" (click)="move(r.id, 1)"><esm-icon name="arrow-down" [size]="13" /></button>
+              </div>
               <ul class="flex flex-wrap gap-2" role="list">
-                @for (t of r.tiles; track t.id) {
+                @for (t of r.tiles; track t.id; let first = $first; let last = $last) {
                   <li class="chip flex items-center gap-1.5">
+                    <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Move ' + tileLabel(t) + ' left'" title="Move left" [disabled]="busy() || first" (click)="move(t.id, -1)"><esm-icon name="arrow-left" [size]="13" /></button>
                     <span>{{ tileLabel(t) }}</span>
+                    <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Move ' + tileLabel(t) + ' right'" title="Move right" [disabled]="busy() || last" (click)="move(t.id, 1)"><esm-icon name="arrow-right" [size]="13" /></button>
                     <button class="btn btn-ghost btn-sm btn-icon" [attr.aria-label]="'Remove ' + tileLabel(t)" title="Remove" [disabled]="busy()" (click)="removeTile(t.id)"><esm-icon name="x" [size]="13" /></button>
                   </li>
                 }
@@ -198,6 +204,11 @@ export class DashboardBuilder {
       this.newLabel.set('');
       this.toasts.show('Tile added to your draft.', 'success');
     });
+  }
+
+  /** Moves a tile left or right in its row, or a row up or down, one place (keyboard reachable). */
+  protected async move(node: string, delta: -1 | 1): Promise<void> {
+    await this.run((version) => this.api.post(`/api/drafts/current/dashboards/${this.view()}/nodes/${node}/move`, { delta, expectedVersion: version }));
   }
 
   protected async removeTile(tile: string): Promise<void> {

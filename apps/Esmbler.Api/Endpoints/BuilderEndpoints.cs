@@ -24,6 +24,8 @@ public sealed record SimulateRequest(JsonObject Data);
 
 public sealed record NewDashboardRequest(string Label, string Entity, int ExpectedVersion);
 
+public sealed record MoveRequest(int Delta, int ExpectedVersion);
+
 /// <summary>Builder API: drafts, live previews, publish, rollback, upgrades. The same Commands the MCP tools write.</summary>
 public static class BuilderEndpoints
 {
@@ -56,6 +58,9 @@ public static class BuilderEndpoints
         });
         d.MapPost("/current/dashboards/{view}/tiles", (string view, DashboardTileRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.AddTileAsync(Ctx(u), view, body, ct));
         d.MapPost("/current/dashboards/{view}/tiles/{tile}/remove", (string view, string tile, VersionRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.RemoveTileAsync(Ctx(u), view, tile, body.ExpectedVersion, ct));
+        d.MapGet("/current/dashboards/{view}/data", (string view, string? tz, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.DataAsync(Ctx(u), view, tz, ct))
+            .RequireRateLimiting(LoginThrottle.QueryPolicy);
+        d.MapPost("/current/dashboards/{view}/nodes/{node}/move", (string view, string node, MoveRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.MoveAsync(Ctx(u), view, node, body.Delta, body.ExpectedVersion, ct));
         d.MapPost("/current/dashboards/{view}/remove", (string view, VersionRequest body, ClaimsPrincipal u, DashboardBuilderService builder, CancellationToken ct) => builder.RemoveAsync(Ctx(u), view, body.ExpectedVersion, ct));
         d.MapPost("/current/publish-requests", (ClaimsPrincipal u, PublishService publisher, CancellationToken ct) => publisher.RequestAsync(Ctx(u), ct));
 

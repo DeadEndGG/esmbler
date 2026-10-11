@@ -218,6 +218,25 @@ public class MetricSpecTests
     }
 
     [Fact]
+    public void Tiles_move_within_their_row_and_rows_within_the_dashboard()
+    {
+        // KI-068: reordering is node.move of a column or a row; spans stay even.
+        var base1 = Compile("1.10.0").Config;
+        var dashboard = base1.FindView("core.tickets.dashboard")!;
+        var kpis = dashboard.Layout.Find("core.tickets.dashboard.r_kpis")!;
+        var right = DashboardLayout.Move(dashboard, "core.tickets.dashboard.kpi_open", 1);
+        var moved = Compile("1.10.0", [.. right]);
+        Assert.True(moved.Succeeded, string.Join("\n", moved.Errors.Select(e => e.Message)));
+        Assert.Equal(["core.tickets.dashboard.c_unassigned", "core.tickets.dashboard.c_open"], moved.Config.FindView("core.tickets.dashboard")!.Layout.Find(kpis.Id)!.Children.Take(2).Select(c => c.Id));
+
+        var down = Compile("1.10.0", [.. DashboardLayout.Move(dashboard, "core.tickets.dashboard.r_kpis", 1)]);
+        Assert.Equal("core.tickets.dashboard.r_service", down.Config.FindView("core.tickets.dashboard")!.Layout.Children[0].Children[0].Id);
+        Assert.Equal("cannot_move", Assert.Throws<Kernel.KernelException>(() => DashboardLayout.Move(dashboard, "core.tickets.dashboard.kpi_open", -1)).Code);
+        Assert.Equal("invalid_move", Assert.Throws<Kernel.KernelException>(() => DashboardLayout.Move(dashboard, "core.tickets.dashboard.s_main", 1)).Code);
+        Assert.Equal("invalid_move", Assert.Throws<Kernel.KernelException>(() => DashboardLayout.Move(dashboard, "core.tickets.dashboard.kpi_open", 2)).Code);
+    }
+
+    [Fact]
     public void Module_dashboards_cannot_be_removed()
     {
         Assert.Contains(Compile("1.10.0", new RemoveView { View = "core.tickets.dashboard" }).Errors, e => e.Code == "overlay.base_immutable");

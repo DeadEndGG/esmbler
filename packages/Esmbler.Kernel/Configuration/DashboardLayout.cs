@@ -117,6 +117,39 @@ public static class DashboardLayout
         return [new RemoveNode { View = view.Id, Node = column.Id }, .. rest.Select((c, i) => Respan(view.Id, c, spans[i]))];
     }
 
+    /// <summary>
+    /// Moves a tile one place left (<paramref name="delta"/> -1) or right (+1) in its row, or a row one place up or down
+    /// in its section. Spans stay as they are: a row's columns are always even.
+    /// </summary>
+    public static IReadOnlyList<OverlayOp> Move(ViewSpec view, string nodeId, int delta)
+    {
+        RequireDashboard(view);
+        if (delta is not (-1 or 1))
+        {
+            throw new KernelException("invalid_move", "Move one place at a time (-1 or 1).", 400, "delta");
+        }
+
+        var node = view.Layout.Find(nodeId) ?? throw new KernelException("invalid_tile", $"'{nodeId}' is not part of {view.Label}.", 400, "node");
+        // A tile moves with its column inside the row; a row moves inside its section.
+        var moving = node.Type.StartsWith("display.", StringComparison.Ordinal) && Parent(view.Layout, node.Id) is { Type: "layout.column" } column ? column : node;
+        var container = Parent(view.Layout, moving.Id);
+        if (container is null || (moving.Type, container.Type) is not (("layout.column", "layout.row") or ("layout.row", "layout.section")))
+        {
+            throw new KernelException("invalid_move", $"'{nodeId}' is not a tile or a row of {view.Label}.", 400, "node");
+        }
+
+        var index = container.Children.FindIndex(c => c.Id == moving.Id);
+        var target = index + delta;
+        if (target < 0 || target >= container.Children.Count)
+        {
+            throw new KernelException("cannot_move", delta < 0 ? "It is already first." : "It is already last.", 400, "delta");
+        }
+
+        var others = container.Children.Where(c => c.Id != moving.Id).ToList();
+        var anchor = target == 0 ? new Anchor { Before = others[0].Id } : new Anchor { After = others[target - 1].Id };
+        return [new MoveNode { View = view.Id, Node = moving.Id, Parent = container.Id, Anchor = anchor }];
+    }
+
     /// <summary>Even spans that add up to 12: 12, 6/6, 4/4/4, 3/3/3/3.</summary>
     public static int[] Spans(int columns) => columns switch
     {

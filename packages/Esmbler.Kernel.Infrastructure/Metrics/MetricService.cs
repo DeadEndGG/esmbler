@@ -82,11 +82,33 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
     public static readonly TimeSpan RequestBudget = TimeSpan.FromSeconds(8);
 
     public Task<DashboardData> DashboardAsync(RequestContext ctx, string viewId, string? timeZone, CancellationToken ct) =>
+        DashboardCoreAsync(ctx, viewId, timeZone, null, 0, ct);
+
+    /// <summary>
+    /// Figures of a dashboard as the open draft defines it (the dashboard builder's edit mode, KI-068): the draft's layout
+    /// and metrics, evaluated over real records for the builder exactly as published figures are, so new tiles show their
+    /// values before publishing. The caller passes the compiled draft configuration; permissions come from it too.
+    /// </summary>
+    public Task<DashboardData> DraftDashboardAsync(RequestContext ctx, EffectiveConfig draft, int draftVersion, string viewId, string? timeZone, CancellationToken ct) =>
+        DashboardCoreAsync(ctx, viewId, timeZone, draft, draftVersion, ct);
+
+    private Task<DashboardData> DashboardCoreAsync(RequestContext ctx, string viewId, string? timeZone, EffectiveConfig? draft, int draftVersion, CancellationToken ct) =>
         database.InTenantAsync(ctx.TenantId, ctx.EnvironmentId, ctx.PrincipalId, async db =>
         {
-            var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
-            var view = artifact.Config.FindView(viewId);
-            var perms = await access.ForAsync(db, ctx, artifact.Config, ct);
+            EffectiveConfig config;
+            int revision;
+            if (draft is null)
+            {
+                var artifact = await configs.GetActiveAsync(db, ctx.TenantId, ctx.EnvironmentId, ct);
+                (config, revision) = (artifact.Config, artifact.Revision);
+            }
+            else
+            {
+                (config, revision) = (draft, draftVersion);
+            }
+
+            var view = config.FindView(viewId);
+            var perms = await access.ForAsync(db, ctx, config, ct);
             if (view is null || view.Kind != ViewKinds.Dashboard || perms.Entity(view.Entity).Read == RecordScopes.None)
             {
                 throw KernelException.NotFound($"Dashboard '{viewId}'");
@@ -98,16 +120,16 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
             foreach (var id in ids)
             {
                 // Figures the viewer may not see are left out entirely (their tiles are pruned from the view too).
-                if (artifact.Config.FindMetric(id) is { } metric && artifact.Config.FindEntity(metric.Entity) is { } entity && !Restricted(artifact.Config, perms, entity, metric))
+                if (config.FindMetric(id) is { } metric && config.FindEntity(metric.Entity) is { } entity && !Restricted(config, perms, entity, metric))
                 {
-                    results.Add(await EvaluateAsync(session, artifact.Config, artifact.Revision, perms, metric, timeZone, ct));
+                    results.Add(await EvaluateAsync(session, config, revision, perms, metric, timeZone, ct));
                 }
             }
 
             // An empty workspace (for this viewer) gets labeled preview figures instead of a wall of zeros (REQ-WS-006).
-            if (results.Count > 0 && results.All(r => r.Status == "ok" && r.Count == 0) && artifact.Config.FindEntity(view.Entity) is { } viewEntity)
+            if (results.Count > 0 && results.All(r => r.Status == "ok" && r.Count == 0) && config.FindEntity(view.Entity) is { } viewEntity)
             {
-                var cfg = artifact.Config;
+                var cfg = config;
                 var q = new QueryCompiler.Ctx(cfg, viewEntity, perms);
                 var where = QueryCompiler.Where(new RecordQuery { Entity = viewEntity.Id }, cfg, viewEntity, perms, q);
                 bool any;
@@ -128,12 +150,12 @@ public sealed class MetricService(Persistence.Database database, ConfigStore con
 
                 if (!any)
                 {
-                    var previews = results.Select(r => Preview(cfg, cfg.FindMetric(r.Id)!, timeZone, artifact.Revision)).ToList();
-                    return new DashboardData(view.Id, artifact.Revision, previews, Empty: true);
+                    var previews = results.Select(r => Preview(cfg, cfg.FindMetric(r.Id)!, timeZone, revision)).ToList();
+                    return new DashboardData(view.Id, revision, previews, Empty: true);
                 }
             }
 
-            return new DashboardData(view.Id, artifact.Revision, results);
+            return new DashboardData(view.Id, revision, results);
         }, ct);
 
     public Task<MetricResult> EvaluateAsync(RequestContext ctx, string metricId, string? timeZone, CancellationToken ct) =>

@@ -104,7 +104,7 @@ export class DashboardPage {
       untracked(() => void (editing ? this.loadDraft(view) : this.load(view)));
     });
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void this.loadData(this.view(), this.editing());
+      if (document.visibilityState === 'visible') void (this.editing() ? this.loadDraftData(this.view()) : this.loadData(this.view()));
     }, REFRESH_MS);
     inject(DestroyRef).onDestroy(() => clearInterval(timer));
   }
@@ -118,7 +118,7 @@ export class DashboardPage {
   }
 
   protected reloadDraft(): void {
-    void this.loadDraft(this.view(), false);
+    void this.loadDraft(this.view());
   }
 
   /** The draft's layout of this dashboard; figures are the published ones (a new dashboard has none until published). */
@@ -130,7 +130,24 @@ export class DashboardPage {
     } catch (e) {
       this.error.set(e instanceof ApiError && e.status === 404 ? 'This dashboard is not in your draft.' : 'Could not load the draft of this dashboard.');
     }
-    if (data) await this.loadData(view, true);
+    if (data) await this.loadDraftData(view);
+  }
+
+  /** Figures of the draft layout (new tiles included), for the builder in edit mode. */
+  private async loadDraftData(view: string): Promise<void> {
+    const seq = ++this.seq;
+    this.metrics.loading.set(true);
+    try {
+      const data = await this.api.get<DashboardData>(`/api/drafts/current/dashboards/${view}/data`, { tz: viewerTimeZone() });
+      if (seq !== this.seq) return;
+      this.metrics.results.set(new Map<string, MetricResult>(data.metrics.map((m) => [m.id, m])));
+      this.empty.set(!!data.empty);
+      this.loadedAt.set(new Date());
+    } catch {
+      // Figures are a convenience while editing; the layout still renders.
+    } finally {
+      if (seq === this.seq) this.metrics.loading.set(false);
+    }
   }
 
   private async load(view: string): Promise<void> {

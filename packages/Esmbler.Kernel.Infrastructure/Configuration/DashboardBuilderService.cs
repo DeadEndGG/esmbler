@@ -26,7 +26,7 @@ public sealed record DashboardTileRequest(string Kind, string? Metric, string? R
 /// is a draft change set (one batch), reviewed and published like any other; nothing here bypasses the draft. The web
 /// builder records its changes as source <c>ui</c>; the MCP tools that reuse <see cref="CreateAsync"/> pass <c>mcp</c>.
 /// </summary>
-public sealed class DashboardBuilderService(PreviewService preview, DraftService drafts)
+public sealed class DashboardBuilderService(PreviewService preview, DraftService drafts, Metrics.MetricService metrics)
 {
     public async Task<DashboardOptions> OptionsAsync(RequestContext ctx, string viewId, CancellationToken ct)
     {
@@ -119,6 +119,20 @@ public sealed class DashboardBuilderService(PreviewService preview, DraftService
     {
         var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, ct);
         return await drafts.ApplyBatchAsync(ctx, DashboardLayout.RemoveTile(Dashboard(config, viewId), tileId), expectedVersion, "ui", ct);
+    }
+
+    /// <summary>The draft dashboard's figures for the builder (edit mode), evaluated like published ones under their permissions.</summary>
+    public async Task<Metrics.DashboardData> DataAsync(RequestContext ctx, string viewId, string? timeZone, CancellationToken ct)
+    {
+        var (config, _, draftVersion, _) = await preview.WorkingConfigAsync(ctx, ct);
+        return await metrics.DraftDashboardAsync(ctx, config, draftVersion ?? 0, Dashboard(config, viewId).Id, timeZone, ct);
+    }
+
+    /// <summary>Moves a tile left or right in its row, or a row up or down (KI-068).</summary>
+    public async Task<BatchResult> MoveAsync(RequestContext ctx, string viewId, string nodeId, int delta, int expectedVersion, CancellationToken ct)
+    {
+        var (config, _, _, _) = await preview.WorkingConfigAsync(ctx, ct);
+        return await drafts.ApplyBatchAsync(ctx, DashboardLayout.Move(Dashboard(config, viewId), nodeId, delta), expectedVersion, "ui", ct);
     }
 
     public async Task<BatchResult> RemoveAsync(RequestContext ctx, string viewId, int expectedVersion, CancellationToken ct)

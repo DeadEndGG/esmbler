@@ -55,13 +55,26 @@ public class DashboardBuilderTests(PlatformFixture f)
         var (config, _, _, _) = await f.Get<PreviewService>().WorkingConfigAsync(admin, default);
         Assert.Equal([6, 6], config.FindView(view)!.Layout.Find(kpiRow)!.Children.Select(c => (int)c.Props["span"]!));
 
-        // Wrong kinds and full rows are refused with a fix.
+        // KI-068: the draft's figures show while editing, before anything is published; tiles move within their row.
         var vendorMetric = rows[0].Tiles[0].Metric!;
+        var draftData = await Builder.DataAsync(admin, view, "UTC", default);
+        Assert.Contains(draftData.Metrics, m => m.Id == vendorMetric && m.Status == "ok");
+        Assert.Equal(404, (await Assert.ThrowsAsync<KernelException>(() => f.Get<MetricService>().DashboardAsync(admin, view, "UTC", default))).Status);
+        var firstKpi = rows[1].Tiles[0].Id;
+        v = (await Builder.MoveAsync(admin, view, firstKpi, 1, v, default)).Version;
+        Assert.Equal(firstKpi, (await Builder.OptionsAsync(admin, view, default)).Rows[1].Tiles[1].Id);
+        v = (await Builder.MoveAsync(admin, view, kpiRow, -1, v, default)).Version;
+        Assert.Equal(kpiRow, (await Builder.OptionsAsync(admin, view, default)).Rows[0].Id);
+        Assert.Equal(403, (await Assert.ThrowsAsync<KernelException>(() => Builder.MoveAsync(f.As(t, "agent"), view, kpiRow, 1, v, default))).Status);
+        rows = (await Builder.OptionsAsync(admin, view, default)).Rows;
+        kpiRow = rows[0].Id;
+
+        // Wrong kinds and full rows are refused with a fix.
         Assert.Contains("grouped", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, view, new DashboardTileRequest("kpi", vendorMetric, null, null, null, null, false, v), default))).Message, StringComparison.Ordinal);
         Assert.Equal("invalid_group", (await Assert.ThrowsAsync<KernelException>(() => Builder.AddTileAsync(admin, view, new DashboardTileRequest("bar", null, null, null, "By title", "title", false, v), default))).Code);
 
         // Removing one KPI re-spans the row; publishing makes the dashboard visible with figures that drill.
-        v = (await Builder.RemoveTileAsync(admin, view, rows[1].Tiles[1].Id, v, default)).Version;
+        v = (await Builder.RemoveTileAsync(admin, view, rows[0].Tiles[1].Id, v, default)).Version;
         (config, _, _, _) = await f.Get<PreviewService>().WorkingConfigAsync(admin, default);
         Assert.Equal([12], config.FindView(view)!.Layout.Find(kpiRow)!.Children.Select(c => (int)c.Props["span"]!));
         var state = await drafts.CurrentAsync(admin, default);
