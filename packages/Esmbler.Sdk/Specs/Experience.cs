@@ -97,7 +97,19 @@ public static class PlatformActions
     /// <summary>Channel instances, delivery inspection, replay and test sends (ADR 0021); implied by permissions.admin.</summary>
     public const string NotificationsManage = "notifications.manage";
 
-    public static IReadOnlyList<string> All { get; } = [ConfigEdit, ConfigPublish, PermissionsAdmin, AuditRead, RecordsExport, ModulesManage, NotificationsManage];
+    /// <summary>See every alert of the environment and acknowledge, resolve and assign them (ADR 0022).</summary>
+    public const string AlertsRespond = "alerts.respond";
+
+    /// <summary>Maintenance windows that silence alerts; implies alerts.respond.</summary>
+    public const string AlertsManage = "alerts.manage";
+
+    /// <summary>Download the audit log (ADR 0022).</summary>
+    public const string AuditExport = "audit.export";
+
+    /// <summary>Audit retention and legal holds (ADR 0022).</summary>
+    public const string AuditManage = "audit.manage";
+
+    public static IReadOnlyList<string> All { get; } = [ConfigEdit, ConfigPublish, PermissionsAdmin, AuditRead, RecordsExport, ModulesManage, NotificationsManage, AlertsRespond, AlertsManage, AuditExport, AuditManage];
 }
 
 public sealed class PermissionSetSpec

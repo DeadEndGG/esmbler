@@ -1904,6 +1904,106 @@
           "template"
         ]
       }
+    },
+    "alertRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "minSeverity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dedupKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "owner": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "ref"
+            ]
+          },
+          "escalation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "afterMinutes": {
+                  "type": "integer"
+                },
+                "unlessAcknowledged": {
+                  "type": "boolean"
+                },
+                "repeatEveryMinutes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "resolveOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reopenWithinMinutes": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "trigger",
+          "title"
+        ]
+      }
     }
   },
   "required": [

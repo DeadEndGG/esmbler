@@ -84,4 +84,11 @@ public static class EventTypes
     public const string ApprovalApproved = "platform.approval.approved";
     public const string ApprovalRejected = "platform.approval.rejected";
     public const string ApprovalCancelled = "platform.approval.cancelled";
+
+    // Alerts (ADR 0022): the alert service publishes; notification routes subscribe.
+    public const string AlertOpened = "platform.alert.opened";
+    public const string AlertAcknowledged = "platform.alert.acknowledged";
+    public const string AlertEscalated = "platform.alert.escalated";
+    public const string AlertAssigned = "platform.alert.assigned";
+    public const string AlertResolved = "platform.alert.resolved";
 }

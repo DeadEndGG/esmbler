@@ -59,6 +59,9 @@ namespace Esmbler.Sdk.Overlay;
 [JsonDerivedType(typeof(AddNotificationRoute), "notification_route.add")]
 [JsonDerivedType(typeof(UpdateNotificationRoute), "notification_route.update")]
 [JsonDerivedType(typeof(RemoveNotificationRoute), "notification_route.remove")]
+[JsonDerivedType(typeof(AddAlertRule), "alert_rule.add")]
+[JsonDerivedType(typeof(UpdateAlertRule), "alert_rule.update")]
+[JsonDerivedType(typeof(RemoveAlertRule), "alert_rule.remove")]
 public abstract class OverlayOp
 {
     /// <summary>Human-readable one-line summary for chat steps, diffs, and audit.</summary>
@@ -962,4 +965,68 @@ public sealed class RemoveNotificationRoute : OverlayOp
     public override string Describe() => $"Remove notification route {Route}";
 
     public override IEnumerable<string> Targets() => [Route];
+}
+
+/// <summary>Adds a tenant alert rule (ADR 0022).</summary>
+public sealed class AddAlertRule : OverlayOp
+{
+    public required AlertRuleSpec Rule { get; set; }
+
+    public override string Describe() => $"Add alert rule \"{Rule.Label}\" on {Rule.Trigger}";
+
+    public override IEnumerable<string> Targets() => [Rule.Id];
+}
+
+/// <summary>
+/// Changes an alert rule. Module rules keep their trigger and deduplication key; everything else may change. Silencing a
+/// rule behind a mandatory alert route is caught as a permission change at publish (<c>PermissionDiff</c>).
+/// </summary>
+public sealed class UpdateAlertRule : OverlayOp
+{
+    public required string Rule { get; set; }
+
+    public required AlertRulePatch Set { get; set; }
+
+    public JsonObject? Expected { get; set; }
+
+    public override string Describe() => $"Change alert rule {Rule}: {string.Join(", ", SpecJson.ToNode(Set)!.AsObject().Select(p => p.Key))}";
+
+    public override IEnumerable<string> Targets() => [Rule];
+}
+
+public sealed class AlertRulePatch
+{
+    public string? Label { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Trigger { get; set; }
+
+    public string? MinSeverity { get; set; }
+
+    public string? Severity { get; set; }
+
+    public string? DedupKey { get; set; }
+
+    public string? Title { get; set; }
+
+    public AlertOwnerSpec? Owner { get; set; }
+
+    public List<AlertEscalationStepSpec>? Escalation { get; set; }
+
+    public List<string>? ResolveOn { get; set; }
+
+    public int? ReopenWithinMinutes { get; set; }
+
+    public bool? Enabled { get; set; }
+}
+
+/// <summary>Removes a tenant alert rule. Its open alerts stay and are resolved by people.</summary>
+public sealed class RemoveAlertRule : OverlayOp
+{
+    public required string Rule { get; set; }
+
+    public override string Describe() => $"Remove alert rule {Rule}";
+
+    public override IEnumerable<string> Targets() => [Rule];
 }

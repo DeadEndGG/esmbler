@@ -179,7 +179,33 @@ public sealed class ConfigCompiler(ConfigValidator validator)
             profile = profile is null ? null : new { profile.Channels, profile.Delivery, profile.MinSeverity, profile.Enabled },
             rules,
             transitions,
+            alertRules = AlertReach(config, type),
         })!;
+    }
+
+    /// <summary>
+    /// For routes on alert events (ADR 0022): the alert rules that raise them and their triggers, so silencing a rule behind
+    /// a mandatory or external alert route is a permission change too.
+    /// </summary>
+    private static object? AlertReach(EffectiveConfig config, string? type)
+    {
+        if (type is null || !type.StartsWith("platform.alert.", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return config.AlertRules.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new
+        {
+            r.Id,
+            r.Enabled,
+            r.Trigger,
+            r.MinSeverity,
+            r.Severity,
+            r.Escalation,
+            r.ResolveOn,
+            r.Owner,
+            triggerSubscription = config.FindSubscription(r.Trigger) is { } t ? new { t.Event, t.When, t.Enabled } : null,
+        }).ToList();
     }
 
     /// <summary>Who must approve a request (ADR 0016): an item's policy, or the stages of a policy an item uses.</summary>

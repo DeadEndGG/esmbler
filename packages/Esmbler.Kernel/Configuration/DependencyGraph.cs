@@ -371,6 +371,32 @@ public sealed partial class DependencyGraph
             }
         }
 
+        foreach (var rule in config.AlertRules)
+        {
+            g.Add(rule.Id, rule.Trigger, "alert_trigger");
+            foreach (var resolver in rule.ResolveOn)
+            {
+                g.Add(rule.Id, resolver, "alert_resolve_on");
+            }
+
+            var entity = config.FindSubscription(rule.Trigger) is { } s ? s.Entity ?? config.FindEventType(s.Event)?.SubjectEntity : null;
+            if (entity is null)
+            {
+                continue;
+            }
+
+            g.AddExpression(rule.Id, entity, rule.DedupKey, "alert_key");
+            foreach (Match m in PlaceholderRegex().Matches(rule.Title))
+            {
+                g.Add(rule.Id, $"{entity}/{m.Groups[1].Value}", "alert_title_field");
+            }
+
+            if (rule.Owner is { Kind: AlertOwnerKinds.Field } owner)
+            {
+                g.Add(rule.Id, $"{entity}/{owner.Ref}", "alert_owner_field");
+            }
+        }
+
         return g;
     }
 

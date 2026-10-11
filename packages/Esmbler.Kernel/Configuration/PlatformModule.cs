@@ -63,7 +63,26 @@ public sealed class PlatformModule : IModuleDefinition
             new EventTypeSpec { Id = Sdk.Events.EventTypes.SlaWarning, Label = "SLA at risk", Description = "An SLA target reached its warning threshold while running (ADR 0018).", Severity = EventSeverities.Medium, Fields = SlaFields() },
             new EventTypeSpec { Id = Sdk.Events.EventTypes.SlaBreached, Label = "SLA breached", Description = "An SLA target passed its goal; the breach is recorded and stays recorded (ADR 0018).", Severity = EventSeverities.High, Fields = SlaFields() },
             new EventTypeSpec { Id = Sdk.Events.EventTypes.ApprovalCancelled, Label = "Approval cancelled", Description = "A pending approval ended because its request was cancelled.", Fields = new() { ["policy"] = Text("Approval policy ID.", required: true) } },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.AlertOpened, Label = "Alert opened", Description = "An alert rule opened an alert, or reopened one within its cool-down (ADR 0022).", Severity = EventSeverities.High, Category = "operational", Fields = AlertFields() },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.AlertAcknowledged, Label = "Alert acknowledged", Description = "Someone took an alert; escalation steps that wait for acknowledgment stop.", Category = "operational", Fields = AlertFields() },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.AlertEscalated, Label = "Alert escalated", Description = "An alert reached its next escalation level (event.level).", Severity = EventSeverities.High, Category = "operational", Fields = AlertFields() },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.AlertAssigned, Label = "Alert assigned", Description = "An alert was assigned to a person.", Category = "operational", Fields = AlertFields() },
+            new EventTypeSpec { Id = Sdk.Events.EventTypes.AlertResolved, Label = "Alert resolved", Description = "An alert was resolved by a person or by a resolving event (event.resolution).", Category = "operational", Fields = AlertFields() },
         ];
+
+    private static Dictionary<string, EventFieldSpec> AlertFields() => new()
+    {
+        ["alert"] = Text("Alert ID.", required: true),
+        ["rule"] = Text("Alert rule ID.", required: true),
+        ["title"] = Text("Alert title."),
+        ["severity"] = Text("Alert severity."),
+        ["level"] = new() { Type = EventFieldTypes.Number, Description = "Escalation level (1 when opened)." },
+        ["occurrences"] = new() { Type = EventFieldTypes.Number, Description = "Matches counted on this alert." },
+        ["owner_group"] = Text("Owner group key."),
+        ["assignee"] = Text("Assigned person (principal ID)."),
+        ["reopened"] = new() { Type = EventFieldTypes.Boolean, Description = "Reopened within the cool-down." },
+        ["resolution"] = Text("manual or auto."),
+    };
 
     public const string InAppProfile = "core.platform.profile.in_app";
     public const string InAppEmailProfile = "core.platform.profile.in_app_email";

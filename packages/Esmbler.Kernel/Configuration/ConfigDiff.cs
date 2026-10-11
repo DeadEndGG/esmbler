@@ -35,6 +35,7 @@ public static class ConfigDiff
         Diff(changes, "subscription", before.Subscriptions, after.Subscriptions, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
         Diff(changes, "notification_profile", before.NotificationProfiles, after.NotificationProfiles, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
         Diff(changes, "notification_route", before.NotificationRoutes, after.NotificationRoutes, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
+        Diff(changes, "alert_rule", before.AlertRules, after.AlertRules, x => x.Id, x => x.Label, x => SpecJson.ToNode(x)!.AsObject());
         foreach (var view in after.Views)
         {
             var oldView = before.FindView(view.Id);

@@ -21,7 +21,7 @@ public sealed class SubscriptionSpec
     /// <summary>Optional condition over <c>event</c> (payload fields) and <c>record</c>.</summary>
     public string? When { get; set; }
 
-    /// <summary><c>notify</c> (alerts, automation and webhooks come later).</summary>
+    /// <summary><c>notify</c> (notification routes) or <c>alert</c> (alert rules); automation and webhooks come later.</summary>
     public string Target { get; set; } = SubscriptionTargets.Notify;
 
     public bool Enabled { get; set; } = true;
@@ -30,8 +30,9 @@ public sealed class SubscriptionSpec
 public static class SubscriptionTargets
 {
     public const string Notify = "notify";
+    public const string Alert = "alert";
 
-    public static IReadOnlyList<string> All { get; } = [Notify];
+    public static IReadOnlyList<string> All { get; } = [Notify, Alert];
 }
 
 /// <summary>How a route delivers: which channels, and which events are important enough.</summary>
@@ -101,7 +102,8 @@ public sealed class RecipientSpec
 {
     /// <summary>
     /// <c>field</c> (a user, group or email field of the record), <c>role</c>, <c>group</c> (key), <c>user</c> (principal ID),
-    /// <c>approvers</c> (the pending approvers of an approval event), or <c>address</c> (an external email address or phone number).
+    /// <c>approvers</c> (the pending approvers of an approval event), <c>alert_owner</c> (the owner group and assignee of the alert
+    /// a <c>platform.alert.*</c> event is about), or <c>address</c> (an external email address or phone number).
     /// </summary>
     public required string Kind { get; set; }
 
@@ -116,8 +118,9 @@ public static class RecipientKinds
     public const string User = "user";
     public const string Approvers = "approvers";
     public const string Address = "address";
+    public const string AlertOwner = "alert_owner";
 
-    public static IReadOnlyList<string> All { get; } = [Field, Role, Group, User, Approvers, Address];
+    public static IReadOnlyList<string> All { get; } = [Field, Role, Group, User, Approvers, AlertOwner, Address];
 
     /// <summary>Recipients outside the workspace: they only see the template's external fields.</summary>
     public static bool IsExternal(RecipientSpec r) => r.Kind == Address;

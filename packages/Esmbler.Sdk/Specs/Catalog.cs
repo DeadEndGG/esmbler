@@ -49,6 +49,9 @@ public class SpecCatalog
 
     public List<NotificationRouteSpec> NotificationRoutes { get; set; } = [];
 
+    /// <summary>Alert rules (ADR 0022).</summary>
+    public List<AlertRuleSpec> AlertRules { get; set; } = [];
+
     public EntitySpec? FindEntity(string id) => Entities.Find(e => e.Id == id);
 
     public SubscriptionSpec? FindSubscription(string id) => Subscriptions.Find(s => s.Id == id);
@@ -56,6 +59,8 @@ public class SpecCatalog
     public NotificationProfileSpec? FindNotificationProfile(string id) => NotificationProfiles.Find(p => p.Id == id);
 
     public NotificationRouteSpec? FindNotificationRoute(string id) => NotificationRoutes.Find(r => r.Id == id);
+
+    public AlertRuleSpec? FindAlertRule(string id) => AlertRules.Find(r => r.Id == id);
 
     public NotificationTemplateSpec? FindNotificationTemplate(string id) => NotificationTemplates.Find(t => t.Id == id);
 

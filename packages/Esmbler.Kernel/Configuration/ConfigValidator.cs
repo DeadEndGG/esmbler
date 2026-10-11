@@ -118,6 +118,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         }
 
         ValidateNotifications(config, d);
+        ValidateAlertRules(config, d);
         return d;
     }
 
@@ -139,6 +140,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         Check(config.Subscriptions.Select(s => s.Id), "subscription");
         Check(config.NotificationProfiles.Select(p => p.Id), "notification profile");
         Check(config.NotificationRoutes.Select(r => r.Id), "notification route");
+        Check(config.AlertRules.Select(r => r.Id), "alert rule");
         Check(config.ChoiceLists.Select(c => c.Id), "choice list");
         Check(config.Rules.Select(r => r.Id), "rule");
         Check(config.Views.Select(v => v.Id), "view");
@@ -792,7 +794,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
         bool Foreign(string id, out string module) =>
             (module = LayerModule(config, id)!) is not null && module != Composer.TenantLayer && module != PlatformModule.ModuleId && !id.StartsWith(module + ".", StringComparison.Ordinal);
 
-        foreach (var id in config.Subscriptions.Select(x => x.Id).Concat(config.NotificationTemplates.Select(x => x.Id)).Concat(config.NotificationProfiles.Select(x => x.Id)).Concat(config.NotificationRoutes.Select(x => x.Id)))
+        foreach (var id in config.Subscriptions.Select(x => x.Id).Concat(config.NotificationTemplates.Select(x => x.Id)).Concat(config.NotificationProfiles.Select(x => x.Id)).Concat(config.NotificationRoutes.Select(x => x.Id)).Concat(config.AlertRules.Select(x => x.Id)))
         {
             if (Foreign(id, out var module))
             {
@@ -800,18 +802,19 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
             }
         }
 
-        foreach (var route in config.NotificationRoutes)
+        foreach (var (elementId, uses) in config.NotificationRoutes.Select(r => (r.Id, new[] { r.Subscription, r.Template, r.Profile }))
+                     .Concat(config.AlertRules.Select(r => (r.Id, new[] { r.Trigger }.Concat(r.ResolveOn).ToArray()))))
         {
-            if (LayerModule(config, route.Id) is not { } owner || owner == Composer.TenantLayer || owner == PlatformModule.ModuleId)
+            if (LayerModule(config, elementId) is not { } owner || owner == Composer.TenantLayer || owner == PlatformModule.ModuleId)
             {
                 continue;
             }
 
-            foreach (var used in new[] { route.Subscription, route.Template, route.Profile })
+            foreach (var used in uses)
             {
                 if (LayerModule(config, used) is { } usedOwner && usedOwner != owner && usedOwner != PlatformModule.ModuleId && usedOwner != Composer.TenantLayer)
                 {
-                    d.Add(Diagnostic.Error("config.foreign_notification_element", $"Route '{route.Id}' of {owner} uses '{used}', which belongs to {usedOwner}.", route.Id, $"Use {owner}'s own or the platform's subscriptions, templates and profiles."));
+                    d.Add(Diagnostic.Error("config.foreign_notification_element", $"'{elementId}' of {owner} uses '{used}', which belongs to {usedOwner}.", elementId, $"Use {owner}'s own or the platform's subscriptions, templates and profiles."));
                 }
             }
         }
@@ -2048,6 +2051,10 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
             {
                 d.Add(Diagnostic.Error("config.not_found", $"Route '{route.Label}' uses unknown subscription '{route.Subscription}'.", route.Id, Expression.Suggest(route.Subscription, config.Subscriptions.Select(s => s.Id))));
             }
+            else if (sub.Target != SubscriptionTargets.Notify)
+            {
+                d.Add(Diagnostic.Error("config.bad_target", $"Route '{route.Label}' uses subscription '{sub.Label}', which targets {sub.Target}.", route.Id, "Use a subscription with target notify."));
+            }
 
             if (profile is null)
             {
@@ -2093,6 +2100,7 @@ public sealed partial class ConfigValidator(IElementRegistry registry, IPropsVal
                     RecipientKinds.Group => GroupKey().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not a group key",
                     RecipientKinds.User => Guid.TryParse(r.Ref, out _) ? null : $"'{r.Ref}' is not a person's ID",
                     RecipientKinds.Approvers => type?.Fields.ContainsKey("approval") == true || sub?.Event.StartsWith("platform.approval.", StringComparison.Ordinal) == true ? null : "approvers only exist for approval events",
+                    RecipientKinds.AlertOwner => sub?.Event.StartsWith("platform.alert.", StringComparison.Ordinal) == true ? null : "alert_owner only exists for alert events",
                     RecipientKinds.Address => EmailAddress().IsMatch(r.Ref) || PhoneNumber().IsMatch(r.Ref) ? null : $"'{r.Ref}' is not an email address or phone number (+ and digits)",
                     _ => $"kind '{r.Kind}' is unknown",
                 };

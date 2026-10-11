@@ -46,6 +46,46 @@
         }
       }
     },
+    "platform_alert_acknowledged": {
+      "address": "platform.alert.acknowledged",
+      "messages": {
+        "platform_alert_acknowledged": {
+          "$ref": "#/components/messages/platform_alert_acknowledged"
+        }
+      }
+    },
+    "platform_alert_assigned": {
+      "address": "platform.alert.assigned",
+      "messages": {
+        "platform_alert_assigned": {
+          "$ref": "#/components/messages/platform_alert_assigned"
+        }
+      }
+    },
+    "platform_alert_escalated": {
+      "address": "platform.alert.escalated",
+      "messages": {
+        "platform_alert_escalated": {
+          "$ref": "#/components/messages/platform_alert_escalated"
+        }
+      }
+    },
+    "platform_alert_opened": {
+      "address": "platform.alert.opened",
+      "messages": {
+        "platform_alert_opened": {
+          "$ref": "#/components/messages/platform_alert_opened"
+        }
+      }
+    },
+    "platform_alert_resolved": {
+      "address": "platform.alert.resolved",
+      "messages": {
+        "platform_alert_resolved": {
+          "$ref": "#/components/messages/platform_alert_resolved"
+        }
+      }
+    },
     "platform_approval_approved": {
       "address": "platform.approval.approved",
       "messages": {
@@ -170,6 +210,41 @@
         "$ref": "#/channels/core_tickets_ticket_resolved"
       },
       "summary": "core.tickets publishes ticket resolved."
+    },
+    "publish_platform_alert_acknowledged": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_alert_acknowledged"
+      },
+      "summary": "core.platform publishes alert acknowledged."
+    },
+    "publish_platform_alert_assigned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_alert_assigned"
+      },
+      "summary": "core.platform publishes alert assigned."
+    },
+    "publish_platform_alert_escalated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_alert_escalated"
+      },
+      "summary": "core.platform publishes alert escalated."
+    },
+    "publish_platform_alert_opened": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_alert_opened"
+      },
+      "summary": "core.platform publishes alert opened."
+    },
+    "publish_platform_alert_resolved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platform_alert_resolved"
+      },
+      "summary": "core.platform publishes alert resolved."
     },
     "publish_platform_approval_approved": {
       "action": "send",
@@ -596,6 +671,391 @@
         },
         "x-esmbler-source": "core.tickets",
         "x-esmbler-subject-entity": "core.tickets.ticket",
+        "x-esmbler-severity": "info",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_alert_acknowledged": {
+        "name": "platform.alert.acknowledged",
+        "title": "Alert acknowledged",
+        "summary": "Someone took an alert; escalation steps that wait for acknowledgment stop.",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.alert.acknowledged"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "alert": {
+                      "type": "string",
+                      "description": "Alert ID."
+                    },
+                    "rule": {
+                      "type": "string",
+                      "description": "Alert rule ID."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Alert title."
+                    },
+                    "severity": {
+                      "type": "string",
+                      "description": "Alert severity."
+                    },
+                    "level": {
+                      "type": "number",
+                      "description": "Escalation level (1 when opened)."
+                    },
+                    "occurrences": {
+                      "type": "number",
+                      "description": "Matches counted on this alert."
+                    },
+                    "owner_group": {
+                      "type": "string",
+                      "description": "Owner group key."
+                    },
+                    "assignee": {
+                      "type": "string",
+                      "description": "Assigned person (principal ID)."
+                    },
+                    "reopened": {
+                      "type": "boolean",
+                      "description": "Reopened within the cool-down."
+                    },
+                    "resolution": {
+                      "type": "string",
+                      "description": "manual or auto."
+                    }
+                  },
+                  "required": [
+                    "alert",
+                    "rule"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "info",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_alert_assigned": {
+        "name": "platform.alert.assigned",
+        "title": "Alert assigned",
+        "summary": "An alert was assigned to a person.",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.alert.assigned"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "alert": {
+                      "type": "string",
+                      "description": "Alert ID."
+                    },
+                    "rule": {
+                      "type": "string",
+                      "description": "Alert rule ID."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Alert title."
+                    },
+                    "severity": {
+                      "type": "string",
+                      "description": "Alert severity."
+                    },
+                    "level": {
+                      "type": "number",
+                      "description": "Escalation level (1 when opened)."
+                    },
+                    "occurrences": {
+                      "type": "number",
+                      "description": "Matches counted on this alert."
+                    },
+                    "owner_group": {
+                      "type": "string",
+                      "description": "Owner group key."
+                    },
+                    "assignee": {
+                      "type": "string",
+                      "description": "Assigned person (principal ID)."
+                    },
+                    "reopened": {
+                      "type": "boolean",
+                      "description": "Reopened within the cool-down."
+                    },
+                    "resolution": {
+                      "type": "string",
+                      "description": "manual or auto."
+                    }
+                  },
+                  "required": [
+                    "alert",
+                    "rule"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "info",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_alert_escalated": {
+        "name": "platform.alert.escalated",
+        "title": "Alert escalated",
+        "summary": "An alert reached its next escalation level (event.level).",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.alert.escalated"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "alert": {
+                      "type": "string",
+                      "description": "Alert ID."
+                    },
+                    "rule": {
+                      "type": "string",
+                      "description": "Alert rule ID."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Alert title."
+                    },
+                    "severity": {
+                      "type": "string",
+                      "description": "Alert severity."
+                    },
+                    "level": {
+                      "type": "number",
+                      "description": "Escalation level (1 when opened)."
+                    },
+                    "occurrences": {
+                      "type": "number",
+                      "description": "Matches counted on this alert."
+                    },
+                    "owner_group": {
+                      "type": "string",
+                      "description": "Owner group key."
+                    },
+                    "assignee": {
+                      "type": "string",
+                      "description": "Assigned person (principal ID)."
+                    },
+                    "reopened": {
+                      "type": "boolean",
+                      "description": "Reopened within the cool-down."
+                    },
+                    "resolution": {
+                      "type": "string",
+                      "description": "manual or auto."
+                    }
+                  },
+                  "required": [
+                    "alert",
+                    "rule"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "high",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_alert_opened": {
+        "name": "platform.alert.opened",
+        "title": "Alert opened",
+        "summary": "An alert rule opened an alert, or reopened one within its cool-down (ADR 0022).",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.alert.opened"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "alert": {
+                      "type": "string",
+                      "description": "Alert ID."
+                    },
+                    "rule": {
+                      "type": "string",
+                      "description": "Alert rule ID."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Alert title."
+                    },
+                    "severity": {
+                      "type": "string",
+                      "description": "Alert severity."
+                    },
+                    "level": {
+                      "type": "number",
+                      "description": "Escalation level (1 when opened)."
+                    },
+                    "occurrences": {
+                      "type": "number",
+                      "description": "Matches counted on this alert."
+                    },
+                    "owner_group": {
+                      "type": "string",
+                      "description": "Owner group key."
+                    },
+                    "assignee": {
+                      "type": "string",
+                      "description": "Assigned person (principal ID)."
+                    },
+                    "reopened": {
+                      "type": "boolean",
+                      "description": "Reopened within the cool-down."
+                    },
+                    "resolution": {
+                      "type": "string",
+                      "description": "manual or auto."
+                    }
+                  },
+                  "required": [
+                    "alert",
+                    "rule"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
+        "x-esmbler-severity": "high",
+        "x-esmbler-sensitivity": "internal",
+        "x-esmbler-category": "operational"
+      },
+      "platform_alert_resolved": {
+        "name": "platform.alert.resolved",
+        "title": "Alert resolved",
+        "summary": "An alert was resolved by a person or by a resolving event (event.resolution).",
+        "contentType": "application/json",
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "platform.alert.resolved"
+                },
+                "typeVersion": {
+                  "const": 1
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "alert": {
+                      "type": "string",
+                      "description": "Alert ID."
+                    },
+                    "rule": {
+                      "type": "string",
+                      "description": "Alert rule ID."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Alert title."
+                    },
+                    "severity": {
+                      "type": "string",
+                      "description": "Alert severity."
+                    },
+                    "level": {
+                      "type": "number",
+                      "description": "Escalation level (1 when opened)."
+                    },
+                    "occurrences": {
+                      "type": "number",
+                      "description": "Matches counted on this alert."
+                    },
+                    "owner_group": {
+                      "type": "string",
+                      "description": "Owner group key."
+                    },
+                    "assignee": {
+                      "type": "string",
+                      "description": "Assigned person (principal ID)."
+                    },
+                    "reopened": {
+                      "type": "boolean",
+                      "description": "Reopened within the cool-down."
+                    },
+                    "resolution": {
+                      "type": "string",
+                      "description": "manual or auto."
+                    }
+                  },
+                  "required": [
+                    "alert",
+                    "rule"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "x-esmbler-source": "core.platform",
+        "x-esmbler-subject-entity": null,
         "x-esmbler-severity": "info",
         "x-esmbler-sensitivity": "internal",
         "x-esmbler-category": "operational"

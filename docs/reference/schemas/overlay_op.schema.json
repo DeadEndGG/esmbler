@@ -2936,6 +2936,241 @@
       "required": [
         "route"
       ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "alert_rule.add"
+        },
+        "rule": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "trigger": {
+              "type": "string"
+            },
+            "minSeverity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dedupKey": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "owner": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "ref"
+              ]
+            },
+            "escalation": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "afterMinutes": {
+                    "type": "integer"
+                  },
+                  "unlessAcknowledged": {
+                    "type": "boolean"
+                  },
+                  "repeatEveryMinutes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "resolveOn": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reopenWithinMinutes": {
+              "type": "integer"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "trigger",
+            "title"
+          ]
+        }
+      },
+      "required": [
+        "rule"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "alert_rule.update"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "trigger": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "minSeverity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dedupKey": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "owner": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "ref"
+              ]
+            },
+            "escalation": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/anyOf/49/properties/rule/properties/escalation/items"
+              }
+            },
+            "resolveOn": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "reopenWithinMinutes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "expected": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rule",
+        "set"
+      ]
+    },
+    {
+      "properties": {
+        "op": {
+          "const": "alert_rule.remove"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule"
+      ]
     }
   ]
 }

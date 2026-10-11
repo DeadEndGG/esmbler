@@ -113,6 +113,7 @@ public static class Composer
             config.Subscriptions.AddRange(copy.Subscriptions);
             config.NotificationProfiles.AddRange(copy.NotificationProfiles);
             config.NotificationRoutes.AddRange(copy.NotificationRoutes);
+            config.AlertRules.AddRange(copy.AlertRules);
             foreach (var key in ElementKeys(copy))
             {
                 config.Provenance[key] = layer;
@@ -216,6 +217,11 @@ public static class Composer
         }
 
         foreach (var r in catalog.NotificationRoutes)
+        {
+            yield return r.Id;
+        }
+
+        foreach (var r in catalog.AlertRules)
         {
             yield return r.Id;
         }
@@ -518,7 +524,9 @@ public static class Composer
                 break;
             case RemoveSubscription rsub:
                 var removedSubscription = ctx.Config.FindSubscription(rsub.Subscription) ?? throw Missing("subscription", rsub.Subscription, Expression.Suggest(rsub.Subscription, ctx.Config.Subscriptions.Select(x => x.Id)));
-                RequireRemovable(ctx, removedSubscription.Id, removedSubscription.Label, "subscription", ctx.Config.NotificationRoutes.Where(r => r.Subscription == removedSubscription.Id).Select(r => r.Id));
+                RequireRemovable(ctx, removedSubscription.Id, removedSubscription.Label, "subscription",
+                    ctx.Config.NotificationRoutes.Where(r => r.Subscription == removedSubscription.Id).Select(r => r.Id)
+                        .Concat(ctx.Config.AlertRules.Where(r => r.Trigger == removedSubscription.Id || r.ResolveOn.Contains(removedSubscription.Id)).Select(r => r.Id)));
                 ctx.Config.Subscriptions.Remove(removedSubscription);
                 ctx.Config.Provenance.Remove(removedSubscription.Id);
                 break;
@@ -616,6 +624,41 @@ public static class Composer
                 RequireRemovable(ctx, removedRoute.Id, removedRoute.Label, "notification route", []);
                 ctx.Config.NotificationRoutes.Remove(removedRoute);
                 ctx.Config.Provenance.Remove(removedRoute.Id);
+                break;
+            case AddAlertRule aar:
+                RequireTenantId(aar.Rule.Id, "alert rule");
+                Unique(ctx, aar.Rule.Id, "Alert rule");
+                ctx.Config.AlertRules.Add(SpecJson.Clone(aar.Rule));
+                ctx.Mark(aar.Rule.Id);
+                break;
+            case UpdateAlertRule uar:
+                var alertRule = ctx.Config.FindAlertRule(uar.Rule) ?? throw Missing("alert rule", uar.Rule, Expression.Suggest(uar.Rule, ctx.Config.AlertRules.Select(x => x.Id)));
+                var alertRuleTenant = IsTenant(ctx, alertRule.Id);
+                CheckExpected(ctx, uar.Rule, SpecJson.ToNode(alertRule)!.AsObject(), uar.Expected, SpecJson.ToNode(uar.Set)!.AsObject());
+                if (!alertRuleTenant && (uar.Set.Trigger is not null || uar.Set.DedupKey is not null))
+                {
+                    throw new OverlayException("overlay.base_immutable", $"The trigger and key of alert rule '{alertRule.Label}' come from {ctx.Layer(alertRule.Id)}.", uar.Rule, "Disable it and add your own rule instead.");
+                }
+
+                alertRule.Label = uar.Set.Label ?? alertRule.Label;
+                alertRule.Description = uar.Set.Description ?? alertRule.Description;
+                alertRule.Trigger = uar.Set.Trigger ?? alertRule.Trigger;
+                alertRule.MinSeverity = uar.Set.MinSeverity ?? alertRule.MinSeverity;
+                alertRule.Severity = uar.Set.Severity ?? alertRule.Severity;
+                alertRule.DedupKey = uar.Set.DedupKey ?? alertRule.DedupKey;
+                alertRule.Title = uar.Set.Title ?? alertRule.Title;
+                alertRule.Owner = uar.Set.Owner is { } owner ? SpecJson.Clone(owner) : alertRule.Owner;
+                alertRule.Escalation = uar.Set.Escalation is { } steps ? steps.Select(SpecJson.Clone).ToList() : alertRule.Escalation;
+                alertRule.ResolveOn = uar.Set.ResolveOn is { } resolveOn ? [.. resolveOn] : alertRule.ResolveOn;
+                alertRule.ReopenWithinMinutes = uar.Set.ReopenWithinMinutes ?? alertRule.ReopenWithinMinutes;
+                alertRule.Enabled = uar.Set.Enabled ?? alertRule.Enabled;
+                ctx.Mark(alertRule.Id, keepLayer: !alertRuleTenant);
+                break;
+            case RemoveAlertRule rar:
+                var removedAlertRule = ctx.Config.FindAlertRule(rar.Rule) ?? throw Missing("alert rule", rar.Rule, Expression.Suggest(rar.Rule, ctx.Config.AlertRules.Select(x => x.Id)));
+                RequireRemovable(ctx, removedAlertRule.Id, removedAlertRule.Label, "alert rule", []);
+                ctx.Config.AlertRules.Remove(removedAlertRule);
+                ctx.Config.Provenance.Remove(removedAlertRule.Id);
                 break;
             case AddWorkflowState aws:
                 ApplyAddWorkflowState(ctx, aws);
