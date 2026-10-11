@@ -1,0 +1,4869 @@
+{
+  "id": "core.tickets",
+  "version": "1.10.0",
+  "name": "Tickets",
+  "description": "Service requests and IT tickets: intake, triage, assignment, resolution, and requester confirmation. 1.2.0 adds service requests: a catalog of requestable items with typed questions, fulfillment tasks with dependencies, and request and task workflows. 1.3.0 adds approvals: approval policies with stages, an Approver role, and requests that wait for approval before fulfillment. 1.4.0 publishes ticket events (escalated, priority raised, resolved) that notifications, alerts and integrations can subscribe to, and adds an Escalate action. 1.5.0 adds service levels: a service desk business calendar, response and resolution targets for tickets, a fulfillment target for requests and a completion target for tasks. 1.6.0 adds an Overview dashboard (open, unassigned, SLA breaches, average resolution time, workload by team, resolution trend, open by category) built from reusable metrics that the ticket list shares, and grouping in the ticket list. 1.7.0 routes ticket escalations to the assignee and the assignment group in the app and by email, and makes a ticket becoming P1 a mandatory urgent notification (app, email and text message) that people cannot mute. 1.8.0 raises alerts when a ticket's SLA target is at risk or breached, owned by its assignment group, escalated when nobody takes a breach within 30 minutes, and resolved with the ticket; people hear about them in the app and by email. 1.9.0 takes tickets by email: a message to a workspace mailbox opens a ticket for its sender, replies in the thread become the sender's public replies (and reopen a resolved ticket), and agents' public replies reach the requester by email with the reply text, never internal notes. 1.10.0 adds tickets at risk of missing a target, time to acknowledge and time to resolve SLA alerts to the Overview, resolves P2 tickets within eight service desk hours instead of ten, and adds the day after Thanksgiving as a service desk holiday; clocks already running keep the targets they started with.",
+  "dependencies": {
+    "core.platform": "^1.0.0"
+  },
+  "entities": [
+    {
+      "id": "core.tickets.ticket",
+      "label": "Ticket",
+      "pluralLabel": "Tickets",
+      "titleField": "title",
+      "description": "A request for help or service raised by a requester and worked by agents.",
+      "fields": [
+        {
+          "key": "number",
+          "type": "auto_number",
+          "label": "Number",
+          "prefix": "TCK",
+          "system": true,
+          "readOnly": true,
+          "description": "Human-friendly ticket ID, unique per environment."
+        },
+        {
+          "key": "title",
+          "type": "short_text",
+          "label": "Title",
+          "required": true,
+          "maxLength": 200,
+          "description": "One-line summary of the request or problem."
+        },
+        {
+          "key": "description",
+          "type": "rich_text",
+          "label": "Description",
+          "maxLength": 20000
+        },
+        {
+          "key": "status",
+          "type": "status",
+          "label": "Status",
+          "choiceList": "core.tickets.status",
+          "default": "new",
+          "readOnly": true,
+          "description": "Changed only through workflow transitions."
+        },
+        {
+          "key": "priority",
+          "type": "priority",
+          "label": "Priority",
+          "choiceList": "core.tickets.priority",
+          "default": "p3",
+          "required": true
+        },
+        {
+          "key": "category",
+          "type": "single_select",
+          "label": "Category",
+          "choiceList": "core.tickets.category"
+        },
+        {
+          "key": "impact",
+          "type": "single_select",
+          "label": "Impact",
+          "choiceList": "core.tickets.impact",
+          "description": "How many people or how much of the business is affected."
+        },
+        {
+          "key": "channel",
+          "type": "single_select",
+          "label": "Channel",
+          "choiceList": "core.tickets.channel",
+          "default": "portal"
+        },
+        {
+          "key": "labels",
+          "type": "multi_select",
+          "label": "Labels",
+          "choiceList": "core.tickets.labels"
+        },
+        {
+          "key": "requester",
+          "type": "user",
+          "label": "Requester",
+          "required": true,
+          "defaultExpression": "user.id",
+          "description": "Person the ticket is for. Defaults to whoever creates it."
+        },
+        {
+          "key": "contact_email",
+          "type": "email",
+          "label": "Contact email",
+          "maxLength": 254
+        },
+        {
+          "key": "assignment_group",
+          "type": "group",
+          "label": "Assignment group"
+        },
+        {
+          "key": "assignee",
+          "type": "user",
+          "label": "Assignee"
+        },
+        {
+          "key": "parent",
+          "type": "lookup",
+          "label": "Parent ticket",
+          "target": "core.tickets.ticket"
+        },
+        {
+          "key": "estimated_effort",
+          "type": "short_text",
+          "label": "Estimated effort",
+          "maxLength": 40,
+          "help": "Replaced by Effort (hours). Kept read-only for history.",
+          "deprecated": true,
+          "hidden": true
+        },
+        {
+          "key": "effort_hours",
+          "type": "decimal",
+          "label": "Effort (hours)",
+          "scale": 2,
+          "min": 0,
+          "max": 1000
+        },
+        {
+          "key": "escalated",
+          "type": "toggle",
+          "label": "Escalated",
+          "readOnly": true,
+          "default": false,
+          "help": "Set when an agent escalates the ticket."
+        },
+        {
+          "key": "escalation_reason",
+          "type": "long_text",
+          "label": "Escalation reason",
+          "maxLength": 2000,
+          "help": "Why the ticket needs a higher support tier."
+        },
+        {
+          "key": "resolution_notes",
+          "type": "long_text",
+          "label": "Resolution notes",
+          "maxLength": 4000
+        },
+        {
+          "key": "resolved_at",
+          "type": "date_time",
+          "label": "Resolved at",
+          "readOnly": true
+        },
+        {
+          "key": "confirmed",
+          "type": "toggle",
+          "label": "Requester confirmed",
+          "readOnly": true,
+          "default": false
+        },
+        {
+          "key": "reopen_count",
+          "type": "integer",
+          "label": "Times reopened",
+          "readOnly": true,
+          "default": 0,
+          "min": 0
+        },
+        {
+          "key": "created_at",
+          "type": "date_time",
+          "label": "Created",
+          "system": true,
+          "readOnly": true
+        },
+        {
+          "key": "updated_at",
+          "type": "date_time",
+          "label": "Updated",
+          "system": true,
+          "readOnly": true
+        }
+      ],
+      "accessFields": [
+        {
+          "field": "requester",
+          "relation": "requester",
+          "canEdit": true
+        },
+        {
+          "field": "assignee",
+          "relation": "assignee",
+          "canEdit": true
+        },
+        {
+          "field": "assignment_group",
+          "relation": "owner_group",
+          "canEdit": true
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.request",
+      "label": "Request",
+      "pluralLabel": "Requests",
+      "titleField": "title",
+      "description": "A request for something from the service catalog, such as a laptop or access to an application. Fulfillment tasks do the work.",
+      "fields": [
+        {
+          "key": "number",
+          "type": "auto_number",
+          "label": "Number",
+          "prefix": "REQ",
+          "system": true,
+          "readOnly": true,
+          "description": "Human-friendly request ID, unique per environment."
+        },
+        {
+          "key": "title",
+          "type": "short_text",
+          "label": "Title",
+          "required": true,
+          "maxLength": 200,
+          "description": "Defaults to the catalog item name."
+        },
+        {
+          "key": "catalog_item",
+          "type": "catalog_item",
+          "label": "Catalog item",
+          "required": true,
+          "description": "What was requested. Cannot change after the request is created."
+        },
+        {
+          "key": "variables",
+          "type": "variables",
+          "label": "Request details",
+          "description": "The requester's answers to the catalog item's questions."
+        },
+        {
+          "key": "description",
+          "type": "long_text",
+          "label": "Additional notes",
+          "maxLength": 4000
+        },
+        {
+          "key": "status",
+          "type": "status",
+          "label": "Status",
+          "choiceList": "core.tickets.request_status",
+          "default": "submitted",
+          "readOnly": true,
+          "description": "Changed only through workflow transitions."
+        },
+        {
+          "key": "requester",
+          "type": "user",
+          "label": "Requester",
+          "required": true,
+          "defaultExpression": "user.id",
+          "description": "Who raised the request."
+        },
+        {
+          "key": "requested_for",
+          "type": "user",
+          "label": "Requested for",
+          "defaultExpression": "user.id",
+          "description": "Who receives what was requested."
+        },
+        {
+          "key": "assignment_group",
+          "type": "group",
+          "label": "Assignment group"
+        },
+        {
+          "key": "assignee",
+          "type": "user",
+          "label": "Request owner"
+        },
+        {
+          "key": "approvers",
+          "type": "principals",
+          "label": "Approvers",
+          "readOnly": true,
+          "help": "People and groups asked to approve this request. Maintained by the platform."
+        },
+        {
+          "key": "fulfillment_outcome",
+          "type": "single_select",
+          "label": "Fulfillment outcome",
+          "choiceList": "core.tickets.fulfillment_outcome",
+          "readOnly": true,
+          "description": "Complete, or partial when some tasks were skipped."
+        },
+        {
+          "key": "fulfilled_at",
+          "type": "date_time",
+          "label": "Fulfilled at",
+          "readOnly": true
+        },
+        {
+          "key": "created_at",
+          "type": "date_time",
+          "label": "Created",
+          "system": true,
+          "readOnly": true
+        },
+        {
+          "key": "updated_at",
+          "type": "date_time",
+          "label": "Updated",
+          "system": true,
+          "readOnly": true
+        }
+      ],
+      "accessFields": [
+        {
+          "field": "requester",
+          "relation": "requester",
+          "canEdit": true
+        },
+        {
+          "field": "requested_for",
+          "relation": "requested_for",
+          "canEdit": false
+        },
+        {
+          "field": "assignee",
+          "relation": "assignee",
+          "canEdit": true
+        },
+        {
+          "field": "assignment_group",
+          "relation": "owner_group",
+          "canEdit": true
+        },
+        {
+          "field": "approvers",
+          "relation": "approver",
+          "canEdit": false
+        }
+      ],
+      "request": {
+        "taskEntity": "core.tickets.request_task",
+        "startStates": [
+          "fulfilling"
+        ],
+        "completeTransition": "complete",
+        "outcomeField": "fulfillment_outcome",
+        "taskReleaseTransition": "release",
+        "taskCancelTransition": "cancel",
+        "approval": {
+          "state": "awaiting_approval",
+          "requestTransition": "request_approval",
+          "approvedTransition": "approve",
+          "declinedTransition": "decline",
+          "approversField": "approvers",
+          "requesterFields": [
+            "requester",
+            "requested_for"
+          ]
+        },
+        "lockedFields": [
+          "requested_for",
+          "description"
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.request_task",
+      "label": "Fulfillment task",
+      "pluralLabel": "Fulfillment tasks",
+      "titleField": "title",
+      "description": "One piece of work that fulfills a request. Tasks wait for the tasks they depend on.",
+      "fields": [
+        {
+          "key": "number",
+          "type": "auto_number",
+          "label": "Number",
+          "prefix": "TSK",
+          "system": true,
+          "readOnly": true
+        },
+        {
+          "key": "title",
+          "type": "short_text",
+          "label": "Title",
+          "required": true,
+          "maxLength": 200
+        },
+        {
+          "key": "description",
+          "type": "long_text",
+          "label": "Instructions",
+          "maxLength": 4000
+        },
+        {
+          "key": "request",
+          "type": "lookup",
+          "label": "Request",
+          "target": "core.tickets.request",
+          "required": true
+        },
+        {
+          "key": "task_key",
+          "type": "short_text",
+          "label": "Task template",
+          "readOnly": true,
+          "maxLength": 64,
+          "description": "Catalog task this was created from."
+        },
+        {
+          "key": "status",
+          "type": "status",
+          "label": "Status",
+          "choiceList": "core.tickets.task_status",
+          "default": "blocked",
+          "readOnly": true
+        },
+        {
+          "key": "assignment_group",
+          "type": "group",
+          "label": "Assignment group"
+        },
+        {
+          "key": "assignee",
+          "type": "user",
+          "label": "Assignee"
+        },
+        {
+          "key": "notes",
+          "type": "long_text",
+          "label": "Work notes",
+          "maxLength": 4000
+        },
+        {
+          "key": "completed_at",
+          "type": "date_time",
+          "label": "Completed at",
+          "readOnly": true
+        },
+        {
+          "key": "created_at",
+          "type": "date_time",
+          "label": "Created",
+          "system": true,
+          "readOnly": true
+        },
+        {
+          "key": "updated_at",
+          "type": "date_time",
+          "label": "Updated",
+          "system": true,
+          "readOnly": true
+        }
+      ],
+      "accessFields": [
+        {
+          "field": "assignee",
+          "relation": "assignee",
+          "canEdit": true
+        },
+        {
+          "field": "assignment_group",
+          "relation": "owner_group",
+          "canEdit": true
+        }
+      ]
+    }
+  ],
+  "choiceLists": [
+    {
+      "id": "core.tickets.status",
+      "label": "Ticket status",
+      "options": [
+        {
+          "id": "new",
+          "label": "New",
+          "tone": "accent.gray"
+        },
+        {
+          "id": "assigned",
+          "label": "Assigned",
+          "tone": "accent.blue"
+        },
+        {
+          "id": "in_progress",
+          "label": "In progress",
+          "tone": "accent.purple"
+        },
+        {
+          "id": "on_hold",
+          "label": "On hold",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "resolved",
+          "label": "Resolved",
+          "tone": "accent.green"
+        },
+        {
+          "id": "closed",
+          "label": "Closed",
+          "tone": "accent.gray"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "tone": "accent.gray"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.priority",
+      "label": "Priority",
+      "options": [
+        {
+          "id": "p1",
+          "label": "Critical",
+          "tone": "accent.red"
+        },
+        {
+          "id": "p2",
+          "label": "High",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "p3",
+          "label": "Medium",
+          "tone": "accent.blue"
+        },
+        {
+          "id": "p4",
+          "label": "Low",
+          "tone": "accent.gray"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.category",
+      "label": "Category",
+      "options": [
+        {
+          "id": "hardware",
+          "label": "Hardware"
+        },
+        {
+          "id": "software",
+          "label": "Software"
+        },
+        {
+          "id": "network",
+          "label": "Network"
+        },
+        {
+          "id": "access",
+          "label": "Access request"
+        },
+        {
+          "id": "other",
+          "label": "Other"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.labels",
+      "label": "Labels",
+      "options": [
+        {
+          "id": "vip",
+          "label": "VIP",
+          "tone": "accent.purple"
+        },
+        {
+          "id": "outage",
+          "label": "Outage",
+          "tone": "accent.red"
+        },
+        {
+          "id": "security",
+          "label": "Security",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "onboarding",
+          "label": "Onboarding",
+          "tone": "accent.green"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.impact",
+      "label": "Impact",
+      "options": [
+        {
+          "id": "high",
+          "label": "High: many people or a key service",
+          "tone": "accent.red"
+        },
+        {
+          "id": "medium",
+          "label": "Medium: a team or a workaround exists",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "low",
+          "label": "Low: one person",
+          "tone": "accent.gray"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.channel",
+      "label": "Channel",
+      "options": [
+        {
+          "id": "portal",
+          "label": "Portal"
+        },
+        {
+          "id": "email",
+          "label": "Email"
+        },
+        {
+          "id": "phone",
+          "label": "Phone"
+        },
+        {
+          "id": "chat",
+          "label": "Chat"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.request_status",
+      "label": "Request status",
+      "options": [
+        {
+          "id": "submitted",
+          "label": "Submitted",
+          "tone": "accent.gray"
+        },
+        {
+          "id": "awaiting_approval",
+          "label": "Awaiting approval",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "fulfilling",
+          "label": "In fulfillment",
+          "tone": "accent.purple"
+        },
+        {
+          "id": "fulfilled",
+          "label": "Fulfilled",
+          "tone": "accent.green"
+        },
+        {
+          "id": "closed",
+          "label": "Closed",
+          "tone": "accent.gray"
+        },
+        {
+          "id": "rejected",
+          "label": "Rejected",
+          "tone": "accent.red"
+        },
+        {
+          "id": "cancelled",
+          "label": "Cancelled",
+          "tone": "accent.gray"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.task_status",
+      "label": "Task status",
+      "options": [
+        {
+          "id": "blocked",
+          "label": "Waiting",
+          "tone": "accent.amber"
+        },
+        {
+          "id": "open",
+          "label": "Ready",
+          "tone": "accent.blue"
+        },
+        {
+          "id": "in_progress",
+          "label": "In progress",
+          "tone": "accent.purple"
+        },
+        {
+          "id": "done",
+          "label": "Done",
+          "tone": "accent.green"
+        },
+        {
+          "id": "skipped",
+          "label": "Skipped",
+          "tone": "accent.gray"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.fulfillment_outcome",
+      "label": "Fulfillment outcome",
+      "options": [
+        {
+          "id": "complete",
+          "label": "Complete",
+          "tone": "accent.green"
+        },
+        {
+          "id": "partial",
+          "label": "Partial",
+          "tone": "accent.amber"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.laptop_model",
+      "label": "Laptop model",
+      "options": [
+        {
+          "id": "standard",
+          "label": "Standard 14-inch"
+        },
+        {
+          "id": "performance",
+          "label": "Performance 16-inch"
+        },
+        {
+          "id": "mac",
+          "label": "MacBook"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.accessories",
+      "label": "Accessories",
+      "options": [
+        {
+          "id": "dock",
+          "label": "Docking station"
+        },
+        {
+          "id": "monitor",
+          "label": "Second monitor"
+        },
+        {
+          "id": "headset",
+          "label": "Headset"
+        },
+        {
+          "id": "keyboard",
+          "label": "Keyboard and mouse"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.application",
+      "label": "Application",
+      "options": [
+        {
+          "id": "crm",
+          "label": "CRM"
+        },
+        {
+          "id": "erp",
+          "label": "ERP"
+        },
+        {
+          "id": "analytics",
+          "label": "Analytics"
+        },
+        {
+          "id": "design",
+          "label": "Design suite"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.access_level",
+      "label": "Access level",
+      "options": [
+        {
+          "id": "read",
+          "label": "Read only"
+        },
+        {
+          "id": "write",
+          "label": "Read and write"
+        },
+        {
+          "id": "admin",
+          "label": "Administrator"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.department",
+      "label": "Department",
+      "options": [
+        {
+          "id": "sales",
+          "label": "Sales"
+        },
+        {
+          "id": "engineering",
+          "label": "Engineering"
+        },
+        {
+          "id": "finance",
+          "label": "Finance"
+        },
+        {
+          "id": "operations",
+          "label": "Operations"
+        },
+        {
+          "id": "people",
+          "label": "People"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "core.tickets.parent_child",
+      "kind": "lookup",
+      "entity": "core.tickets.ticket",
+      "field": "parent",
+      "target": "core.tickets.ticket",
+      "label": "Parent ticket",
+      "inverseLabel": "Child tickets",
+      "onTargetDelete": "restrict"
+    },
+    {
+      "id": "core.tickets.request_tasks",
+      "kind": "lookup",
+      "entity": "core.tickets.request_task",
+      "field": "request",
+      "target": "core.tickets.request",
+      "label": "Request",
+      "inverseLabel": "Fulfillment tasks",
+      "onTargetDelete": "restrict"
+    }
+  ],
+  "rules": [
+    {
+      "id": "core.tickets.rules.title_length",
+      "kind": "validation",
+      "scope": "data",
+      "entity": "core.tickets.ticket",
+      "description": "Titles need at least 5 characters",
+      "assert": "!has(record.title) || record.title.size() >= 5",
+      "field": "title",
+      "message": "Write a title of at least 5 characters so agents can triage it.",
+      "order": 10
+    },
+    {
+      "id": "core.tickets.rules.resolution_notes",
+      "kind": "conditional",
+      "scope": "data",
+      "entity": "core.tickets.ticket",
+      "description": "Resolved and closed tickets need resolution notes",
+      "when": "record.status in ['resolved', 'closed']",
+      "actions": [
+        {
+          "type": "require",
+          "field": "resolution_notes",
+          "message": "Describe how the ticket was resolved."
+        }
+      ],
+      "order": 20
+    },
+    {
+      "id": "core.tickets.rules.closed_read_only",
+      "kind": "conditional",
+      "scope": "data",
+      "entity": "core.tickets.ticket",
+      "description": "Closed tickets are read-only",
+      "when": "record.status in ['closed', 'cancelled']",
+      "actions": [
+        {
+          "type": "read_only",
+          "field": "title"
+        },
+        {
+          "type": "read_only",
+          "field": "description"
+        },
+        {
+          "type": "read_only",
+          "field": "priority"
+        },
+        {
+          "type": "read_only",
+          "field": "category"
+        }
+      ],
+      "order": 30
+    },
+    {
+      "id": "core.tickets.rules.p1_impact",
+      "kind": "conditional",
+      "scope": "data",
+      "entity": "core.tickets.ticket",
+      "description": "Critical tickets must state their impact",
+      "when": "record.priority == 'p1'",
+      "actions": [
+        {
+          "type": "require",
+          "field": "impact",
+          "message": "Critical tickets need an impact so the right people are paged."
+        }
+      ],
+      "order": 40
+    },
+    {
+      "id": "core.tickets.rules.p1_raised",
+      "kind": "conditional",
+      "scope": "data",
+      "entity": "core.tickets.ticket",
+      "description": "Publish an event when a ticket becomes critical",
+      "when": "record.priority == 'p1'",
+      "actions": [
+        {
+          "type": "emit_event",
+          "emit": {
+            "type": "core.tickets.ticket.priority_raised",
+            "payload": {
+              "priority": "record.priority",
+              "previous": "prior.priority"
+            }
+          }
+        }
+      ],
+      "order": 90
+    }
+  ],
+  "workflows": [
+    {
+      "id": "core.tickets.lifecycle",
+      "entity": "core.tickets.ticket",
+      "stateField": "status",
+      "initialState": "new",
+      "definitionVersion": 1,
+      "states": [
+        {
+          "id": "new",
+          "category": "new"
+        },
+        {
+          "id": "assigned",
+          "category": "active"
+        },
+        {
+          "id": "in_progress",
+          "category": "active"
+        },
+        {
+          "id": "on_hold",
+          "category": "pending"
+        },
+        {
+          "id": "resolved",
+          "category": "resolved"
+        },
+        {
+          "id": "closed",
+          "category": "closed"
+        },
+        {
+          "id": "cancelled",
+          "category": "cancelled"
+        }
+      ],
+      "transitions": [
+        {
+          "id": "assign",
+          "label": "Assign",
+          "from": [
+            "new"
+          ],
+          "to": "assigned",
+          "requiredFields": [
+            "assignment_group"
+          ],
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "tone": "primary"
+        },
+        {
+          "id": "start",
+          "label": "Start work",
+          "from": [
+            "new",
+            "assigned"
+          ],
+          "to": "in_progress",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "assignee": "has(record.assignee) ? record.assignee : user.id"
+          },
+          "tone": "primary"
+        },
+        {
+          "id": "hold",
+          "label": "Put on hold",
+          "from": [
+            "assigned",
+            "in_progress"
+          ],
+          "to": "on_hold",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ]
+        },
+        {
+          "id": "resume",
+          "label": "Resume",
+          "from": [
+            "on_hold"
+          ],
+          "to": "in_progress",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "tone": "primary"
+        },
+        {
+          "id": "escalate",
+          "label": "Escalate",
+          "from": [
+            "assigned",
+            "in_progress",
+            "on_hold"
+          ],
+          "to": "in_progress",
+          "requiredFields": [
+            "escalation_reason"
+          ],
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "escalated": "true"
+          },
+          "tone": "danger",
+          "emits": [
+            {
+              "type": "core.tickets.ticket.escalated",
+              "payload": {
+                "priority": "record.priority",
+                "from": "prior.status",
+                "reason": "record.escalation_reason",
+                "assignment_group": "record.assignment_group"
+              },
+              "severity": "record.priority == 'p1' ? 'critical' : 'high'"
+            }
+          ]
+        },
+        {
+          "id": "resolve",
+          "label": "Resolve",
+          "from": [
+            "assigned",
+            "in_progress",
+            "on_hold"
+          ],
+          "to": "resolved",
+          "requiredFields": [
+            "resolution_notes"
+          ],
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "resolved_at": "now"
+          },
+          "tone": "primary",
+          "emits": [
+            {
+              "type": "core.tickets.ticket.resolved",
+              "payload": {
+                "priority": "record.priority",
+                "escalated": "record.escalated == true"
+              }
+            }
+          ]
+        },
+        {
+          "id": "confirm",
+          "label": "Confirm resolution",
+          "from": [
+            "resolved"
+          ],
+          "to": "closed",
+          "roles": [
+            "core.tickets.requester",
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "confirmed": "true"
+          },
+          "tone": "primary"
+        },
+        {
+          "id": "reopen",
+          "label": "Reopen",
+          "from": [
+            "resolved"
+          ],
+          "to": "in_progress",
+          "roles": [
+            "core.tickets.requester",
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "reopen_count": "(has(record.reopen_count) ? record.reopen_count : 0) + 1",
+            "resolved_at": "null",
+            "confirmed": "false"
+          }
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "from": [
+            "new",
+            "assigned",
+            "in_progress",
+            "on_hold"
+          ],
+          "to": "cancelled",
+          "roles": [
+            "core.tickets.requester",
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "tone": "danger"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.request_lifecycle",
+      "entity": "core.tickets.request",
+      "stateField": "status",
+      "initialState": "submitted",
+      "states": [
+        {
+          "id": "submitted",
+          "category": "new"
+        },
+        {
+          "id": "awaiting_approval",
+          "category": "pending"
+        },
+        {
+          "id": "fulfilling",
+          "category": "active"
+        },
+        {
+          "id": "fulfilled",
+          "category": "resolved"
+        },
+        {
+          "id": "closed",
+          "category": "closed"
+        },
+        {
+          "id": "rejected",
+          "category": "cancelled"
+        },
+        {
+          "id": "cancelled",
+          "category": "cancelled"
+        }
+      ],
+      "transitions": [
+        {
+          "id": "start_fulfillment",
+          "label": "Start fulfillment",
+          "from": [
+            "submitted"
+          ],
+          "to": "fulfilling",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "assignee": "has(record.assignee) ? record.assignee : user.id"
+          },
+          "tone": "primary"
+        },
+        {
+          "id": "request_approval",
+          "label": "Send for approval",
+          "from": [
+            "submitted"
+          ],
+          "to": "awaiting_approval",
+          "system": true
+        },
+        {
+          "id": "approve",
+          "label": "Approved",
+          "from": [
+            "awaiting_approval"
+          ],
+          "to": "fulfilling",
+          "system": true
+        },
+        {
+          "id": "decline",
+          "label": "Declined",
+          "from": [
+            "awaiting_approval"
+          ],
+          "to": "rejected",
+          "system": true
+        },
+        {
+          "id": "complete",
+          "label": "Mark fulfilled",
+          "from": [
+            "fulfilling"
+          ],
+          "to": "fulfilled",
+          "system": true,
+          "set": {
+            "fulfilled_at": "now"
+          }
+        },
+        {
+          "id": "close",
+          "label": "Close",
+          "from": [
+            "fulfilled"
+          ],
+          "to": "closed",
+          "tone": "primary"
+        },
+        {
+          "id": "reject",
+          "label": "Reject",
+          "from": [
+            "submitted"
+          ],
+          "to": "rejected",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "tone": "danger"
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel request",
+          "from": [
+            "submitted",
+            "awaiting_approval",
+            "fulfilling"
+          ],
+          "to": "cancelled",
+          "tone": "danger"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.task_lifecycle",
+      "entity": "core.tickets.request_task",
+      "stateField": "status",
+      "initialState": "blocked",
+      "states": [
+        {
+          "id": "blocked",
+          "category": "pending"
+        },
+        {
+          "id": "open",
+          "category": "new"
+        },
+        {
+          "id": "in_progress",
+          "category": "active"
+        },
+        {
+          "id": "done",
+          "category": "resolved"
+        },
+        {
+          "id": "skipped",
+          "category": "cancelled"
+        }
+      ],
+      "transitions": [
+        {
+          "id": "release",
+          "label": "Release",
+          "from": [
+            "blocked"
+          ],
+          "to": "open",
+          "system": true
+        },
+        {
+          "id": "start",
+          "label": "Start",
+          "from": [
+            "open"
+          ],
+          "to": "in_progress",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "assignee": "has(record.assignee) ? record.assignee : user.id"
+          },
+          "tone": "primary"
+        },
+        {
+          "id": "complete",
+          "label": "Complete",
+          "from": [
+            "open",
+            "in_progress"
+          ],
+          "to": "done",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "set": {
+            "completed_at": "now"
+          },
+          "tone": "primary"
+        },
+        {
+          "id": "skip",
+          "label": "Skip",
+          "from": [
+            "blocked",
+            "open",
+            "in_progress"
+          ],
+          "to": "skipped",
+          "roles": [
+            "core.tickets.agent",
+            "core.tickets.admin"
+          ],
+          "tone": "danger"
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "from": [
+            "blocked",
+            "open",
+            "in_progress"
+          ],
+          "to": "skipped",
+          "system": true
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "core.tickets.dashboard",
+      "kind": "dashboard",
+      "entity": "core.tickets.ticket",
+      "label": "Overview",
+      "layout": {
+        "id": "core.tickets.dashboard",
+        "type": "layout.page",
+        "props": {
+          "title": "Overview"
+        },
+        "children": [
+          {
+            "id": "core.tickets.dashboard.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.dashboard.r_kpis",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.dashboard.c_open",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 3
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_open",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.open"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_unassigned",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 3
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_unassigned",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.unassigned",
+                          "tone": "warning"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_breached",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 3
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_breached",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.sla_breached",
+                          "tone": "critical"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_resolution",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 3
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_resolution",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.avg_resolution",
+                          "drill": true
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.dashboard.r_service",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.dashboard.c_at_risk",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_at_risk",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.sla_at_risk",
+                          "tone": "warning"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_mtta",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_mtta",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.alert_mtta"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_mttr",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.kpi_mttr",
+                        "type": "display.kpi_tile",
+                        "props": {
+                          "metric": "core.tickets.metric.alert_mttr"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.dashboard.r_charts",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.dashboard.c_workload",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 6
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.workload",
+                        "type": "display.bar_chart",
+                        "props": {
+                          "metric": "core.tickets.metric.workload_by_team",
+                          "orientation": "horizontal"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.dashboard.c_trend",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 6
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.trend",
+                        "type": "display.bar_chart",
+                        "props": {
+                          "metric": "core.tickets.metric.resolved_trend",
+                          "orientation": "vertical"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.dashboard.r_report",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.dashboard.c_category",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.dashboard.by_category",
+                        "type": "display.metric_table",
+                        "props": {
+                          "metric": "core.tickets.metric.open_by_category"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.record",
+      "kind": "record",
+      "entity": "core.tickets.ticket",
+      "label": "Ticket record page",
+      "layout": {
+        "id": "core.tickets.record",
+        "type": "layout.page",
+        "props": {
+          "title": "Ticket"
+        },
+        "children": [
+          {
+            "id": "core.tickets.record.s_header",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.record.r_header",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.record.c_header",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.heading",
+                        "type": "display.heading",
+                        "props": {
+                          "field": "title",
+                          "level": 1
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.record.badge_status",
+                        "type": "display.badge",
+                        "props": {
+                          "field": "status"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.record.badge_priority",
+                        "type": "display.badge",
+                        "props": {
+                          "field": "priority"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.record.p1_callout",
+                        "type": "display.callout",
+                        "props": {
+                          "tone": "critical",
+                          "title": "Critical priority",
+                          "text": "Work this ticket before anything else and keep the requester updated hourly.",
+                          "visibleWhen": "record.priority == 'p1'"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.record.transitions",
+                        "type": "action.transition_buttons",
+                        "props": {
+                          "max": 3
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.record.r_overview",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.record.c_overview_1",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.card_requester",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Requester"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_requester",
+                            "type": "field",
+                            "props": {
+                              "field": "requester"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_contact_email",
+                            "type": "field",
+                            "props": {
+                              "field": "contact_email"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.record.c_overview_2",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.card_assignment",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Assignment"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_assignment_group",
+                            "type": "field",
+                            "props": {
+                              "field": "assignment_group"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_assignee",
+                            "type": "field",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.record.c_overview_3",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.card_classification",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Classification"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_category",
+                            "type": "field",
+                            "props": {
+                              "field": "category"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_labels",
+                            "type": "field",
+                            "props": {
+                              "field": "labels"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_impact",
+                            "type": "field",
+                            "props": {
+                              "field": "impact"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_channel",
+                            "type": "field",
+                            "props": {
+                              "field": "channel"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "core.tickets.record.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.record.r_main",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.record.c_main",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 8
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.card_details",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Details"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_description",
+                            "type": "field",
+                            "props": {
+                              "field": "description"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_effort_hours",
+                            "type": "field",
+                            "props": {
+                              "field": "effort_hours"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_parent",
+                            "type": "field",
+                            "props": {
+                              "field": "parent"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "core.tickets.record.tabs",
+                        "type": "layout.tab_group",
+                        "props": {
+                          "defaultTab": "core.tickets.record.tab_activity"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.tab_activity",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "Activity"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.record.activity",
+                                "type": "activity.feed",
+                                "props": {
+                                  "showPublic": true,
+                                  "showInternal": true,
+                                  "defaultComposer": "internal"
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "core.tickets.record.tab_children",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "Child tickets"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.record.children",
+                                "type": "collection.related_list",
+                                "props": {
+                                  "relationship": "core.tickets.parent_child",
+                                  "columns": [
+                                    "number",
+                                    "title",
+                                    "status",
+                                    "assignee"
+                                  ],
+                                  "pageSize": 10,
+                                  "allowCreate": true
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "core.tickets.record.tab_history",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "History"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.record.history",
+                                "type": "activity.audit_history",
+                                "props": {
+                                  "pageSize": 25
+                                },
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.record.c_side",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.record.sla",
+                        "type": "activity.sla",
+                        "props": {
+                          "title": "Service levels"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.record.card_properties",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Properties"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_status",
+                            "type": "field",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_priority",
+                            "type": "field",
+                            "props": {
+                              "field": "priority"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_number",
+                            "type": "field",
+                            "props": {
+                              "field": "number"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_created_at",
+                            "type": "field",
+                            "props": {
+                              "field": "created_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "core.tickets.record.card_resolution",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Resolution"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.record.f_escalated",
+                            "type": "field",
+                            "props": {
+                              "field": "escalated"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_escalation_reason",
+                            "type": "field",
+                            "props": {
+                              "field": "escalation_reason"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_resolution_notes",
+                            "type": "field",
+                            "props": {
+                              "field": "resolution_notes"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_resolved_at",
+                            "type": "field",
+                            "props": {
+                              "field": "resolved_at"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_confirmed",
+                            "type": "field",
+                            "props": {
+                              "field": "confirmed"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.record.f_reopen_count",
+                            "type": "field",
+                            "props": {
+                              "field": "reopen_count"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.list",
+      "kind": "list",
+      "entity": "core.tickets.ticket",
+      "label": "Tickets list",
+      "layout": {
+        "id": "core.tickets.list",
+        "type": "layout.page",
+        "props": {
+          "title": "Tickets"
+        },
+        "children": [
+          {
+            "id": "core.tickets.list.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.list.r_toolbar",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.list.c_toolbar",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.list.views",
+                        "type": "collection.saved_views",
+                        "props": {
+                          "views": [
+                            {
+                              "id": "open",
+                              "label": "All open",
+                              "sort": {
+                                "field": "priority",
+                                "direction": "asc"
+                              },
+                              "metric": "core.tickets.metric.open"
+                            },
+                            {
+                              "id": "mine",
+                              "label": "Assigned to me",
+                              "filter": "record.assignee == user.id && !(record.status in ['closed', 'cancelled'])"
+                            },
+                            {
+                              "id": "unassigned",
+                              "label": "Unassigned",
+                              "metric": "core.tickets.metric.unassigned"
+                            },
+                            {
+                              "id": "my_requests",
+                              "label": "My requests",
+                              "filter": "record.requester == user.id"
+                            },
+                            {
+                              "id": "resolved",
+                              "label": "Resolved",
+                              "filter": "record.status == 'resolved'"
+                            }
+                          ]
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.list.filters",
+                        "type": "collection.filter_bar",
+                        "props": {
+                          "fields": [
+                            "status",
+                            "priority",
+                            "category",
+                            "assignment_group",
+                            "assignee"
+                          ],
+                          "showSearch": true
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.list.r_table",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.list.c_table",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.list.table",
+                        "type": "collection.data_table",
+                        "props": {
+                          "entity": "core.tickets.ticket",
+                          "pageSize": 50,
+                          "density": "compact",
+                          "sort": {
+                            "field": "updated_at",
+                            "direction": "desc"
+                          },
+                          "groupOptions": [
+                            "status",
+                            "priority",
+                            "category",
+                            "assignment_group",
+                            "assignee"
+                          ]
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.list.col_number",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "number",
+                              "width": "sm"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_title",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "title",
+                              "width": "lg"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_status",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_priority",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "priority"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_assignment_group",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "assignment_group"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_assignee",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.list.col_updated_at",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "updated_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.quick_create",
+      "kind": "form",
+      "entity": "core.tickets.ticket",
+      "label": "New ticket form",
+      "layout": {
+        "id": "core.tickets.quick_create",
+        "type": "layout.page",
+        "props": {
+          "title": "New ticket"
+        },
+        "children": [
+          {
+            "id": "core.tickets.quick_create.s",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.quick_create.r",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.quick_create.c",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.quick_create.card",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "New ticket"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.quick_create.f_title",
+                            "type": "field",
+                            "props": {
+                              "field": "title"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.quick_create.f_description",
+                            "type": "field",
+                            "props": {
+                              "field": "description"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.quick_create.f_category",
+                            "type": "field",
+                            "props": {
+                              "field": "category"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.quick_create.f_priority",
+                            "type": "field",
+                            "props": {
+                              "field": "priority"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.request_record",
+      "kind": "record",
+      "entity": "core.tickets.request",
+      "label": "Request record page",
+      "layout": {
+        "id": "core.tickets.request_record",
+        "type": "layout.page",
+        "props": {
+          "title": "Request"
+        },
+        "children": [
+          {
+            "id": "core.tickets.request_record.s_header",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.request_record.r_header",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.request_record.c_header",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.heading",
+                        "type": "display.heading",
+                        "props": {
+                          "field": "title",
+                          "level": 1
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.badge_status",
+                        "type": "display.badge",
+                        "props": {
+                          "field": "status"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.badge_outcome",
+                        "type": "display.badge",
+                        "props": {
+                          "field": "fulfillment_outcome"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.approval_callout",
+                        "type": "display.callout",
+                        "props": {
+                          "tone": "info",
+                          "title": "Waiting for approval",
+                          "text": "Fulfillment starts as soon as the approvers sign off. You can follow each stage in Approvals.",
+                          "visibleWhen": "record.status == 'awaiting_approval'"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.rejected_callout",
+                        "type": "display.callout",
+                        "props": {
+                          "tone": "warning",
+                          "title": "Rejected",
+                          "text": "This request was rejected. Add a reply below to explain why.",
+                          "visibleWhen": "record.status == 'rejected'"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.transitions",
+                        "type": "action.transition_buttons",
+                        "props": {
+                          "max": 3
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.request_record.r_overview",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.request_record.c_overview_1",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.card_request",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Request"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.f_catalog_item",
+                            "type": "field",
+                            "props": {
+                              "field": "catalog_item"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_requester",
+                            "type": "field",
+                            "props": {
+                              "field": "requester"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_requested_for",
+                            "type": "field",
+                            "props": {
+                              "field": "requested_for"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.request_record.c_overview_2",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.card_assignment",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Assignment"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.f_assignment_group",
+                            "type": "field",
+                            "props": {
+                              "field": "assignment_group"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_assignee",
+                            "type": "field",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.request_record.c_overview_3",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.card_properties",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Properties"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.f_number",
+                            "type": "field",
+                            "props": {
+                              "field": "number"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_created_at",
+                            "type": "field",
+                            "props": {
+                              "field": "created_at"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_fulfilled_at",
+                            "type": "field",
+                            "props": {
+                              "field": "fulfilled_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "core.tickets.request_record.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.request_record.r_main",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.request_record.c_main",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 8
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.card_details",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Details"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.f_variables",
+                            "type": "field",
+                            "props": {
+                              "field": "variables"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_description",
+                            "type": "field",
+                            "props": {
+                              "field": "description"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "core.tickets.request_record.tabs",
+                        "type": "layout.tab_group",
+                        "props": {
+                          "defaultTab": "core.tickets.request_record.tab_tasks"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.tab_tasks",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "Fulfillment tasks"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.request_record.tasks",
+                                "type": "collection.related_list",
+                                "props": {
+                                  "relationship": "core.tickets.request_tasks",
+                                  "columns": [
+                                    "number",
+                                    "title",
+                                    "status",
+                                    "assignee"
+                                  ],
+                                  "pageSize": 25,
+                                  "allowCreate": false
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "core.tickets.request_record.tab_activity",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "Activity"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.request_record.activity",
+                                "type": "activity.feed",
+                                "props": {
+                                  "showPublic": true,
+                                  "showInternal": true,
+                                  "defaultComposer": "public"
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "core.tickets.request_record.tab_history",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "History"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.request_record.history",
+                                "type": "activity.audit_history",
+                                "props": {
+                                  "pageSize": 25
+                                },
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.request_record.c_side",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 4
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_record.approvals",
+                        "type": "activity.approvals",
+                        "props": {
+                          "title": "Approvals"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.sla",
+                        "type": "activity.sla",
+                        "props": {
+                          "title": "Service levels"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_record.card_outcome",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Fulfillment"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_record.f_status",
+                            "type": "field",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_record.f_fulfillment_outcome",
+                            "type": "field",
+                            "props": {
+                              "field": "fulfillment_outcome"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.request_list",
+      "kind": "list",
+      "entity": "core.tickets.request",
+      "label": "Requests list",
+      "layout": {
+        "id": "core.tickets.request_list",
+        "type": "layout.page",
+        "props": {
+          "title": "Requests"
+        },
+        "children": [
+          {
+            "id": "core.tickets.request_list.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.request_list.r_toolbar",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.request_list.c_toolbar",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_list.views",
+                        "type": "collection.saved_views",
+                        "props": {
+                          "views": [
+                            {
+                              "id": "open",
+                              "label": "Open",
+                              "filter": "record.status in ['submitted', 'fulfilling']"
+                            },
+                            {
+                              "id": "mine",
+                              "label": "My requests",
+                              "filter": "record.requester == user.id"
+                            },
+                            {
+                              "id": "owned",
+                              "label": "Owned by me",
+                              "filter": "record.assignee == user.id && record.status in ['submitted', 'fulfilling']"
+                            },
+                            {
+                              "id": "fulfilled",
+                              "label": "Fulfilled",
+                              "filter": "record.status in ['fulfilled', 'closed']"
+                            }
+                          ]
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.request_list.filters",
+                        "type": "collection.filter_bar",
+                        "props": {
+                          "fields": [
+                            "status",
+                            "catalog_item",
+                            "assignment_group",
+                            "assignee"
+                          ],
+                          "showSearch": true
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.request_list.r_table",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.request_list.c_table",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.request_list.table",
+                        "type": "collection.data_table",
+                        "props": {
+                          "entity": "core.tickets.request",
+                          "pageSize": 50,
+                          "density": "compact",
+                          "sort": {
+                            "field": "updated_at",
+                            "direction": "desc"
+                          }
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.request_list.col_number",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "number",
+                              "width": "sm"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_title",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "title",
+                              "width": "lg"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_catalog_item",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "catalog_item"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_status",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_requested_for",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "requested_for"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_assignee",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.request_list.col_updated_at",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "updated_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.task_record",
+      "kind": "record",
+      "entity": "core.tickets.request_task",
+      "label": "Fulfillment task record page",
+      "layout": {
+        "id": "core.tickets.task_record",
+        "type": "layout.page",
+        "props": {
+          "title": "Fulfillment task"
+        },
+        "children": [
+          {
+            "id": "core.tickets.task_record.s_header",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.task_record.r_header",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.task_record.c_header",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_record.heading",
+                        "type": "display.heading",
+                        "props": {
+                          "field": "title",
+                          "level": 1
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.task_record.badge_status",
+                        "type": "display.badge",
+                        "props": {
+                          "field": "status"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.task_record.waiting_callout",
+                        "type": "display.callout",
+                        "props": {
+                          "tone": "info",
+                          "title": "Waiting",
+                          "text": "This task starts when the tasks it depends on are done.",
+                          "visibleWhen": "record.status == 'blocked'"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.task_record.transitions",
+                        "type": "action.transition_buttons",
+                        "props": {
+                          "max": 3
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.task_record.r_overview",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.task_record.c_overview_1",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 6
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_record.card_task",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Task"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.task_record.f_request",
+                            "type": "field",
+                            "props": {
+                              "field": "request"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_record.f_assignment_group",
+                            "type": "field",
+                            "props": {
+                              "field": "assignment_group"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_record.f_assignee",
+                            "type": "field",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "core.tickets.task_record.c_overview_2",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 6
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_record.card_properties",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Properties"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.task_record.f_number",
+                            "type": "field",
+                            "props": {
+                              "field": "number"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_record.f_status",
+                            "type": "field",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_record.f_completed_at",
+                            "type": "field",
+                            "props": {
+                              "field": "completed_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "core.tickets.task_record.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.task_record.r_main",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.task_record.c_main",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_record.card_details",
+                        "type": "layout.card",
+                        "props": {
+                          "title": "Details"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.task_record.f_description",
+                            "type": "field",
+                            "props": {
+                              "field": "description"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_record.f_notes",
+                            "type": "field",
+                            "props": {
+                              "field": "notes"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "id": "core.tickets.task_record.sla",
+                        "type": "activity.sla",
+                        "props": {
+                          "title": "Service levels"
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.task_record.tabs",
+                        "type": "layout.tab_group",
+                        "props": {
+                          "defaultTab": "core.tickets.task_record.tab_activity"
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.task_record.tab_activity",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "Activity"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.task_record.activity",
+                                "type": "activity.feed",
+                                "props": {
+                                  "showPublic": false,
+                                  "showInternal": true,
+                                  "defaultComposer": "internal"
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "core.tickets.task_record.tab_history",
+                            "type": "layout.tab",
+                            "props": {
+                              "title": "History"
+                            },
+                            "children": [
+                              {
+                                "id": "core.tickets.task_record.history",
+                                "type": "activity.audit_history",
+                                "props": {
+                                  "pageSize": 25
+                                },
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "core.tickets.task_list",
+      "kind": "list",
+      "entity": "core.tickets.request_task",
+      "label": "Fulfillment tasks list",
+      "layout": {
+        "id": "core.tickets.task_list",
+        "type": "layout.page",
+        "props": {
+          "title": "Fulfillment tasks"
+        },
+        "children": [
+          {
+            "id": "core.tickets.task_list.s_main",
+            "type": "layout.section",
+            "props": {},
+            "children": [
+              {
+                "id": "core.tickets.task_list.r_toolbar",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.task_list.c_toolbar",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_list.views",
+                        "type": "collection.saved_views",
+                        "props": {
+                          "views": [
+                            {
+                              "id": "mine",
+                              "label": "My tasks",
+                              "filter": "record.assignee == user.id && record.status in ['open', 'in_progress']"
+                            },
+                            {
+                              "id": "ready",
+                              "label": "Ready",
+                              "filter": "record.status == 'open'"
+                            },
+                            {
+                              "id": "waiting",
+                              "label": "Waiting",
+                              "filter": "record.status == 'blocked'"
+                            },
+                            {
+                              "id": "done",
+                              "label": "Done",
+                              "filter": "record.status in ['done', 'skipped']"
+                            }
+                          ]
+                        },
+                        "children": []
+                      },
+                      {
+                        "id": "core.tickets.task_list.filters",
+                        "type": "collection.filter_bar",
+                        "props": {
+                          "fields": [
+                            "status",
+                            "assignment_group",
+                            "assignee"
+                          ],
+                          "showSearch": true
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "core.tickets.task_list.r_table",
+                "type": "layout.row",
+                "props": {},
+                "children": [
+                  {
+                    "id": "core.tickets.task_list.c_table",
+                    "type": "layout.column",
+                    "props": {
+                      "span": 12
+                    },
+                    "children": [
+                      {
+                        "id": "core.tickets.task_list.table",
+                        "type": "collection.data_table",
+                        "props": {
+                          "entity": "core.tickets.request_task",
+                          "pageSize": 50,
+                          "density": "compact",
+                          "sort": {
+                            "field": "updated_at",
+                            "direction": "desc"
+                          }
+                        },
+                        "children": [
+                          {
+                            "id": "core.tickets.task_list.col_number",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "number",
+                              "width": "sm"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_title",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "title",
+                              "width": "lg"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_request",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "request"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_status",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "status"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_assignment_group",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "assignment_group"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_assignee",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "assignee"
+                            },
+                            "children": []
+                          },
+                          {
+                            "id": "core.tickets.task_list.col_updated_at",
+                            "type": "collection.column",
+                            "props": {
+                              "field": "updated_at"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "roles": [
+    {
+      "id": "core.tickets.agent",
+      "label": "Agent",
+      "description": "Works tickets for any group."
+    },
+    {
+      "id": "core.tickets.requester",
+      "label": "Requester",
+      "description": "Raises tickets and follows their own requests."
+    },
+    {
+      "id": "core.tickets.admin",
+      "label": "Tickets admin",
+      "description": "Administers the Tickets module and customizes it."
+    },
+    {
+      "id": "core.tickets.approver",
+      "label": "Approver",
+      "description": "Approves requests sent to them (a light user: reads the requests they approve, nothing else)."
+    }
+  ],
+  "permissionSets": [
+    {
+      "id": "core.tickets.ps_agent",
+      "label": "Agents",
+      "roles": [
+        "core.tickets.agent"
+      ],
+      "entities": [
+        {
+          "entity": "core.tickets.ticket",
+          "create": true,
+          "read": "all",
+          "update": "all",
+          "delete": false
+        },
+        {
+          "entity": "core.tickets.request",
+          "create": true,
+          "read": "all",
+          "update": "all",
+          "delete": false
+        },
+        {
+          "entity": "core.tickets.request_task",
+          "create": false,
+          "read": "all",
+          "update": "all",
+          "delete": false
+        }
+      ],
+      "fields": [],
+      "actions": []
+    },
+    {
+      "id": "core.tickets.ps_requester",
+      "label": "Requesters",
+      "roles": [
+        "core.tickets.requester"
+      ],
+      "entities": [
+        {
+          "entity": "core.tickets.ticket",
+          "create": true,
+          "read": "related",
+          "update": "related",
+          "delete": false
+        },
+        {
+          "entity": "core.tickets.request",
+          "create": true,
+          "read": "related",
+          "update": "related",
+          "delete": false
+        }
+      ],
+      "fields": [
+        {
+          "entity": "core.tickets.ticket",
+          "field": "priority",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "requester",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "assignment_group",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "assignee",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "parent",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "resolution_notes",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "estimated_effort",
+          "access": "hidden"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "labels",
+          "access": "hidden"
+        },
+        {
+          "entity": "core.tickets.request",
+          "field": "requester",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.request",
+          "field": "assignment_group",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.request",
+          "field": "assignee",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "escalated",
+          "access": "read"
+        },
+        {
+          "entity": "core.tickets.ticket",
+          "field": "escalation_reason",
+          "access": "read"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "id": "core.tickets.ps_admin",
+      "label": "Tickets admins",
+      "roles": [
+        "core.tickets.admin"
+      ],
+      "entities": [
+        {
+          "entity": "core.tickets.ticket",
+          "create": true,
+          "read": "all",
+          "update": "all",
+          "delete": true
+        },
+        {
+          "entity": "core.tickets.request",
+          "create": true,
+          "read": "all",
+          "update": "all",
+          "delete": true
+        },
+        {
+          "entity": "core.tickets.request_task",
+          "create": false,
+          "read": "all",
+          "update": "all",
+          "delete": true
+        }
+      ],
+      "fields": [],
+      "actions": [
+        "config.edit",
+        "config.publish",
+        "audit.read",
+        "records.export"
+      ]
+    },
+    {
+      "id": "core.tickets.ps_approver",
+      "label": "Approvers",
+      "roles": [
+        "core.tickets.approver"
+      ],
+      "entities": [
+        {
+          "entity": "core.tickets.request",
+          "create": false,
+          "read": "related",
+          "update": "none",
+          "delete": false
+        }
+      ],
+      "fields": [],
+      "actions": []
+    }
+  ],
+  "assignmentRules": [
+    {
+      "id": "core.tickets.assign.network",
+      "entity": "core.tickets.ticket",
+      "description": "Network issues go to the Network team",
+      "when": "record.category == 'network'",
+      "group": "network",
+      "order": 10
+    },
+    {
+      "id": "core.tickets.assign.default",
+      "entity": "core.tickets.ticket",
+      "description": "Everything else goes to the Service Desk",
+      "when": "true",
+      "group": "service_desk",
+      "order": 100
+    },
+    {
+      "id": "core.tickets.assign.requests",
+      "entity": "core.tickets.request",
+      "description": "Requests go to the Service Desk",
+      "when": "true",
+      "group": "service_desk",
+      "order": 100
+    }
+  ],
+  "notificationTemplates": [
+    {
+      "id": "core.tickets.notify.resolved",
+      "event": "record.transitioned:resolved",
+      "entity": "core.tickets.ticket",
+      "recipients": [
+        "requester"
+      ],
+      "subject": "Resolved: {{record.title}}",
+      "body": "Your ticket {{record.number}} was resolved.\n\n{{record.resolution_notes}}\n\nReply to reopen it, or confirm the resolution in the portal."
+    },
+    {
+      "id": "core.tickets.notify.assigned",
+      "event": "record.updated:assignee",
+      "entity": "core.tickets.ticket",
+      "recipients": [
+        "assignee"
+      ],
+      "subject": "Assigned to you: {{record.title}}",
+      "body": "Ticket {{record.number}} is now assigned to you."
+    },
+    {
+      "id": "core.tickets.notify.request_fulfilled",
+      "event": "record.transitioned:fulfilled",
+      "entity": "core.tickets.request",
+      "recipients": [
+        "requester"
+      ],
+      "subject": "Fulfilled: {{record.title}}",
+      "body": "Request {{record.number}} has been fulfilled."
+    },
+    {
+      "id": "core.tickets.notify.task_assigned",
+      "event": "record.updated:assignee",
+      "entity": "core.tickets.request_task",
+      "recipients": [
+        "assignee"
+      ],
+      "subject": "Task assigned to you: {{record.title}}",
+      "body": "Fulfillment task {{record.number}} is now assigned to you."
+    },
+    {
+      "id": "core.tickets.notify.request_declined",
+      "event": "record.transitioned:rejected",
+      "entity": "core.tickets.request",
+      "recipients": [
+        "requester"
+      ],
+      "subject": "Not approved: {{record.title}}",
+      "body": "Request {{record.number}} was not approved. Open it to see the approvers' comments."
+    },
+    {
+      "id": "core.tickets.template.escalated",
+      "label": "Ticket escalated",
+      "entity": "core.tickets.ticket",
+      "subject": "Escalated: {{record.number}} {{record.title}}",
+      "body": "{{record.number}} was escalated.\n\nReason: {{event.reason}}\nPriority: {{record.priority}}\n\n{{link}}",
+      "variants": {
+        "sms": {
+          "body": "Escalated {{record.number}}: {{record.title}} {{link}}"
+        }
+      }
+    },
+    {
+      "id": "core.tickets.template.p1_raised",
+      "label": "Ticket became P1",
+      "entity": "core.tickets.ticket",
+      "subject": "P1: {{record.number}} {{record.title}}",
+      "body": "{{record.number}} is now P1: {{record.title}}\n\nThe assignee and the assignment group are told; this alert cannot be muted.\n\n{{link}}",
+      "variants": {
+        "sms": {
+          "body": "P1 {{record.number}}: {{record.title}} {{link}}"
+        }
+      }
+    },
+    {
+      "id": "core.tickets.template.sla_alert",
+      "label": "Ticket SLA alert",
+      "entity": "core.tickets.ticket",
+      "subject": "{{event.title}}",
+      "body": "{{event.title}}\n\nTake the alert on the Alerts page, then work the ticket.\n\n{{link}}",
+      "variants": {
+        "sms": {
+          "body": "{{event.title}} {{link}}"
+        }
+      }
+    },
+    {
+      "id": "core.tickets.template.public_reply",
+      "label": "Reply on your ticket",
+      "entity": "core.tickets.ticket",
+      "subject": "[{{record.number}}] Re: {{record.title}}",
+      "body": "##- Reply above this line -##\n\n{{activity.body}}\n\nView the ticket: {{link}}",
+      "variants": {
+        "in_app": {
+          "subject": "New reply on {{record.number}} {{record.title}}",
+          "body": "{{activity.body}}"
+        }
+      }
+    },
+    {
+      "id": "core.tickets.template.received_by_email",
+      "label": "We received your email",
+      "entity": "core.tickets.ticket",
+      "subject": "[{{record.number}}] Received: {{record.title}}",
+      "body": "##- Reply above this line -##\n\nHello {{recipient.name}},\n\nWe opened {{record.number}} for your message. Reply to this email to add to it.\n\n{{link}}"
+    }
+  ],
+  "extensionPoints": [
+    {
+      "id": "core.tickets.hooks.before_write",
+      "kind": "lifecycle_hook",
+      "version": "1.0.0",
+      "cardinality": "ordered_pipeline",
+      "description": "Synchronous, deterministic validators run before a ticket is created or updated. Must not call the network."
+    },
+    {
+      "id": "core.tickets.hooks.after_write",
+      "kind": "lifecycle_hook",
+      "version": "1.0.0",
+      "cardinality": "multiple",
+      "description": "Asynchronous subscribers notified after a ticket change commits (at-least-once)."
+    },
+    {
+      "id": "core.tickets.strategy.assignment",
+      "kind": "strategy",
+      "version": "1.0.0",
+      "cardinality": "single_provider",
+      "description": "Chooses the assignment group for new tickets. Default: ordered assignment rules."
+    },
+    {
+      "id": "core.tickets.slots.record_side_panel",
+      "kind": "ui_slot",
+      "version": "1.0.0",
+      "cardinality": "multiple",
+      "description": "Cards contributed to the right column of the ticket record page."
+    }
+  ],
+  "catalogItems": [
+    {
+      "id": "core.tickets.catalog.new_laptop",
+      "label": "New laptop",
+      "description": "A company laptop, imaged and delivered to your desk.",
+      "category": "Hardware",
+      "icon": "laptop",
+      "requestEntity": "core.tickets.request",
+      "order": 10,
+      "variables": [
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "single_select",
+          "choiceList": "core.tickets.laptop_model",
+          "required": true
+        },
+        {
+          "key": "accessories",
+          "label": "Accessories",
+          "type": "multi_select",
+          "choiceList": "core.tickets.accessories"
+        },
+        {
+          "key": "needed_by",
+          "label": "Needed by",
+          "type": "date",
+          "help": "We need about five working days."
+        },
+        {
+          "key": "justification",
+          "label": "Why do you need it?",
+          "type": "long_text",
+          "required": true,
+          "maxLength": 2000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "order",
+          "title": "Order the laptop",
+          "description": "Order the requested model and accessories.",
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "image",
+          "title": "Image and enroll the laptop",
+          "dependsOn": [
+            "order"
+          ],
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "deliver",
+          "title": "Deliver and set up",
+          "dependsOn": [
+            "image"
+          ],
+          "assignmentGroup": "service_desk"
+        }
+      ],
+      "approvalPolicy": "core.tickets.approval.manager"
+    },
+    {
+      "id": "core.tickets.catalog.software_access",
+      "label": "Software access",
+      "description": "Access to a business application, at the level you need.",
+      "category": "Access",
+      "icon": "shield",
+      "requestEntity": "core.tickets.request",
+      "order": 20,
+      "variables": [
+        {
+          "key": "application",
+          "label": "Application",
+          "type": "single_select",
+          "choiceList": "core.tickets.application",
+          "required": true
+        },
+        {
+          "key": "access_level",
+          "label": "Access level",
+          "type": "single_select",
+          "choiceList": "core.tickets.access_level",
+          "required": true
+        },
+        {
+          "key": "reason",
+          "label": "Business reason",
+          "type": "long_text",
+          "required": true,
+          "maxLength": 2000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "security_review",
+          "title": "Security review of administrator access",
+          "when": "variables.access_level == 'admin'",
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "grant",
+          "title": "Grant access",
+          "dependsOn": [
+            "security_review"
+          ],
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "notify",
+          "title": "Tell the requester how to sign in",
+          "dependsOn": [
+            "grant"
+          ],
+          "assignmentGroup": "service_desk"
+        }
+      ],
+      "approvalPolicy": "core.tickets.approval.access"
+    },
+    {
+      "id": "core.tickets.catalog.onboarding",
+      "label": "New hire onboarding",
+      "description": "Accounts, equipment and a badge, ready on day one.",
+      "category": "People",
+      "icon": "users",
+      "requestEntity": "core.tickets.request",
+      "order": 30,
+      "variables": [
+        {
+          "key": "new_hire_name",
+          "label": "New hire's name",
+          "type": "short_text",
+          "required": true,
+          "maxLength": 120
+        },
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "required": true
+        },
+        {
+          "key": "department",
+          "label": "Department",
+          "type": "single_select",
+          "choiceList": "core.tickets.department",
+          "required": true
+        },
+        {
+          "key": "needs_laptop",
+          "label": "Needs a laptop",
+          "type": "toggle",
+          "default": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "accounts",
+          "title": "Create accounts and mailbox",
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "laptop",
+          "title": "Prepare a laptop",
+          "dependsOn": [
+            "accounts"
+          ],
+          "when": "variables.needs_laptop == true",
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "badge",
+          "title": "Order a building badge",
+          "assignmentGroup": "service_desk"
+        },
+        {
+          "id": "welcome",
+          "title": "Send the welcome pack",
+          "dependsOn": [
+            "accounts",
+            "laptop",
+            "badge"
+          ],
+          "assignmentGroup": "service_desk"
+        }
+      ]
+    }
+  ],
+  "migrations": [],
+  "sampleData": [
+    {
+      "entity": "core.tickets.ticket",
+      "key": "vpn",
+      "data": {
+        "title": "VPN disconnects every 10 minutes",
+        "category": "network",
+        "priority": "p2",
+        "status": "in_progress",
+        "requester": "@user:dana",
+        "description": "<p>Remote staff lose the VPN tunnel roughly every ten minutes since Monday.</p>",
+        "contact_email": "dana@example.com",
+        "assignment_group": "@group:network",
+        "assignee": "@user:sam",
+        "estimated_effort": "4"
+      },
+      "activity": [
+        {
+          "kind": "public_reply",
+          "body": "Thanks, we're looking into it.",
+          "author": "@user:sam"
+        },
+        {
+          "kind": "work_note",
+          "body": "Internal: checked logs, see linked change.",
+          "author": "@user:sam"
+        }
+      ]
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "laptop",
+      "data": {
+        "title": "New laptop for onboarding hire",
+        "category": "hardware",
+        "priority": "p3",
+        "status": "assigned",
+        "requester": "@user:riley",
+        "description": "<p>Starter on the 21st needs a standard developer laptop.</p>",
+        "contact_email": "riley@example.com",
+        "assignment_group": "@group:service_desk",
+        "estimated_effort": "2"
+      },
+      "activity": []
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "payroll_access",
+      "data": {
+        "title": "Access to payroll reports",
+        "category": "access",
+        "priority": "p3",
+        "status": "new",
+        "requester": "@user:jordan",
+        "description": "<p>I moved to Finance and need read access to the payroll reports.</p>",
+        "contact_email": "jordan@example.com"
+      },
+      "activity": []
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "email_outage",
+      "data": {
+        "title": "Email not syncing on mobile",
+        "category": "software",
+        "priority": "p1",
+        "status": "in_progress",
+        "requester": "@user:dana",
+        "description": "<p>Several people report that mobile mail stopped syncing this morning.</p>",
+        "contact_email": "dana@example.com",
+        "assignment_group": "@group:service_desk",
+        "assignee": "@user:alex",
+        "estimated_effort": "about 3h",
+        "impact": "high"
+      },
+      "activity": [
+        {
+          "kind": "public_reply",
+          "body": "Thanks, we're looking into it.",
+          "author": "@user:alex"
+        },
+        {
+          "kind": "work_note",
+          "body": "Internal: checked logs, see linked change.",
+          "author": "@user:alex"
+        }
+      ]
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "printer",
+      "data": {
+        "title": "Printer on 3rd floor jammed",
+        "category": "hardware",
+        "priority": "p4",
+        "status": "resolved",
+        "requester": "@user:jordan",
+        "description": "<p>The large printer by the kitchen shows a paper jam error.</p>",
+        "contact_email": "jordan@example.com",
+        "assignment_group": "@group:service_desk",
+        "assignee": "@user:sam",
+        "estimated_effort": "0.5",
+        "resolution_notes": "Fixed and verified with the requester."
+      },
+      "activity": [
+        {
+          "kind": "public_reply",
+          "body": "Thanks, we're looking into it.",
+          "author": "@user:sam"
+        },
+        {
+          "kind": "work_note",
+          "body": "Internal: checked logs, see linked change.",
+          "author": "@user:sam"
+        }
+      ]
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "wifi_guest",
+      "data": {
+        "title": "Guest Wi-Fi password rotation",
+        "category": "network",
+        "priority": "p4",
+        "status": "on_hold",
+        "requester": "@user:riley",
+        "description": "<p>Please rotate the guest Wi-Fi password before the partner event.</p>",
+        "contact_email": "riley@example.com",
+        "assignment_group": "@group:network",
+        "assignee": "@user:sam",
+        "estimated_effort": "1"
+      },
+      "activity": [
+        {
+          "kind": "public_reply",
+          "body": "Thanks, we're looking into it.",
+          "author": "@user:sam"
+        },
+        {
+          "kind": "work_note",
+          "body": "Internal: checked logs, see linked change.",
+          "author": "@user:sam"
+        }
+      ]
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "crm_license",
+      "data": {
+        "title": "CRM license for new sales rep",
+        "category": "software",
+        "priority": "p3",
+        "status": "closed",
+        "requester": "@user:jordan",
+        "description": "<p>Need a CRM seat for Priya starting next week.</p>",
+        "contact_email": "jordan@example.com",
+        "assignment_group": "@group:service_desk",
+        "assignee": "@user:alex",
+        "estimated_effort": "1",
+        "resolution_notes": "Fixed and verified with the requester.",
+        "confirmed": true
+      },
+      "activity": [
+        {
+          "kind": "public_reply",
+          "body": "Thanks, we're looking into it.",
+          "author": "@user:alex"
+        },
+        {
+          "kind": "work_note",
+          "body": "Internal: checked logs, see linked change.",
+          "author": "@user:alex"
+        }
+      ]
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "monitor",
+      "data": {
+        "title": "Second monitor flickers",
+        "category": "hardware",
+        "priority": "p4",
+        "status": "new",
+        "requester": "@user:dana",
+        "description": "<p>My second monitor flickers when I move windows across.</p>",
+        "contact_email": "dana@example.com"
+      },
+      "activity": []
+    },
+    {
+      "entity": "core.tickets.ticket",
+      "key": "vpn_child",
+      "data": {
+        "title": "Update VPN client on finance laptops",
+        "category": "network",
+        "priority": "p3",
+        "status": "assigned",
+        "requester": "@user:sam",
+        "assignment_group": "@group:network",
+        "parent": "@record:vpn"
+      },
+      "activity": []
+    },
+    {
+      "entity": "core.tickets.request",
+      "key": "laptop_request",
+      "data": {
+        "title": "New laptop",
+        "catalog_item": "core.tickets.catalog.new_laptop",
+        "requester": "@user:dana",
+        "requested_for": "@user:dana",
+        "variables": {
+          "model": "performance",
+          "accessories": [
+            "dock",
+            "monitor"
+          ],
+          "justification": "My current laptop cannot run the design tools."
+        }
+      }
+    },
+    {
+      "entity": "core.tickets.request",
+      "key": "access_request",
+      "data": {
+        "title": "Software access",
+        "catalog_item": "core.tickets.catalog.software_access",
+        "requester": "@user:jordan",
+        "requested_for": "@user:jordan",
+        "variables": {
+          "application": "analytics",
+          "access_level": "read",
+          "reason": "Quarterly reporting."
+        }
+      }
+    }
+  ],
+  "approvalPolicies": [
+    {
+      "id": "core.tickets.approval.manager",
+      "label": "Manager approval",
+      "entity": "core.tickets.request",
+      "description": "One approver signs off before fulfillment starts. Escalates to the service desk after 72 hours.",
+      "stages": [
+        {
+          "id": "manager",
+          "label": "Manager approval",
+          "mode": "any",
+          "approvers": [
+            {
+              "kind": "role",
+              "ref": "core.tickets.approver"
+            }
+          ],
+          "expiresAfterHours": 72,
+          "onExpiry": "escalate",
+          "escalateTo": [
+            {
+              "kind": "group",
+              "ref": "service_desk"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.approval.access",
+      "label": "Access approval",
+      "entity": "core.tickets.request",
+      "description": "A manager approves; admin access also needs a Tickets admin's sign-off.",
+      "stages": [
+        {
+          "id": "manager",
+          "label": "Manager approval",
+          "mode": "any",
+          "approvers": [
+            {
+              "kind": "role",
+              "ref": "core.tickets.approver"
+            }
+          ],
+          "expiresAfterHours": 72,
+          "onExpiry": "escalate",
+          "escalateTo": [
+            {
+              "kind": "group",
+              "ref": "service_desk"
+            }
+          ]
+        },
+        {
+          "id": "security",
+          "label": "Security sign-off",
+          "mode": "all",
+          "approvers": [
+            {
+              "kind": "role",
+              "ref": "core.tickets.admin"
+            }
+          ],
+          "when": "variables.access_level == 'admin'"
+        }
+      ]
+    }
+  ],
+  "eventTypes": [
+    {
+      "id": "core.tickets.ticket.escalated",
+      "version": 1,
+      "label": "Ticket escalated",
+      "description": "An agent escalated a ticket to a higher support tier.",
+      "subjectEntity": "core.tickets.ticket",
+      "fields": {
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "Priority choice ID (p1–p4)."
+        },
+        "from": {
+          "type": "string",
+          "required": false,
+          "description": "State before the escalation."
+        },
+        "reason": {
+          "type": "string",
+          "required": false,
+          "description": "Escalation reason as the agent wrote it."
+        },
+        "assignment_group": {
+          "type": "string",
+          "required": false,
+          "description": "Owning group ID."
+        }
+      },
+      "severity": "high",
+      "sensitivity": "internal",
+      "category": "operational"
+    },
+    {
+      "id": "core.tickets.ticket.priority_raised",
+      "version": 1,
+      "label": "Ticket became critical",
+      "description": "A ticket's priority became P1 (on create or later).",
+      "subjectEntity": "core.tickets.ticket",
+      "fields": {
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "New priority."
+        },
+        "previous": {
+          "type": "string",
+          "required": false,
+          "description": "Priority before, if any."
+        }
+      },
+      "severity": "critical",
+      "sensitivity": "internal",
+      "category": "operational"
+    },
+    {
+      "id": "core.tickets.ticket.resolved",
+      "version": 1,
+      "label": "Ticket resolved",
+      "description": "An agent resolved a ticket.",
+      "subjectEntity": "core.tickets.ticket",
+      "fields": {
+        "priority": {
+          "type": "string",
+          "required": true,
+          "description": "Priority at resolution."
+        },
+        "escalated": {
+          "type": "boolean"
+        }
+      },
+      "severity": "info",
+      "sensitivity": "internal",
+      "category": "operational"
+    }
+  ],
+  "businessCalendars": [
+    {
+      "id": "core.tickets.calendar.business_hours",
+      "label": "Service desk hours",
+      "timeZone": "America/New_York",
+      "week": [
+        {
+          "day": "mon",
+          "start": "08:00",
+          "end": "18:00"
+        },
+        {
+          "day": "tue",
+          "start": "08:00",
+          "end": "18:00"
+        },
+        {
+          "day": "wed",
+          "start": "08:00",
+          "end": "18:00"
+        },
+        {
+          "day": "thu",
+          "start": "08:00",
+          "end": "18:00"
+        },
+        {
+          "day": "fri",
+          "start": "08:00",
+          "end": "18:00"
+        }
+      ],
+      "holidays": [
+        {
+          "date": "2026-01-01",
+          "label": "New Year's Day"
+        },
+        {
+          "date": "2026-01-19",
+          "label": "Martin Luther King Jr. Day"
+        },
+        {
+          "date": "2026-02-16",
+          "label": "Presidents' Day"
+        },
+        {
+          "date": "2026-05-25",
+          "label": "Memorial Day"
+        },
+        {
+          "date": "2026-06-19",
+          "label": "Juneteenth"
+        },
+        {
+          "date": "2026-07-03",
+          "label": "Independence Day (observed)"
+        },
+        {
+          "date": "2026-09-07",
+          "label": "Labor Day"
+        },
+        {
+          "date": "2026-11-26",
+          "label": "Thanksgiving Day"
+        },
+        {
+          "date": "2026-11-27",
+          "label": "Day after Thanksgiving"
+        },
+        {
+          "date": "2026-12-25",
+          "label": "Christmas Day"
+        },
+        {
+          "date": "2027-01-01",
+          "label": "New Year's Day"
+        },
+        {
+          "date": "2027-01-18",
+          "label": "Martin Luther King Jr. Day"
+        },
+        {
+          "date": "2027-02-15",
+          "label": "Presidents' Day"
+        },
+        {
+          "date": "2027-05-31",
+          "label": "Memorial Day"
+        },
+        {
+          "date": "2027-06-18",
+          "label": "Juneteenth (observed)"
+        },
+        {
+          "date": "2027-07-05",
+          "label": "Independence Day (observed)"
+        },
+        {
+          "date": "2027-09-06",
+          "label": "Labor Day"
+        },
+        {
+          "date": "2027-11-25",
+          "label": "Thanksgiving Day"
+        },
+        {
+          "date": "2027-11-26",
+          "label": "Day after Thanksgiving"
+        },
+        {
+          "date": "2027-12-24",
+          "label": "Christmas Day (observed)"
+        }
+      ]
+    }
+  ],
+  "slaPolicies": [
+    {
+      "id": "core.tickets.sla.ticket",
+      "label": "Ticket service levels",
+      "entity": "core.tickets.ticket",
+      "description": "First response and resolution targets by priority. P1 is measured around the clock, the rest in service desk hours.",
+      "targets": [
+        {
+          "id": "response",
+          "label": "First response",
+          "stop": "record.status != 'new'",
+          "onReopen": "none",
+          "calendar": "core.tickets.calendar.business_hours",
+          "warnAtPercent": 75,
+          "goals": [
+            {
+              "when": "record.priority == 'p1'",
+              "minutes": 30,
+              "calendar": "24x7"
+            },
+            {
+              "when": "record.priority == 'p2'",
+              "minutes": 120
+            },
+            {
+              "when": "record.priority == 'p3'",
+              "minutes": 480
+            },
+            {
+              "minutes": 960
+            }
+          ]
+        },
+        {
+          "id": "resolution",
+          "label": "Resolution",
+          "stop": "record.status in ['resolved', 'closed', 'cancelled']",
+          "pause": "record.status == 'on_hold'",
+          "onReopen": "resume",
+          "calendar": "core.tickets.calendar.business_hours",
+          "warnAtPercent": 75,
+          "goals": [
+            {
+              "when": "record.priority == 'p1'",
+              "minutes": 240,
+              "calendar": "24x7"
+            },
+            {
+              "when": "record.priority == 'p2'",
+              "minutes": 480
+            },
+            {
+              "when": "record.priority == 'p3'",
+              "minutes": 1800
+            },
+            {
+              "minutes": 3000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.sla.request",
+      "label": "Request fulfillment",
+      "entity": "core.tickets.request",
+      "description": "What the requester is promised: fulfilled within five service desk days, not counting time waiting for approval.",
+      "targets": [
+        {
+          "id": "fulfillment",
+          "label": "Fulfillment",
+          "stop": "record.status in ['fulfilled', 'closed', 'rejected', 'cancelled']",
+          "pause": "record.status == 'awaiting_approval'",
+          "onReopen": "resume",
+          "calendar": "core.tickets.calendar.business_hours",
+          "warnAtPercent": 80,
+          "goals": [
+            {
+              "minutes": 3000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.sla.task",
+      "label": "Task completion",
+      "entity": "core.tickets.request_task",
+      "description": "Team target for fulfillment tasks: done within two service desk days once they can start.",
+      "targets": [
+        {
+          "id": "completion",
+          "label": "Completion",
+          "start": "record.status in ['open', 'in_progress']",
+          "stop": "record.status in ['done', 'skipped']",
+          "onReopen": "resume",
+          "calendar": "core.tickets.calendar.business_hours",
+          "warnAtPercent": 80,
+          "goals": [
+            {
+              "minutes": 1200
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "id": "core.tickets.metric.open",
+      "label": "Open",
+      "description": "Tickets that are not resolved, closed or cancelled.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled'])"
+    },
+    {
+      "id": "core.tickets.metric.unassigned",
+      "label": "Unassigned",
+      "description": "Open tickets nobody is working on yet.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled']) && !has(record.assignee)"
+    },
+    {
+      "id": "core.tickets.metric.sla_breached",
+      "label": "SLA breached",
+      "description": "Open tickets that missed a response or resolution target.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled'])",
+      "sla": {
+        "policy": "core.tickets.sla.ticket",
+        "state": "breached"
+      }
+    },
+    {
+      "id": "core.tickets.metric.avg_resolution",
+      "label": "Average resolution time",
+      "description": "From creation to resolution, for tickets resolved in the last 30 days.",
+      "entity": "core.tickets.ticket",
+      "measure": {
+        "kind": "duration",
+        "from": "created_at",
+        "to": "resolved_at",
+        "unit": "hours"
+      },
+      "dateRange": {
+        "field": "resolved_at",
+        "last": 30,
+        "unit": "day",
+        "calendar": "core.tickets.calendar.business_hours"
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ],
+      "format": "duration"
+    },
+    {
+      "id": "core.tickets.metric.workload_by_team",
+      "label": "Workload by team",
+      "description": "Open tickets per assignment group.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled'])",
+      "groupBy": {
+        "field": "assignment_group",
+        "limit": 12,
+        "includeEmpty": true
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ]
+    },
+    {
+      "id": "core.tickets.metric.resolved_trend",
+      "label": "Resolved per week",
+      "description": "Tickets resolved in each of the last 8 weeks.",
+      "entity": "core.tickets.ticket",
+      "dateRange": {
+        "field": "resolved_at",
+        "last": 8,
+        "unit": "week",
+        "calendar": "core.tickets.calendar.business_hours"
+      },
+      "groupBy": {
+        "field": "resolved_at",
+        "bucket": "week"
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ]
+    },
+    {
+      "id": "core.tickets.metric.open_by_category",
+      "label": "Open by category",
+      "description": "Open tickets per category.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled'])",
+      "groupBy": {
+        "field": "category",
+        "limit": 12,
+        "includeEmpty": true
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ]
+    },
+    {
+      "id": "core.tickets.metric.sla_at_risk",
+      "label": "SLA at risk",
+      "description": "Open tickets whose response or resolution clock passed its warning point and has not breached yet.",
+      "entity": "core.tickets.ticket",
+      "filter": "!(record.status in ['resolved', 'closed', 'cancelled'])",
+      "sla": {
+        "policy": "core.tickets.sla.ticket",
+        "state": "at_risk"
+      }
+    },
+    {
+      "id": "core.tickets.metric.alert_mtta",
+      "label": "Time to acknowledge",
+      "description": "Average time from an SLA alert opening to someone acknowledging it, for alerts opened in the last 30 days.",
+      "entity": "core.tickets.ticket",
+      "alerts": {
+        "rules": [
+          "core.tickets.alert.sla_breached",
+          "core.tickets.alert.sla_at_risk"
+        ]
+      },
+      "measure": {
+        "kind": "duration",
+        "from": "opened_at",
+        "to": "acknowledged_at",
+        "unit": "minutes"
+      },
+      "dateRange": {
+        "field": "opened_at",
+        "last": 30,
+        "unit": "day",
+        "calendar": "core.tickets.calendar.business_hours"
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ],
+      "format": "duration"
+    },
+    {
+      "id": "core.tickets.metric.alert_mttr",
+      "label": "Time to resolve alerts",
+      "description": "Average time from an SLA alert opening to its resolution, for alerts resolved in the last 30 days.",
+      "entity": "core.tickets.ticket",
+      "alerts": {
+        "rules": [
+          "core.tickets.alert.sla_breached",
+          "core.tickets.alert.sla_at_risk"
+        ]
+      },
+      "measure": {
+        "kind": "duration",
+        "from": "opened_at",
+        "to": "resolved_at",
+        "unit": "hours"
+      },
+      "dateRange": {
+        "field": "resolved_at",
+        "last": 30,
+        "unit": "day",
+        "calendar": "core.tickets.calendar.business_hours"
+      },
+      "roles": [
+        "core.tickets.agent",
+        "core.tickets.admin"
+      ],
+      "format": "duration"
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "core.tickets.sub.escalated",
+      "label": "Ticket escalated",
+      "description": "A ticket was escalated with the Escalate action.",
+      "event": "core.tickets.ticket.escalated"
+    },
+    {
+      "id": "core.tickets.sub.p1_raised",
+      "label": "Ticket became P1",
+      "description": "A ticket's priority was raised to P1.",
+      "event": "core.tickets.ticket.priority_raised"
+    },
+    {
+      "id": "core.tickets.sub.sla_breached_alert",
+      "label": "Ticket SLA breached (alert)",
+      "description": "Raises the SLA breach alert.",
+      "event": "platform.sla.breached",
+      "entity": "core.tickets.ticket",
+      "target": "alert"
+    },
+    {
+      "id": "core.tickets.sub.sla_warning_alert",
+      "label": "Ticket SLA at risk (alert)",
+      "description": "Raises the SLA at-risk alert.",
+      "event": "platform.sla.warning",
+      "entity": "core.tickets.ticket",
+      "target": "alert"
+    },
+    {
+      "id": "core.tickets.sub.ticket_done_alert",
+      "label": "Ticket done (alert)",
+      "description": "Resolves a ticket's alerts when it is resolved, closed or cancelled.",
+      "event": "record.transitioned",
+      "entity": "core.tickets.ticket",
+      "when": "record.status in ['resolved', 'closed', 'cancelled']",
+      "target": "alert"
+    },
+    {
+      "id": "core.tickets.sub.sla_alert_opened",
+      "label": "Ticket SLA alert opened",
+      "description": "Tells the alert's owners.",
+      "event": "platform.alert.opened",
+      "when": "event.rule in ['core.tickets.alert.sla_breached', 'core.tickets.alert.sla_at_risk']"
+    },
+    {
+      "id": "core.tickets.sub.sla_alert_escalated",
+      "label": "Ticket SLA alert escalated",
+      "description": "Tells the alert's owners again, urgently.",
+      "event": "platform.alert.escalated",
+      "when": "event.rule == 'core.tickets.alert.sla_breached'"
+    },
+    {
+      "id": "core.tickets.sub.public_reply",
+      "label": "Public reply on a ticket",
+      "description": "Someone replied publicly on a ticket (internal notes never match).",
+      "event": "activity.added",
+      "entity": "core.tickets.ticket",
+      "when": "event.kind == 'public_reply'"
+    },
+    {
+      "id": "core.tickets.sub.created_by_email",
+      "label": "Ticket opened by email",
+      "description": "A ticket was opened from an email.",
+      "event": "record.created",
+      "entity": "core.tickets.ticket",
+      "when": "record.channel == 'email'"
+    }
+  ],
+  "notificationRoutes": [
+    {
+      "id": "core.tickets.route.escalated",
+      "label": "Escalations to the assignee and team",
+      "subscription": "core.tickets.sub.escalated",
+      "profile": "core.platform.profile.in_app_email",
+      "template": "core.tickets.template.escalated",
+      "recipients": [
+        {
+          "kind": "field",
+          "ref": "assignee"
+        },
+        {
+          "kind": "field",
+          "ref": "assignment_group"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.route.p1_raised",
+      "label": "P1 alert to the assignee and team",
+      "subscription": "core.tickets.sub.p1_raised",
+      "profile": "core.platform.profile.urgent",
+      "template": "core.tickets.template.p1_raised",
+      "recipients": [
+        {
+          "kind": "field",
+          "ref": "assignee"
+        },
+        {
+          "kind": "field",
+          "ref": "assignment_group"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "core.tickets.route.sla_alert_opened",
+      "label": "SLA alerts to the owning team",
+      "subscription": "core.tickets.sub.sla_alert_opened",
+      "profile": "core.platform.profile.in_app_email",
+      "template": "core.tickets.template.sla_alert",
+      "recipients": [
+        {
+          "kind": "alert_owner",
+          "ref": "alert"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.route.sla_alert_escalated",
+      "label": "Unanswered SLA breaches to the owning team",
+      "subscription": "core.tickets.sub.sla_alert_escalated",
+      "profile": "core.platform.profile.urgent",
+      "template": "core.tickets.template.sla_alert",
+      "recipients": [
+        {
+          "kind": "alert_owner",
+          "ref": "alert"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.route.public_reply",
+      "label": "Replies to the requester",
+      "subscription": "core.tickets.sub.public_reply",
+      "profile": "core.platform.profile.in_app_email",
+      "template": "core.tickets.template.public_reply",
+      "recipients": [
+        {
+          "kind": "field",
+          "ref": "requester"
+        }
+      ]
+    },
+    {
+      "id": "core.tickets.route.received_by_email",
+      "label": "Email tickets acknowledged",
+      "subscription": "core.tickets.sub.created_by_email",
+      "profile": "core.platform.profile.in_app_email",
+      "template": "core.tickets.template.received_by_email",
+      "recipients": [
+        {
+          "kind": "field",
+          "ref": "requester"
+        }
+      ]
+    }
+  ],
+  "alertRules": [
+    {
+      "id": "core.tickets.alert.sla_breached",
+      "label": "Ticket SLA breached",
+      "description": "A ticket missed an SLA goal.",
+      "trigger": "core.tickets.sub.sla_breached_alert",
+      "dedupKey": "record.id + ':' + event.target",
+      "title": "SLA breached: {{record.number}} {{record.title}} ({{event.target}})",
+      "owner": {
+        "kind": "field",
+        "ref": "assignment_group"
+      },
+      "escalation": [
+        {
+          "afterMinutes": 30
+        }
+      ],
+      "resolveOn": [
+        "core.tickets.sub.ticket_done_alert"
+      ]
+    },
+    {
+      "id": "core.tickets.alert.sla_at_risk",
+      "label": "Ticket SLA at risk",
+      "description": "A ticket is close to missing an SLA goal.",
+      "trigger": "core.tickets.sub.sla_warning_alert",
+      "severity": "medium",
+      "dedupKey": "record.id + ':' + event.target",
+      "title": "SLA at risk: {{record.number}} {{record.title}} ({{event.target}})",
+      "owner": {
+        "kind": "field",
+        "ref": "assignment_group"
+      },
+      "resolveOn": [
+        "core.tickets.sub.ticket_done_alert",
+        "core.tickets.sub.sla_breached_alert"
+      ]
+    }
+  ],
+  "mailIntakes": [
+    {
+      "id": "core.tickets.mail.tickets",
+      "label": "Tickets by email",
+      "description": "New messages open a ticket for the sender; replies join the ticket's conversation.",
+      "entity": "core.tickets.ticket",
+      "titleField": "title",
+      "bodyField": "description",
+      "requesterField": "requester",
+      "addressField": "contact_email",
+      "set": {
+        "channel": "email"
+      },
+      "reopenTransition": "reopen",
+      "reopenFrom": [
+        "resolved"
+      ],
+      "followUpFrom": [
+        "closed",
+        "cancelled"
+      ]
+    }
+  ]
+}

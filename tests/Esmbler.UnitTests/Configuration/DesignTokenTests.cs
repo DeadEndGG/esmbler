@@ -32,6 +32,7 @@ public partial class DesignTokenTests
     [InlineData("1.7.0")]
     [InlineData("1.8.0")]
     [InlineData("1.9.0")]
+    [InlineData("1.10.0")]
     public void Choice_option_tones_are_accent_tokens(string version)
     {
         var bad = new[] { CompilerFixture.PlatformSpec, CompilerFixture.Tickets(version) }

@@ -105,6 +105,69 @@ public class MetricSpecTests
     }
 
     [Fact]
+    public void Release_1_10_0_adds_service_level_figures_and_changes_a_policy_and_its_calendar()
+    {
+        var result = Compile("1.10.0");
+        Assert.True(result.Succeeded, string.Join("\n", result.Errors.Select(e => e.Message)));
+        var cfg = result.Config;
+        Assert.Equal(MetricSlaStates.AtRisk, cfg.FindMetric("core.tickets.metric.sla_at_risk")!.Sla!.State);
+        Assert.NotNull(cfg.FindMetric("core.tickets.metric.alert_mtta")!.Alerts);
+        Assert.Equal(MetricAlertFields.ResolvedAt, cfg.FindMetric("core.tickets.metric.alert_mttr")!.Measure.To);
+        Assert.Equal(10, cfg.FindView("core.tickets.dashboard")!.Layout.Descendants().Count(n => n.StringProp("metric") is not null));
+
+        // The policy and calendar change shows in the upgrade's base changes.
+        var changes = ConfigDiff.Compare(Compile("1.9.0").Config, cfg);
+        Assert.Contains(changes, c => c.Id == "core.tickets.sla.ticket");
+        Assert.Contains(changes, c => c.Id == "core.tickets.calendar.business_hours");
+        var p2 = cfg.FindSlaPolicy("core.tickets.sla.ticket")!.FindTarget("resolution")!.Goals.Single(g => g.When == "record.priority == 'p2'");
+        Assert.Equal(480, p2.Minutes);
+    }
+
+    [Fact]
+    public void At_risk_and_alert_metrics_are_validated()
+    {
+        // At risk is an SLA state like breached; anything else is refused with the states as the fix.
+        var atRisk = new MetricSpec { Id = "tenant__at_risk", Label = "At risk", Entity = Ticket, Sla = new MetricSlaSpec { Policy = "core.tickets.sla.ticket", State = MetricSlaStates.AtRisk } };
+        Assert.True(Compile("1.9.0", new AddMetric { Metric = atRisk }).Succeeded);
+        atRisk.Sla.State = "late";
+        Assert.Contains(Compile("1.9.0", new AddMetric { Metric = atRisk }).Errors, e => e.Code == "config.bad_sla" && e.Suggestion == "breached, at_risk");
+
+        // Time to acknowledge over alerts, grouped by severity, dated by when alerts opened.
+        var mtta = new MetricSpec
+        {
+            Id = "tenant__mtta",
+            Label = "Time to acknowledge",
+            Entity = Ticket,
+            Filter = "record.priority == 'p1'",
+            Alerts = new MetricAlertSpec { Rules = ["core.tickets.alert.sla_breached"], MinSeverity = EventSeverities.High },
+            Measure = new MetricMeasureSpec { Kind = MetricMeasures.Duration, From = MetricAlertFields.OpenedAt, To = MetricAlertFields.AcknowledgedAt, Unit = "minutes" },
+            GroupBy = new MetricGroupSpec { Field = MetricAlertFields.Severity },
+            DateRange = new MetricDateRangeSpec { Field = MetricAlertFields.OpenedAt, Last = 30 },
+        };
+        var ok = Compile("1.9.0", new AddMetric { Metric = mtta });
+        Assert.True(ok.Succeeded, string.Join("\n", ok.Errors.Select(e => e.Message)));
+        Assert.Contains("tenant__mtta", DependencyGraph.Build(ok.Config).ImpactOf("core.tickets.alert.sla_breached"));
+
+        var bad = SpecJson.Clone(mtta);
+        bad.Alerts = new MetricAlertSpec { Rules = ["core.tickets.alert.sla_breach"], MinSeverity = "urgent" };
+        bad.Measure = new MetricMeasureSpec { Kind = MetricMeasures.Duration, From = "created_at", To = MetricAlertFields.ResolvedAt };
+        bad.GroupBy = new MetricGroupSpec { Field = "category" };
+        bad.DateRange = new MetricDateRangeSpec { Field = "created_at", Last = 30 };
+        bad.Sla = new MetricSlaSpec { Policy = "core.tickets.sla.ticket" };
+        var errors = Compile("1.9.0", new AddMetric { Metric = bad }).Errors;
+        Assert.Contains(errors, e => e.Code == "config.not_found" && e.Suggestion == "core.tickets.alert.sla_breached");
+        Assert.Contains(errors, e => e.Code == "config.bad_severity");
+        Assert.Contains(errors, e => e.Code == "config.bad_measure");
+        Assert.Contains(errors, e => e.Code == "config.bad_group");
+        Assert.Contains(errors, e => e.Code == "config.bad_date_range");
+        Assert.Contains(errors, e => e.Code == "config.bad_sla");
+
+        var sum = SpecJson.Clone(mtta);
+        sum.Measure = new MetricMeasureSpec { Kind = MetricMeasures.Sum, Field = "effort_hours" };
+        Assert.Contains(Compile("1.9.0", new AddMetric { Metric = sum }).Errors, e => e.Code == "config.bad_measure");
+    }
+
+    [Fact]
     public void Dashboards_show_figures_and_tiles_match_their_metric()
     {
         Assert.Contains(Compile("1.6.0", new InsertNode

@@ -141,6 +141,69 @@ public class UpgradeTests(PlatformFixture f)
     }
 
     [Fact]
+    public async Task Upgrading_to_a_changed_sla_policy_and_calendar_keeps_running_clocks_on_their_snapshot()
+    {
+        // REQ-MIG-004 (ADR 0018): 1.10.0 tightens P2 resolution from 600 to 480 service desk minutes and adds holidays.
+        // A clock that started before the upgrade keeps its goal, due time and calendar; clocks started after it use the
+        // new policy; the customization survives; and the new figures evaluate.
+        var t = await f.NewTenantAsync("upsla", "1.9.0");
+        var admin = f.As(t, "admin");
+        var drafts = f.Get<DraftService>();
+        var v = (await drafts.OpenAsync(admin, default)).Version;
+        foreach (var op in ConfigLifecycleTests.Customization())
+        {
+            v = (await drafts.ApplyAsync(admin, op, v, "ui", default)).Version;
+        }
+
+        var state = await drafts.CurrentAsync(admin, default);
+        await f.Get<PublishService>().PublishAsync(admin, state!.ArtifactHash!, state.PublishedRevision, default);
+
+        var records = f.Get<RecordService>();
+        var agent = f.As(t, "agent");
+        var dana = t.Users["dana"].ToString();
+        var before = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Laptop slow", ["requester"] = dana, ["priority"] = "p2", ["tenant__vendor"] = "Contoso" }, null, null, default);
+        var db = f.Get<Database>();
+        Task<SlaTimerRow> ResolutionAsync(Guid record) =>
+            db.InTenantAsync(t.TenantId, t.Environments["prod"], null, x => x.SlaTimers.AsNoTracking().SingleAsync(s => s.RecordId == record && s.TargetId == "resolution"), default);
+        var running = await ResolutionAsync(before.Id);
+        Assert.Equal(600 * 60, running.GoalSeconds);
+
+        var upgrades = f.Get<UpgradeService>();
+        var plan = await upgrades.PlanAsync(admin, "core.tickets", "1.10.0", default);
+        Assert.True(plan.Compatible, string.Join("; ", plan.Errors.Select(e => e.Message)));
+        Assert.All(plan.Overlay, o => Assert.Equal(OpStatus.Applied, o.Status));
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.sla.ticket");
+        Assert.Contains(plan.BaseChanges, c => c.Id == "core.tickets.calendar.business_hours");
+        var started = await upgrades.StartAsync(admin, "core.tickets", "1.10.0", default);
+        await upgrades.RunAsync(t.TenantId, t.Environments["prod"], started.Id, default);
+        Assert.Equal("activated", (await upgrades.GetAsync(admin, started.Id, default)).Status);
+
+        // The running clock is untouched: same goal, due time, configuration revision and calendar snapshot.
+        var kept = await ResolutionAsync(before.Id);
+        Assert.Equal((running.Id, running.GoalSeconds, running.DueAt, running.ConfigRevision, running.Snapshot), (kept.Id, kept.GoalSeconds, kept.DueAt, kept.ConfigRevision, kept.Snapshot));
+        Assert.DoesNotContain("2026-11-27", kept.Snapshot, StringComparison.Ordinal);
+
+        // Changing the running ticket does not move it onto the new goal either.
+        var touched = await records.UpdateAsync(agent, Ticket, before.Id, before.Revision, new JsonObject { ["title"] = "Laptop very slow" }, null, null, default);
+        Assert.Equal(600 * 60, (await ResolutionAsync(touched.Id)).GoalSeconds);
+
+        // A ticket opened after the upgrade runs on the new policy and calendar.
+        var after = await records.CreateAsync(agent, Ticket, new JsonObject { ["title"] = "Dock flickers", ["requester"] = dana, ["priority"] = "p2" }, null, null, default);
+        var fresh = await ResolutionAsync(after.Id);
+        Assert.Equal(480 * 60, fresh.GoalSeconds);
+        Assert.Contains("2026-11-27", fresh.Snapshot, StringComparison.Ordinal);
+        Assert.True(fresh.ConfigRevision > running.ConfigRevision);
+
+        // The customization is still there, and the new Overview figures evaluate for agents.
+        Assert.Equal("Contoso", (await records.GetAsync(admin, Ticket, before.Id, default)).Data["tenant__vendor"]!.GetValue<string>());
+        var metrics = f.Get<Kernel.Infrastructure.Metrics.MetricService>();
+        var dashboard = await metrics.DashboardAsync(agent, "core.tickets.dashboard", "UTC", default);
+        Assert.Contains(dashboard.Metrics, m => m.Id == "core.tickets.metric.sla_at_risk" && m.Status == "ok");
+        Assert.Contains(dashboard.Metrics, m => m.Id == "core.tickets.metric.alert_mtta" && m.Source == Kernel.Infrastructure.Metrics.MetricSources.Alerts);
+        Assert.DoesNotContain(dashboard.Metrics, m => m.Id == "core.tickets.metric.alert_mttr" && m.Status != "ok");
+    }
+
+    [Fact]
     public async Task Upgrade_preserves_customizations_and_recovers_from_a_partial_migration_failure()
     {
         var t = await f.NewTenantAsync("tu");
